@@ -28,7 +28,10 @@ let package = Package(
                 "AudioIntelligenceCore",
                 .product(name: "Atomics", package: "swift-atomics")
             ],
-            path: "Sources/AudioIntelligence"
+            path: "Sources/AudioIntelligence",
+            resources: [
+                .process("Resources")
+            ]
         ),
         
         // Private Implementation Layer

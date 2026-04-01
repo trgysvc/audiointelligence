@@ -3,7 +3,20 @@
 
   ],
   "copyCommands" : {
-
+    "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/AudioIntelligence_AudioIntelligence.bundle/PrivacyInfo.xcprivacy" : {
+      "inputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligence/Resources/PrivacyInfo.xcprivacy"
+        }
+      ],
+      "outputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/AudioIntelligence_AudioIntelligence.bundle/PrivacyInfo.xcprivacy"
+        }
+      ]
+    }
   },
   "explicitTargetDependencyImportCheckingMode" : {
     "none" : {
@@ -141,8 +154,6 @@
         "-incremental",
         "-enable-batch-mode",
         "-serialize-diagnostics",
-        "-index-store-path",
-        "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/index/store",
         "-Onone",
         "-enable-testing",
         "-j10",
@@ -232,6 +243,431 @@
       ],
       "tempsPath" : "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/Atomics.build",
       "wholeModuleOptimization" : false
+    },
+    "C.AudioIntelligence-arm64-apple-macosx-debug.module" : {
+      "executable" : "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
+      "fileList" : "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/AudioIntelligence.build/sources",
+      "importPath" : "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/Modules",
+      "inputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligence/AudioIntelligence.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligence/Models/AudioFeature.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligence/Models/AudioReport.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/AudioIntelligence.build/DerivedSources/resource_bundle_accessor.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt"
+        },
+        {
+          "kind" : "virtual",
+          "name" : "<AudioIntelligence-arm64-apple-macosx-debug.module-resources>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/Modules/AudioIntelligenceCore.swiftmodule"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/Modules/Atomics.swiftmodule"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/AudioIntelligence.build/sources"
+        }
+      ],
+      "isLibrary" : true,
+      "moduleName" : "AudioIntelligence",
+      "moduleOutputPath" : "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/Modules/AudioIntelligence.swiftmodule",
+      "objects" : [
+        "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/AudioIntelligence.build/AudioIntelligence.swift.o",
+        "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/AudioIntelligence.build/AudioFeature.swift.o",
+        "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/AudioIntelligence.build/AudioReport.swift.o",
+        "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/AudioIntelligence.build/resource_bundle_accessor.swift.o"
+      ],
+      "otherArguments" : [
+        "-target",
+        "arm64-apple-macosx13.0",
+        "-incremental",
+        "-enable-batch-mode",
+        "-serialize-diagnostics",
+        "-Onone",
+        "-enable-testing",
+        "-j10",
+        "-DSWIFT_PACKAGE",
+        "-DDEBUG",
+        "-DSWIFT_MODULE_RESOURCE_BUNDLE_AVAILABLE",
+        "-Xcc",
+        "-fmodule-map-file=/Users/trgysvc/Developer/audiointelligence/.build/index-build/checkouts/swift-atomics/Sources/_AtomicsShims/include/module.modulemap",
+        "-Xcc",
+        "-I",
+        "-Xcc",
+        "/Users/trgysvc/Developer/audiointelligence/.build/index-build/checkouts/swift-atomics/Sources/_AtomicsShims/include",
+        "-module-cache-path",
+        "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/ModuleCache",
+        "-parseable-output",
+        "-parse-as-library",
+        "-emit-objc-header",
+        "-emit-objc-header-path",
+        "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/AudioIntelligence.build/include/AudioIntelligence-Swift.h",
+        "-swift-version",
+        "6",
+        "-Xfrontend",
+        "-experimental-lazy-typecheck",
+        "-Xfrontend",
+        "-experimental-skip-all-function-bodies",
+        "-Xfrontend",
+        "-experimental-allow-module-with-compiler-errors",
+        "-Xfrontend",
+        "-empty-abi-descriptor",
+        "-plugin-path",
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing",
+        "-sdk",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.4.sdk",
+        "-F",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-I",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+        "-L",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+        "-g",
+        "-Xcc",
+        "-isysroot",
+        "-Xcc",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.4.sdk",
+        "-Xcc",
+        "-F",
+        "-Xcc",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-Xcc",
+        "-fPIC",
+        "-Xcc",
+        "-g",
+        "-package-name",
+        "audiointelligence"
+      ],
+      "outputFileMapPath" : "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/AudioIntelligence.build/output-file-map.json",
+      "outputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/Modules/AudioIntelligence.swiftmodule"
+        }
+      ],
+      "prepareForIndexing" : true,
+      "sources" : [
+        "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligence/AudioIntelligence.swift",
+        "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligence/Models/AudioFeature.swift",
+        "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligence/Models/AudioReport.swift",
+        "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/AudioIntelligence.build/DerivedSources/resource_bundle_accessor.swift"
+      ],
+      "tempsPath" : "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/AudioIntelligence.build",
+      "wholeModuleOptimization" : false
+    },
+    "C.AudioIntelligenceCore-arm64-apple-macosx-debug.module" : {
+      "executable" : "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
+      "fileList" : "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/sources",
+      "importPath" : "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/Modules",
+      "inputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/AudioIntelligenceCore.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/RhythmEngine.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/sources"
+        }
+      ],
+      "isLibrary" : true,
+      "moduleName" : "AudioIntelligenceCore",
+      "moduleOutputPath" : "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/Modules/AudioIntelligenceCore.swiftmodule",
+      "objects" : [
+        "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/AudioIntelligenceCore.swift.o",
+        "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/RhythmEngine.swift.o"
+      ],
+      "otherArguments" : [
+        "-target",
+        "arm64-apple-macosx13.0",
+        "-incremental",
+        "-enable-batch-mode",
+        "-serialize-diagnostics",
+        "-Onone",
+        "-enable-testing",
+        "-j10",
+        "-DSWIFT_PACKAGE",
+        "-DDEBUG",
+        "-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE",
+        "-module-cache-path",
+        "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/ModuleCache",
+        "-parseable-output",
+        "-parse-as-library",
+        "-emit-objc-header",
+        "-emit-objc-header-path",
+        "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/include/AudioIntelligenceCore-Swift.h",
+        "-swift-version",
+        "6",
+        "-Xfrontend",
+        "-experimental-lazy-typecheck",
+        "-Xfrontend",
+        "-experimental-skip-all-function-bodies",
+        "-Xfrontend",
+        "-experimental-allow-module-with-compiler-errors",
+        "-Xfrontend",
+        "-empty-abi-descriptor",
+        "-plugin-path",
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing",
+        "-sdk",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.4.sdk",
+        "-F",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-I",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+        "-L",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+        "-g",
+        "-Xcc",
+        "-isysroot",
+        "-Xcc",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.4.sdk",
+        "-Xcc",
+        "-F",
+        "-Xcc",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-Xcc",
+        "-fPIC",
+        "-Xcc",
+        "-g",
+        "-package-name",
+        "audiointelligence"
+      ],
+      "outputFileMapPath" : "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/output-file-map.json",
+      "outputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/Modules/AudioIntelligenceCore.swiftmodule"
+        }
+      ],
+      "prepareForIndexing" : true,
+      "sources" : [
+        "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/AudioIntelligenceCore.swift",
+        "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/RhythmEngine.swift"
+      ],
+      "tempsPath" : "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/AudioIntelligenceCore.build",
+      "wholeModuleOptimization" : false
+    },
+    "C.AudioIntelligenceMetal-arm64-apple-macosx-debug.module" : {
+      "executable" : "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
+      "fileList" : "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/AudioIntelligenceMetal.build/sources",
+      "importPath" : "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/Modules",
+      "inputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceMetal/AudioIntelligenceMetal.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/AudioIntelligenceMetal.build/sources"
+        }
+      ],
+      "isLibrary" : true,
+      "moduleName" : "AudioIntelligenceMetal",
+      "moduleOutputPath" : "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/Modules/AudioIntelligenceMetal.swiftmodule",
+      "objects" : [
+        "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/AudioIntelligenceMetal.build/AudioIntelligenceMetal.swift.o"
+      ],
+      "otherArguments" : [
+        "-target",
+        "arm64-apple-macosx13.0",
+        "-incremental",
+        "-enable-batch-mode",
+        "-serialize-diagnostics",
+        "-Onone",
+        "-enable-testing",
+        "-j10",
+        "-DSWIFT_PACKAGE",
+        "-DDEBUG",
+        "-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE",
+        "-module-cache-path",
+        "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/ModuleCache",
+        "-parseable-output",
+        "-parse-as-library",
+        "-emit-objc-header",
+        "-emit-objc-header-path",
+        "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/AudioIntelligenceMetal.build/include/AudioIntelligenceMetal-Swift.h",
+        "-swift-version",
+        "6",
+        "-Xfrontend",
+        "-experimental-lazy-typecheck",
+        "-Xfrontend",
+        "-experimental-skip-all-function-bodies",
+        "-Xfrontend",
+        "-experimental-allow-module-with-compiler-errors",
+        "-Xfrontend",
+        "-empty-abi-descriptor",
+        "-plugin-path",
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing",
+        "-sdk",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.4.sdk",
+        "-F",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-I",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+        "-L",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+        "-g",
+        "-Xcc",
+        "-isysroot",
+        "-Xcc",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.4.sdk",
+        "-Xcc",
+        "-F",
+        "-Xcc",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-Xcc",
+        "-fPIC",
+        "-Xcc",
+        "-g",
+        "-package-name",
+        "audiointelligence"
+      ],
+      "outputFileMapPath" : "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/AudioIntelligenceMetal.build/output-file-map.json",
+      "outputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/Modules/AudioIntelligenceMetal.swiftmodule"
+        }
+      ],
+      "prepareForIndexing" : true,
+      "sources" : [
+        "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceMetal/AudioIntelligenceMetal.swift"
+      ],
+      "tempsPath" : "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/AudioIntelligenceMetal.build",
+      "wholeModuleOptimization" : false
+    },
+    "C.CLIExample-arm64-apple-macosx-debug.module" : {
+      "executable" : "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
+      "fileList" : "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/CLIExample.build/sources",
+      "importPath" : "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/Modules",
+      "inputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/Examples/CLIExample/main.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/Modules/AudioIntelligence.swiftmodule"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/CLIExample.build/sources"
+        }
+      ],
+      "isLibrary" : false,
+      "moduleName" : "CLIExample",
+      "moduleOutputPath" : "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/Modules/CLIExample.swiftmodule",
+      "objects" : [
+        "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/CLIExample.build/main.swift.o"
+      ],
+      "otherArguments" : [
+        "-target",
+        "arm64-apple-macosx13.0",
+        "-incremental",
+        "-enable-batch-mode",
+        "-serialize-diagnostics",
+        "-Onone",
+        "-enable-testing",
+        "-j10",
+        "-DSWIFT_PACKAGE",
+        "-DDEBUG",
+        "-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE",
+        "-Xcc",
+        "-fmodule-map-file=/Users/trgysvc/Developer/audiointelligence/.build/index-build/checkouts/swift-atomics/Sources/_AtomicsShims/include/module.modulemap",
+        "-Xcc",
+        "-I",
+        "-Xcc",
+        "/Users/trgysvc/Developer/audiointelligence/.build/index-build/checkouts/swift-atomics/Sources/_AtomicsShims/include",
+        "-module-cache-path",
+        "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/ModuleCache",
+        "-parseable-output",
+        "-Xfrontend",
+        "-entry-point-function-name",
+        "-Xfrontend",
+        "CLIExample_main",
+        "-parse-as-library",
+        "-swift-version",
+        "6",
+        "-Xfrontend",
+        "-experimental-lazy-typecheck",
+        "-Xfrontend",
+        "-experimental-skip-all-function-bodies",
+        "-Xfrontend",
+        "-experimental-allow-module-with-compiler-errors",
+        "-Xfrontend",
+        "-empty-abi-descriptor",
+        "-plugin-path",
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing",
+        "-sdk",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.4.sdk",
+        "-F",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-I",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+        "-L",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+        "-g",
+        "-Xcc",
+        "-isysroot",
+        "-Xcc",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.4.sdk",
+        "-Xcc",
+        "-F",
+        "-Xcc",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-Xcc",
+        "-fPIC",
+        "-Xcc",
+        "-g",
+        "-package-name",
+        "audiointelligence"
+      ],
+      "outputFileMapPath" : "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/CLIExample.build/output-file-map.json",
+      "outputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/Modules/CLIExample.swiftmodule"
+        }
+      ],
+      "prepareForIndexing" : true,
+      "sources" : [
+        "/Users/trgysvc/Developer/audiointelligence/Examples/CLIExample/main.swift"
+      ],
+      "tempsPath" : "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/CLIExample.build",
+      "wholeModuleOptimization" : false
     }
   },
   "swiftFrontendCommands" : {
@@ -271,8 +707,6 @@
       "-incremental",
       "-enable-batch-mode",
       "-serialize-diagnostics",
-      "-index-store-path",
-      "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/index/store",
       "-Onone",
       "-enable-testing",
       "-j10",
@@ -332,11 +766,309 @@
       "swift_atomics",
       "-driver-use-frontend-path",
       "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"
+    ],
+    "AudioIntelligence" : [
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
+      "-module-name",
+      "AudioIntelligence",
+      "-package-name",
+      "audiointelligence",
+      "-c",
+      "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligence/AudioIntelligence.swift",
+      "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligence/Models/AudioFeature.swift",
+      "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligence/Models/AudioReport.swift",
+      "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/AudioIntelligence.build/DerivedSources/resource_bundle_accessor.swift",
+      "-I",
+      "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/Modules",
+      "-target",
+      "arm64-apple-macosx13.0",
+      "-incremental",
+      "-enable-batch-mode",
+      "-serialize-diagnostics",
+      "-Onone",
+      "-enable-testing",
+      "-j10",
+      "-DSWIFT_PACKAGE",
+      "-DDEBUG",
+      "-DSWIFT_MODULE_RESOURCE_BUNDLE_AVAILABLE",
+      "-Xcc",
+      "-fmodule-map-file=/Users/trgysvc/Developer/audiointelligence/.build/index-build/checkouts/swift-atomics/Sources/_AtomicsShims/include/module.modulemap",
+      "-Xcc",
+      "-I",
+      "-Xcc",
+      "/Users/trgysvc/Developer/audiointelligence/.build/index-build/checkouts/swift-atomics/Sources/_AtomicsShims/include",
+      "-module-cache-path",
+      "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/ModuleCache",
+      "-parseable-output",
+      "-parse-as-library",
+      "-emit-objc-header",
+      "-emit-objc-header-path",
+      "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/AudioIntelligence.build/include/AudioIntelligence-Swift.h",
+      "-swift-version",
+      "6",
+      "-Xfrontend",
+      "-experimental-lazy-typecheck",
+      "-Xfrontend",
+      "-experimental-skip-all-function-bodies",
+      "-Xfrontend",
+      "-experimental-allow-module-with-compiler-errors",
+      "-Xfrontend",
+      "-empty-abi-descriptor",
+      "-plugin-path",
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing",
+      "-sdk",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.4.sdk",
+      "-F",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-I",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+      "-L",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+      "-g",
+      "-Xcc",
+      "-isysroot",
+      "-Xcc",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.4.sdk",
+      "-Xcc",
+      "-F",
+      "-Xcc",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-Xcc",
+      "-fPIC",
+      "-Xcc",
+      "-g",
+      "-package-name",
+      "audiointelligence",
+      "-driver-use-frontend-path",
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"
+    ],
+    "AudioIntelligenceCore" : [
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
+      "-module-name",
+      "AudioIntelligenceCore",
+      "-package-name",
+      "audiointelligence",
+      "-c",
+      "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/AudioIntelligenceCore.swift",
+      "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/RhythmEngine.swift",
+      "-I",
+      "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/Modules",
+      "-target",
+      "arm64-apple-macosx13.0",
+      "-incremental",
+      "-enable-batch-mode",
+      "-serialize-diagnostics",
+      "-Onone",
+      "-enable-testing",
+      "-j10",
+      "-DSWIFT_PACKAGE",
+      "-DDEBUG",
+      "-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE",
+      "-module-cache-path",
+      "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/ModuleCache",
+      "-parseable-output",
+      "-parse-as-library",
+      "-emit-objc-header",
+      "-emit-objc-header-path",
+      "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/include/AudioIntelligenceCore-Swift.h",
+      "-swift-version",
+      "6",
+      "-Xfrontend",
+      "-experimental-lazy-typecheck",
+      "-Xfrontend",
+      "-experimental-skip-all-function-bodies",
+      "-Xfrontend",
+      "-experimental-allow-module-with-compiler-errors",
+      "-Xfrontend",
+      "-empty-abi-descriptor",
+      "-plugin-path",
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing",
+      "-sdk",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.4.sdk",
+      "-F",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-I",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+      "-L",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+      "-g",
+      "-Xcc",
+      "-isysroot",
+      "-Xcc",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.4.sdk",
+      "-Xcc",
+      "-F",
+      "-Xcc",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-Xcc",
+      "-fPIC",
+      "-Xcc",
+      "-g",
+      "-package-name",
+      "audiointelligence",
+      "-driver-use-frontend-path",
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"
+    ],
+    "AudioIntelligenceMetal" : [
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
+      "-module-name",
+      "AudioIntelligenceMetal",
+      "-package-name",
+      "audiointelligence",
+      "-c",
+      "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceMetal/AudioIntelligenceMetal.swift",
+      "-I",
+      "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/Modules",
+      "-target",
+      "arm64-apple-macosx13.0",
+      "-incremental",
+      "-enable-batch-mode",
+      "-serialize-diagnostics",
+      "-Onone",
+      "-enable-testing",
+      "-j10",
+      "-DSWIFT_PACKAGE",
+      "-DDEBUG",
+      "-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE",
+      "-module-cache-path",
+      "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/ModuleCache",
+      "-parseable-output",
+      "-parse-as-library",
+      "-emit-objc-header",
+      "-emit-objc-header-path",
+      "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/AudioIntelligenceMetal.build/include/AudioIntelligenceMetal-Swift.h",
+      "-swift-version",
+      "6",
+      "-Xfrontend",
+      "-experimental-lazy-typecheck",
+      "-Xfrontend",
+      "-experimental-skip-all-function-bodies",
+      "-Xfrontend",
+      "-experimental-allow-module-with-compiler-errors",
+      "-Xfrontend",
+      "-empty-abi-descriptor",
+      "-plugin-path",
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing",
+      "-sdk",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.4.sdk",
+      "-F",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-I",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+      "-L",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+      "-g",
+      "-Xcc",
+      "-isysroot",
+      "-Xcc",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.4.sdk",
+      "-Xcc",
+      "-F",
+      "-Xcc",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-Xcc",
+      "-fPIC",
+      "-Xcc",
+      "-g",
+      "-package-name",
+      "audiointelligence",
+      "-driver-use-frontend-path",
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"
+    ],
+    "CLIExample" : [
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
+      "-module-name",
+      "CLIExample",
+      "-package-name",
+      "audiointelligence",
+      "-c",
+      "/Users/trgysvc/Developer/audiointelligence/Examples/CLIExample/main.swift",
+      "-I",
+      "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/Modules",
+      "-target",
+      "arm64-apple-macosx13.0",
+      "-incremental",
+      "-enable-batch-mode",
+      "-serialize-diagnostics",
+      "-Onone",
+      "-enable-testing",
+      "-j10",
+      "-DSWIFT_PACKAGE",
+      "-DDEBUG",
+      "-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE",
+      "-Xcc",
+      "-fmodule-map-file=/Users/trgysvc/Developer/audiointelligence/.build/index-build/checkouts/swift-atomics/Sources/_AtomicsShims/include/module.modulemap",
+      "-Xcc",
+      "-I",
+      "-Xcc",
+      "/Users/trgysvc/Developer/audiointelligence/.build/index-build/checkouts/swift-atomics/Sources/_AtomicsShims/include",
+      "-module-cache-path",
+      "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/ModuleCache",
+      "-parseable-output",
+      "-Xfrontend",
+      "-entry-point-function-name",
+      "-Xfrontend",
+      "CLIExample_main",
+      "-parse-as-library",
+      "-swift-version",
+      "6",
+      "-Xfrontend",
+      "-experimental-lazy-typecheck",
+      "-Xfrontend",
+      "-experimental-skip-all-function-bodies",
+      "-Xfrontend",
+      "-experimental-allow-module-with-compiler-errors",
+      "-Xfrontend",
+      "-empty-abi-descriptor",
+      "-plugin-path",
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing",
+      "-sdk",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.4.sdk",
+      "-F",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-I",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+      "-L",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+      "-g",
+      "-Xcc",
+      "-isysroot",
+      "-Xcc",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.4.sdk",
+      "-Xcc",
+      "-F",
+      "-Xcc",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-Xcc",
+      "-fPIC",
+      "-Xcc",
+      "-g",
+      "-package-name",
+      "audiointelligence",
+      "-driver-use-frontend-path",
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"
     ]
   },
   "targetDependencyMap" : {
     "Atomics" : [
       "_AtomicsShims"
+    ],
+    "AudioIntelligence" : [
+      "Atomics",
+      "_AtomicsShims",
+      "AudioIntelligenceCore"
+    ],
+    "AudioIntelligenceCore" : [
+
+    ],
+    "AudioIntelligenceMetal" : [
+
+    ],
+    "CLIExample" : [
+      "AudioIntelligence",
+      "Atomics",
+      "_AtomicsShims",
+      "AudioIntelligenceCore"
     ],
     "_AtomicsShims" : [
 
@@ -439,6 +1171,78 @@
         }
       ],
       "outputFilePath" : "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/Atomics.build/sources"
+    },
+    "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/AudioIntelligence.build/sources" : {
+      "alwaysOutOfDate" : false,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<sources-file-list>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligence/AudioIntelligence.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligence/Models/AudioFeature.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligence/Models/AudioReport.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/AudioIntelligence.build/DerivedSources/resource_bundle_accessor.swift"
+        }
+      ],
+      "outputFilePath" : "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/AudioIntelligence.build/sources"
+    },
+    "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/sources" : {
+      "alwaysOutOfDate" : false,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<sources-file-list>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/AudioIntelligenceCore.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/RhythmEngine.swift"
+        }
+      ],
+      "outputFilePath" : "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/sources"
+    },
+    "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/AudioIntelligenceMetal.build/sources" : {
+      "alwaysOutOfDate" : false,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<sources-file-list>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceMetal/AudioIntelligenceMetal.swift"
+        }
+      ],
+      "outputFilePath" : "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/AudioIntelligenceMetal.build/sources"
+    },
+    "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/CLIExample.build/sources" : {
+      "alwaysOutOfDate" : false,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<sources-file-list>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/Examples/CLIExample/main.swift"
+        }
+      ],
+      "outputFilePath" : "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/CLIExample.build/sources"
     },
     "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt" : {
       "alwaysOutOfDate" : true,
