@@ -183,7 +183,7 @@ We follow Semantic Versioning (SemVer) to ensure stability for production applic
 AudioIntelligence is released under the **Apache License 2.0**. This ensures maximum patent protection and is the preferred choice for enterprise-level projects (Apple, Google, etc.).
 
 ```text
-Copyright 2024 AudioIntelligence Team
+Copyright 2026 AudioIntelligence Team
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
