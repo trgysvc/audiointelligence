@@ -1,0 +1,11 @@
+İSK YÖNETİMİ VE MİGRASYON
+
+Mevcut EliteAgent uygulamanız ile yeni kütüphane arasındaki ilişkiyi doğru kurmalısınız.
+Code Extraction: Mevcut kodları EliteAgent içinden ayırıp yeni repoya taşırken, internal erişim belirleyicilerini public yaparken dikkatli olun. Sadece gerçekten ihtiyaç duyulan API'leri açın.
+Dependency Yönetimi: EliteAgent uygulamanız, GitHub'daki yeni kütüphaneyi bir dependency olarak eklemeli. Böylece kütüphanede yaptığınız bir iyileştirme, uygulamaya otomatik yansır.
+swift
+
+
+1234
+// EliteAgent Package.swiftdependencies: [    .package(url: "https://github.com/trgysvc/AudioIntelligence.git", branch: "main")]
+Binary Framework: İleride kütüphaneyi kullanmak isteyen ama Swift Package Manager ile uğraşmak istemeyenler için .xcframework binary release'leri de sunabilirsiniz.

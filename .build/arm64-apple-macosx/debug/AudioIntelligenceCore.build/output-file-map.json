@@ -1,0 +1,12 @@
+{
+  "": {
+    "swift-dependencies": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/primary.swiftdeps"
+  },
+  "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/RhythmEngine.swift": {
+    "dependencies": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/RhythmEngine.d",
+    "object": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/RhythmEngine.swift.o",
+    "swiftmodule": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/RhythmEngine~partial.swiftmodule",
+    "swift-dependencies": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/RhythmEngine.swiftdeps",
+    "diagnostics": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/RhythmEngine.dia"
+  }
+}

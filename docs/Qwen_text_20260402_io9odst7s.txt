@@ -1,0 +1,30 @@
+AudioIntelligence/
+├── Sources/
+│   ├── AudioIntelligence/          # Public API (Sadece bu klasör dışa açık olmalı)
+│   │   ├── AudioIntelligence.swift # Ana giriş noktası (Facade Pattern)
+│   │   ├── Models/                 # DNA, Feature, Report modelleri
+│   │   └── Errors/                 # Hata yönetimi
+│   │
+│   ├── AudioIntelligenceCore/      # Private Implementation (Detaylar gizli)
+│   │   ├── DSP/                    # vDSP, Metal shader'lar
+│   │   ├── Engines/                # MFCC, Chroma, Onset motorları
+│   │   └── Internal/               # Yardımcı fonksiyonlar
+│   │
+│   ├── AudioIntelligenceMetal/     # Opsiyonel: Metal shader'ları içeren target
+│   └── AudioIntelligenceForensic/  # Opsiyonel: Adli analiz modülü
+│
+├── Tests/
+│   ├── AudioIntelligenceTests/     # Unit Tests
+│   ├── AudioIntelligenceIntegrationTests/ # Gerçek dosya ile entegrasyon testleri
+│   └── AudioIntelligenceBenchmarks/ # Performans testleri (XCTest + Metrics)
+│
+├── Benchmarks/                     # LibreSA vs EliteAgent kıyaslama scriptleri
+├── Examples/                       # Kullanıcılar için "Hello World" projeleri
+│   ├── CLIExample/                 # Terminal uygulaması
+│   ├── iOSExample/                 # Basit bir iOS demo projesi
+│   └── SwiftUIExample/             # Görselleştirme örneği
+│
+├── Package.swift                   # SPM Manifest
+├── LICENSE                         # MIT veya Apache 2.0 (Önerim: Apache 2.0)
+├── CODE_OF_CONDUCT.md              # Topluluk kuralları
+└── CONTRIBUTING.md                 # Katkı rehberi

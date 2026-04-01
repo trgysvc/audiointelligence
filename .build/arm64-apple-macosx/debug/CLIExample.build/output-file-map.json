@@ -1,0 +1,12 @@
+{
+  "": {
+    "swift-dependencies": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/CLIExample.build/primary.swiftdeps"
+  },
+  "/Users/trgysvc/Developer/audiointelligence/Examples/CLIExample/main.swift": {
+    "dependencies": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/CLIExample.build/main.d",
+    "object": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/CLIExample.build/main.swift.o",
+    "swiftmodule": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/CLIExample.build/main~partial.swiftmodule",
+    "swift-dependencies": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/CLIExample.build/main.swiftdeps",
+    "diagnostics": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/CLIExample.build/main.dia"
+  }
+}
