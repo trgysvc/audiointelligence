@@ -1,5 +1,8 @@
 # 🎙️ AudioIntelligence: The First Native Audio Intelligence Platform for Apple Silicon
 
+> [!IMPORTANT]
+> **Work in Progress**: The core engine is currently being ported from **EliteAgent**. Development is ongoing and stability is not yet guaranteed for production use.
+
 [![Swift Compatibility](https://img.shields.io/badge/Swift-6.0%2B-orange.svg)](https://swift.org)
 [![Platform Compatibility](https://img.shields.io/badge/Platforms-macOS%20%7C%20iOS%20%7C%20Server--side-blue.svg)](https://swift.org/package-manager/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
