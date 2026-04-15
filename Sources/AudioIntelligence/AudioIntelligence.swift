@@ -1,5 +1,5 @@
 import Foundation
-import AudioIntelligenceCore
+@_exported import AudioIntelligenceCore
 
 public actor AudioIntelligence {
     
@@ -21,7 +21,7 @@ public actor AudioIntelligence {
     /// Supports both progress tracking and feature selection for v25.0+.
     public func analyze(
         url: URL,
-        features: Set<AudioFeature> = [.spectral, .rhythm], // Restored for backwards compatibility
+        features: Set<AudioFeature> = [.spectral, .rhythm],
         explain: Bool = true,
         progress: @Sendable @escaping (Double, String, String?) -> Void = { _, _, _ in }
     ) async throws -> AudioReport {
