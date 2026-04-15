@@ -36,7 +36,7 @@ public enum MusicDNAReporter {
         let maxChroma = analysis.chromaProfile.max() ?? 1.0
         for i in 0..<12 {
             let weight = analysis.chromaProfile[i]
-            let barSize = Int((weight / maxChroma) * 30)
+            let barSize = Int((weight / (maxChroma > 0 ? maxChroma : 1.0)) * 30.0)
             let bar = String(repeating: "█", count: barSize) + String(repeating: "░", count: 30 - barSize)
             lines.append("- **\(noteNames[i].padding(toLength: 3, withPad: " ", startingAt: 0))**: `\(bar)` \(String(format: "%.3f", weight))")
         }
