@@ -1,30 +1,34 @@
+# Terminalden dökümanı tekrar yazıyorum
+cat << 'EOF' > docs/ProjeKlasörYapısı.txt
 AudioIntelligence/
 ├── Sources/
-│   ├── AudioIntelligence/          # Public API (Sadece bu klasör dışa açık olmalı)
+│   ├── AudioIntelligence/          # Public API
 │   │   ├── AudioIntelligence.swift # Ana giriş noktası (Facade Pattern)
 │   │   ├── Models/                 # DNA, Feature, Report modelleri
-│   │   └── Errors/                 # Hata yönetimi
+│   │   └── Resources/              # Gizlilik manifestosu ve kaynaklar
 │   │
-│   ├── AudioIntelligenceCore/      # Private Implementation (Detaylar gizli)
-│   │   ├── DSP/                    # vDSP, Metal shader'lar
-│   │   ├── Engines/                # MFCC, Chroma, Onset motorları
-│   │   └── Internal/               # Yardımcı fonksiyonlar
+│   ├── AudioIntelligenceCore/      # Private Implementation Layer
+│   │   ├── DSP/                    # vDSP, sinyal işleme yardımcıları
+│   │   ├── Engines/                # Analiz motorları (STFT, Rhythm, Chroma vb.)
+│   │   ├── Forensic/               # Adli ses analizi motoru
+│   │   ├── Models/                 # Dahili veri modelleri (MusicDNA)
+│   │   └── AudioIntelligenceCore.swift
 │   │
-│   ├── AudioIntelligenceMetal/     # Opsiyonel: Metal shader'ları içeren target
-│   └── AudioIntelligenceForensic/  # Opsiyonel: Adli analiz modülü
+│   ├── AudioIntelligenceMetal/     # Metal shader'ları ve GPU hızlandırma
+│   └── AudioIntelligenceForensic/  # Adli analiz modülü (Dışa bakan API)
 │
-├── Tests/
-│   ├── AudioIntelligenceTests/     # Unit Tests
-│   ├── AudioIntelligenceIntegrationTests/ # Gerçek dosya ile entegrasyon testleri
-│   └── AudioIntelligenceBenchmarks/ # Performans testleri (XCTest + Metrics)
+├── Tests/                          # Unit ve Entegrasyon testleri (Şu an boş)
 │
-├── Benchmarks/                     # LibreSA vs EliteAgent kıyaslama scriptleri
-├── Examples/                       # Kullanıcılar için "Hello World" projeleri
-│   ├── CLIExample/                 # Terminal uygulaması
-│   ├── iOSExample/                 # Basit bir iOS demo projesi
-│   └── SwiftUIExample/             # Görselleştirme örneği
+├── Examples/                       # Örnek projeler
+│   └── CLIExample/                 # Terminal uygulaması örneği
+│
+├── docs/                           # Proje dökümantasyonu
+│   ├── ProjeKlasörYapısı.txt       # (Bu dosya)
+│   └── risk yönetimi ve migrasyon/ # Geçiş planları
 │
 ├── Package.swift                   # SPM Manifest
-├── LICENSE                         # MIT veya Apache 2.0 (Önerim: Apache 2.0)
+├── LICENSE                         # Apache 2.0 Lisansı
+├── README.md                       # Genel tanıtım ve kullanım
 ├── CODE_OF_CONDUCT.md              # Topluluk kuralları
 └── CONTRIBUTING.md                 # Katkı rehberi
+EOF
