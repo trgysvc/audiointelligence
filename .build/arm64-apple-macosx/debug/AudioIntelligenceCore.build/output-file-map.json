@@ -9,11 +9,172 @@
     "swift-dependencies": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/AudioIntelligenceCore.swiftdeps",
     "diagnostics": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/AudioIntelligenceCore.dia"
   },
+  "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/DSP/DSPHelpers.swift": {
+    "dependencies": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/DSPHelpers.d",
+    "object": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/DSPHelpers.swift.o",
+    "swiftmodule": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/DSPHelpers~partial.swiftmodule",
+    "swift-dependencies": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/DSPHelpers.swiftdeps",
+    "diagnostics": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/DSPHelpers.dia"
+  },
+  "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/AudioLoader.swift": {
+    "dependencies": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/AudioLoader.d",
+    "object": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/AudioLoader.swift.o",
+    "swiftmodule": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/AudioLoader~partial.swiftmodule",
+    "swift-dependencies": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/AudioLoader.swiftdeps",
+    "diagnostics": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/AudioLoader.dia"
+  },
+  "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/CQTEngine.swift": {
+    "dependencies": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/CQTEngine.d",
+    "object": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/CQTEngine.swift.o",
+    "swiftmodule": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/CQTEngine~partial.swiftmodule",
+    "swift-dependencies": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/CQTEngine.swiftdeps",
+    "diagnostics": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/CQTEngine.dia"
+  },
+  "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/ChromaEngine.swift": {
+    "dependencies": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/ChromaEngine.d",
+    "object": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/ChromaEngine.swift.o",
+    "swiftmodule": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/ChromaEngine~partial.swiftmodule",
+    "swift-dependencies": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/ChromaEngine.swiftdeps",
+    "diagnostics": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/ChromaEngine.dia"
+  },
+  "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/DNAReportBuilder.swift": {
+    "dependencies": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/DNAReportBuilder.d",
+    "object": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/DNAReportBuilder.swift.o",
+    "swiftmodule": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/DNAReportBuilder~partial.swiftmodule",
+    "swift-dependencies": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/DNAReportBuilder.swiftdeps",
+    "diagnostics": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/DNAReportBuilder.dia"
+  },
+  "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/FilterbankEngine.swift": {
+    "dependencies": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/FilterbankEngine.d",
+    "object": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/FilterbankEngine.swift.o",
+    "swiftmodule": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/FilterbankEngine~partial.swiftmodule",
+    "swift-dependencies": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/FilterbankEngine.swiftdeps",
+    "diagnostics": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/FilterbankEngine.dia"
+  },
+  "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/HPSSEngine.swift": {
+    "dependencies": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/HPSSEngine.d",
+    "object": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/HPSSEngine.swift.o",
+    "swiftmodule": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/HPSSEngine~partial.swiftmodule",
+    "swift-dependencies": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/HPSSEngine.swiftdeps",
+    "diagnostics": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/HPSSEngine.dia"
+  },
+  "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/LoudnessEngine.swift": {
+    "dependencies": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/LoudnessEngine.d",
+    "object": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/LoudnessEngine.swift.o",
+    "swiftmodule": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/LoudnessEngine~partial.swiftmodule",
+    "swift-dependencies": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/LoudnessEngine.swiftdeps",
+    "diagnostics": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/LoudnessEngine.dia"
+  },
+  "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/MFCCEngine.swift": {
+    "dependencies": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/MFCCEngine.d",
+    "object": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/MFCCEngine.swift.o",
+    "swiftmodule": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/MFCCEngine~partial.swiftmodule",
+    "swift-dependencies": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/MFCCEngine.swiftdeps",
+    "diagnostics": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/MFCCEngine.dia"
+  },
+  "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/MelFilterBank.swift": {
+    "dependencies": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/MelFilterBank.d",
+    "object": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/MelFilterBank.swift.o",
+    "swiftmodule": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/MelFilterBank~partial.swiftmodule",
+    "swift-dependencies": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/MelFilterBank.swiftdeps",
+    "diagnostics": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/MelFilterBank.dia"
+  },
+  "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/MelSpectrogramEngine.swift": {
+    "dependencies": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/MelSpectrogramEngine.d",
+    "object": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/MelSpectrogramEngine.swift.o",
+    "swiftmodule": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/MelSpectrogramEngine~partial.swiftmodule",
+    "swift-dependencies": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/MelSpectrogramEngine.swiftdeps",
+    "diagnostics": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/MelSpectrogramEngine.dia"
+  },
+  "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/MusicDNAReporter.swift": {
+    "dependencies": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/MusicDNAReporter.d",
+    "object": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/MusicDNAReporter.swift.o",
+    "swiftmodule": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/MusicDNAReporter~partial.swiftmodule",
+    "swift-dependencies": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/MusicDNAReporter.swiftdeps",
+    "diagnostics": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/MusicDNAReporter.dia"
+  },
+  "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/OnsetEngine.swift": {
+    "dependencies": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/OnsetEngine.d",
+    "object": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/OnsetEngine.swift.o",
+    "swiftmodule": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/OnsetEngine~partial.swiftmodule",
+    "swift-dependencies": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/OnsetEngine.swiftdeps",
+    "diagnostics": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/OnsetEngine.dia"
+  },
   "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/RhythmEngine.swift": {
     "dependencies": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/RhythmEngine.d",
     "object": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/RhythmEngine.swift.o",
     "swiftmodule": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/RhythmEngine~partial.swiftmodule",
     "swift-dependencies": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/RhythmEngine.swiftdeps",
     "diagnostics": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/RhythmEngine.dia"
+  },
+  "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/STFTEngine.swift": {
+    "dependencies": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/STFTEngine.d",
+    "object": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/STFTEngine.swift.o",
+    "swiftmodule": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/STFTEngine~partial.swiftmodule",
+    "swift-dependencies": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/STFTEngine.swiftdeps",
+    "diagnostics": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/STFTEngine.dia"
+  },
+  "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/SpectralEngine.swift": {
+    "dependencies": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/SpectralEngine.d",
+    "object": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/SpectralEngine.swift.o",
+    "swiftmodule": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/SpectralEngine~partial.swiftmodule",
+    "swift-dependencies": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/SpectralEngine.swiftdeps",
+    "diagnostics": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/SpectralEngine.dia"
+  },
+  "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/SpectralFeatureEngine.swift": {
+    "dependencies": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/SpectralFeatureEngine.d",
+    "object": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/SpectralFeatureEngine.swift.o",
+    "swiftmodule": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/SpectralFeatureEngine~partial.swiftmodule",
+    "swift-dependencies": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/SpectralFeatureEngine.swiftdeps",
+    "diagnostics": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/SpectralFeatureEngine.dia"
+  },
+  "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/StereoEngine.swift": {
+    "dependencies": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/StereoEngine.d",
+    "object": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/StereoEngine.swift.o",
+    "swiftmodule": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/StereoEngine~partial.swiftmodule",
+    "swift-dependencies": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/StereoEngine.swiftdeps",
+    "diagnostics": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/StereoEngine.dia"
+  },
+  "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/StructureEngine.swift": {
+    "dependencies": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/StructureEngine.d",
+    "object": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/StructureEngine.swift.o",
+    "swiftmodule": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/StructureEngine~partial.swiftmodule",
+    "swift-dependencies": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/StructureEngine.swiftdeps",
+    "diagnostics": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/StructureEngine.dia"
+  },
+  "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/UtilityEngine.swift": {
+    "dependencies": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/UtilityEngine.d",
+    "object": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/UtilityEngine.swift.o",
+    "swiftmodule": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/UtilityEngine~partial.swiftmodule",
+    "swift-dependencies": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/UtilityEngine.swiftdeps",
+    "diagnostics": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/UtilityEngine.dia"
+  },
+  "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/WaveformRenderer.swift": {
+    "dependencies": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/WaveformRenderer.d",
+    "object": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/WaveformRenderer.swift.o",
+    "swiftmodule": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/WaveformRenderer~partial.swiftmodule",
+    "swift-dependencies": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/WaveformRenderer.swiftdeps",
+    "diagnostics": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/WaveformRenderer.dia"
+  },
+  "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/YINEngine.swift": {
+    "dependencies": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/YINEngine.d",
+    "object": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/YINEngine.swift.o",
+    "swiftmodule": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/YINEngine~partial.swiftmodule",
+    "swift-dependencies": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/YINEngine.swiftdeps",
+    "diagnostics": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/YINEngine.dia"
+  },
+  "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Forensic/ForensicDNAEngine.swift": {
+    "dependencies": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/ForensicDNAEngine.d",
+    "object": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/ForensicDNAEngine.swift.o",
+    "swiftmodule": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/ForensicDNAEngine~partial.swiftmodule",
+    "swift-dependencies": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/ForensicDNAEngine.swiftdeps",
+    "diagnostics": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/ForensicDNAEngine.dia"
+  },
+  "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Models/MusicDNAModels.swift": {
+    "dependencies": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/MusicDNAModels.d",
+    "object": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/MusicDNAModels.swift.o",
+    "swiftmodule": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/MusicDNAModels~partial.swiftmodule",
+    "swift-dependencies": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/MusicDNAModels.swiftdeps",
+    "diagnostics": "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/MusicDNAModels.dia"
   }
 }

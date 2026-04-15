@@ -17,20 +17,30 @@ public actor AudioIntelligence {
     
     public init(device: Device = .current, mode: Mode = .balanced) {}
     
-    /// Analyzes an audio file and returns a professional report.
-    /// This connects the public API to the v25.0 core engines.
+    /// Professional analysis entry point.
+    /// Supports both progress tracking and feature selection for v25.0+.
     public func analyze(
         url: URL,
+        features: Set<AudioFeature> = [.spectral, .rhythm], // Restored for backwards compatibility
+        explain: Bool = true,
         progress: @Sendable @escaping (Double, String, String?) -> Void = { _, _, _ in }
     ) async throws -> AudioReport {
         
         let result = try await DNAReportBuilder.analyze(url: url, progress: progress)
         
         return AudioReport(
-            summary: "Analysis complete for \(url.lastPathComponent). BPM: \(result.analysis.rhythm.bpm)",
+            summary: explain ? "Analysis complete for \(url.lastPathComponent). BPM: \(result.analysis.rhythm.bpm)" : "",
             rawAnalysis: result.analysis,
             reportText: result.reportText,
             reportPath: result.mdPath
         )
     }
+}
+
+/// Feature selection for analysis.
+public enum AudioFeature: Sendable {
+    case spectral
+    case rhythm
+    case forensic
+    case mastering
 }

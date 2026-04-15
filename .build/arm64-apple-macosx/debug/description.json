@@ -175,7 +175,6 @@
         "-emit-objc-header",
         "-emit-objc-header-path",
         "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/Atomics.build/include/Atomics-Swift.h",
-        "-color-diagnostics",
         "-swift-version",
         "5",
         "-enable-experimental-feature",
@@ -393,7 +392,6 @@
         "-emit-objc-header",
         "-emit-objc-header-path",
         "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligence.build/include/AudioIntelligence-Swift.h",
-        "-color-diagnostics",
         "-swift-version",
         "6",
         "-plugin-path",
@@ -466,7 +464,99 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/DSP/DSPHelpers.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/AudioLoader.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/CQTEngine.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/ChromaEngine.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/DNAReportBuilder.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/FilterbankEngine.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/HPSSEngine.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/LoudnessEngine.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/MFCCEngine.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/MelFilterBank.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/MelSpectrogramEngine.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/MusicDNAReporter.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/OnsetEngine.swift"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/RhythmEngine.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/STFTEngine.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/SpectralEngine.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/SpectralFeatureEngine.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/StereoEngine.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/StructureEngine.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/UtilityEngine.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/WaveformRenderer.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/YINEngine.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Forensic/ForensicDNAEngine.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Models/MusicDNAModels.swift"
         },
         {
           "kind" : "file",
@@ -482,7 +572,30 @@
       "moduleOutputPath" : "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/Modules/AudioIntelligenceCore.swiftmodule",
       "objects" : [
         "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/AudioIntelligenceCore.swift.o",
-        "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/RhythmEngine.swift.o"
+        "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/DSPHelpers.swift.o",
+        "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/AudioLoader.swift.o",
+        "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/CQTEngine.swift.o",
+        "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/ChromaEngine.swift.o",
+        "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/DNAReportBuilder.swift.o",
+        "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/FilterbankEngine.swift.o",
+        "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/HPSSEngine.swift.o",
+        "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/LoudnessEngine.swift.o",
+        "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/MFCCEngine.swift.o",
+        "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/MelFilterBank.swift.o",
+        "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/MelSpectrogramEngine.swift.o",
+        "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/MusicDNAReporter.swift.o",
+        "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/OnsetEngine.swift.o",
+        "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/RhythmEngine.swift.o",
+        "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/STFTEngine.swift.o",
+        "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/SpectralEngine.swift.o",
+        "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/SpectralFeatureEngine.swift.o",
+        "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/StereoEngine.swift.o",
+        "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/StructureEngine.swift.o",
+        "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/UtilityEngine.swift.o",
+        "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/WaveformRenderer.swift.o",
+        "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/YINEngine.swift.o",
+        "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/ForensicDNAEngine.swift.o",
+        "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/MusicDNAModels.swift.o"
       ],
       "otherArguments" : [
         "-target",
@@ -505,7 +618,6 @@
         "-emit-objc-header",
         "-emit-objc-header-path",
         "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/include/AudioIntelligenceCore-Swift.h",
-        "-color-diagnostics",
         "-swift-version",
         "6",
         "-plugin-path",
@@ -542,7 +654,99 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/DSPHelpers.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/AudioLoader.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/CQTEngine.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/ChromaEngine.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/DNAReportBuilder.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/FilterbankEngine.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/HPSSEngine.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/LoudnessEngine.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/MFCCEngine.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/MelFilterBank.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/MelSpectrogramEngine.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/MusicDNAReporter.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/OnsetEngine.swift.o"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/RhythmEngine.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/STFTEngine.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/SpectralEngine.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/SpectralFeatureEngine.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/StereoEngine.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/StructureEngine.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/UtilityEngine.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/WaveformRenderer.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/YINEngine.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/ForensicDNAEngine.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/MusicDNAModels.swift.o"
         },
         {
           "kind" : "file",
@@ -552,7 +756,30 @@
       "prepareForIndexing" : false,
       "sources" : [
         "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/AudioIntelligenceCore.swift",
-        "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/RhythmEngine.swift"
+        "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/DSP/DSPHelpers.swift",
+        "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/AudioLoader.swift",
+        "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/CQTEngine.swift",
+        "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/ChromaEngine.swift",
+        "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/DNAReportBuilder.swift",
+        "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/FilterbankEngine.swift",
+        "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/HPSSEngine.swift",
+        "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/LoudnessEngine.swift",
+        "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/MFCCEngine.swift",
+        "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/MelFilterBank.swift",
+        "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/MelSpectrogramEngine.swift",
+        "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/MusicDNAReporter.swift",
+        "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/OnsetEngine.swift",
+        "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/RhythmEngine.swift",
+        "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/STFTEngine.swift",
+        "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/SpectralEngine.swift",
+        "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/SpectralFeatureEngine.swift",
+        "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/StereoEngine.swift",
+        "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/StructureEngine.swift",
+        "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/UtilityEngine.swift",
+        "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/WaveformRenderer.swift",
+        "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/YINEngine.swift",
+        "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Forensic/ForensicDNAEngine.swift",
+        "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Models/MusicDNAModels.swift"
       ],
       "tempsPath" : "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build",
       "wholeModuleOptimization" : false
@@ -602,7 +829,6 @@
         "-emit-objc-header",
         "-emit-objc-header-path",
         "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceMetal.build/include/AudioIntelligenceMetal-Swift.h",
-        "-color-diagnostics",
         "-swift-version",
         "6",
         "-plugin-path",
@@ -705,7 +931,6 @@
         "-Xfrontend",
         "CLIExample_main",
         "-parse-as-library",
-        "-color-diagnostics",
         "-swift-version",
         "6",
         "-plugin-path",
@@ -811,7 +1036,6 @@
       "-emit-objc-header",
       "-emit-objc-header-path",
       "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/Atomics.build/include/Atomics-Swift.h",
-      "-color-diagnostics",
       "-swift-version",
       "5",
       "-enable-experimental-feature",
@@ -884,7 +1108,6 @@
       "-emit-objc-header",
       "-emit-objc-header-path",
       "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligence.build/include/AudioIntelligence-Swift.h",
-      "-color-diagnostics",
       "-swift-version",
       "6",
       "-plugin-path",
@@ -923,7 +1146,30 @@
       "audiointelligence",
       "-c",
       "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/AudioIntelligenceCore.swift",
+      "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/DSP/DSPHelpers.swift",
+      "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/AudioLoader.swift",
+      "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/CQTEngine.swift",
+      "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/ChromaEngine.swift",
+      "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/DNAReportBuilder.swift",
+      "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/FilterbankEngine.swift",
+      "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/HPSSEngine.swift",
+      "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/LoudnessEngine.swift",
+      "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/MFCCEngine.swift",
+      "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/MelFilterBank.swift",
+      "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/MelSpectrogramEngine.swift",
+      "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/MusicDNAReporter.swift",
+      "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/OnsetEngine.swift",
       "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/RhythmEngine.swift",
+      "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/STFTEngine.swift",
+      "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/SpectralEngine.swift",
+      "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/SpectralFeatureEngine.swift",
+      "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/StereoEngine.swift",
+      "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/StructureEngine.swift",
+      "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/UtilityEngine.swift",
+      "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/WaveformRenderer.swift",
+      "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/YINEngine.swift",
+      "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Forensic/ForensicDNAEngine.swift",
+      "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Models/MusicDNAModels.swift",
       "-I",
       "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/Modules",
       "-target",
@@ -946,7 +1192,6 @@
       "-emit-objc-header",
       "-emit-objc-header-path",
       "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/include/AudioIntelligenceCore-Swift.h",
-      "-color-diagnostics",
       "-swift-version",
       "6",
       "-plugin-path",
@@ -1007,7 +1252,6 @@
       "-emit-objc-header",
       "-emit-objc-header-path",
       "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceMetal.build/include/AudioIntelligenceMetal-Swift.h",
-      "-color-diagnostics",
       "-swift-version",
       "6",
       "-plugin-path",
@@ -1075,7 +1319,6 @@
       "-Xfrontend",
       "CLIExample_main",
       "-parse-as-library",
-      "-color-diagnostics",
       "-swift-version",
       "6",
       "-plugin-path",
@@ -1269,7 +1512,99 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/DSP/DSPHelpers.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/AudioLoader.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/CQTEngine.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/ChromaEngine.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/DNAReportBuilder.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/FilterbankEngine.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/HPSSEngine.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/LoudnessEngine.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/MFCCEngine.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/MelFilterBank.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/MelSpectrogramEngine.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/MusicDNAReporter.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/OnsetEngine.swift"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/RhythmEngine.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/STFTEngine.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/SpectralEngine.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/SpectralFeatureEngine.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/StereoEngine.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/StructureEngine.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/UtilityEngine.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/WaveformRenderer.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Engines/YINEngine.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Forensic/ForensicDNAEngine.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Models/MusicDNAModels.swift"
         }
       ],
       "outputFilePath" : "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/sources"
@@ -1421,7 +1756,99 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/AudioLoader.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/CQTEngine.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/ChromaEngine.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/DNAReportBuilder.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/DSPHelpers.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/FilterbankEngine.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/ForensicDNAEngine.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/HPSSEngine.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/LoudnessEngine.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/MFCCEngine.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/MelFilterBank.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/MelSpectrogramEngine.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/MusicDNAModels.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/MusicDNAReporter.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/OnsetEngine.swift.o"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/RhythmEngine.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/STFTEngine.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/SpectralEngine.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/SpectralFeatureEngine.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/StereoEngine.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/StructureEngine.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/UtilityEngine.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/WaveformRenderer.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/YINEngine.swift.o"
         },
         {
           "kind" : "file",
