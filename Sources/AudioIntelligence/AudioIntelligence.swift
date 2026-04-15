@@ -36,11 +36,3 @@ public actor AudioIntelligence {
         )
     }
 }
-
-/// Feature selection for analysis.
-public enum AudioFeature: Sendable {
-    case spectral
-    case rhythm
-    case forensic
-    case mastering
-}
