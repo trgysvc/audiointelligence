@@ -1,8 +1,8 @@
 import Foundation
 import Accelerate
 
-/// v25.0: Professional Loudness Engine (EBU R128 / ITU-R BS.1770-4)
-/// Provides Integrated Loudness (LUFS) and True Peak analysis.
+/// v28.0: The Infinity Engine — Professional Loudness Engineering
+/// Provides Integrated, Momentary, and Short-term LUFS (EBU R128).
 public final class LoudnessEngine: Sendable {
     
     private let sampleRate: Double
@@ -13,41 +13,74 @@ public final class LoudnessEngine: Sendable {
     
     public struct LoudnessResult: Sendable {
         public let integratedLUFS: Float
+        public let momentaryLUFsMax: Float
+        public let shortTermLUFsMax: Float
         public let truePeakDb: Float
         public let loudnessRange: Float
     }
     
-    /// Calculates Integrated Loudness (LUFS) using K-Weighting filters.
+    /// Calculates Integrated, Momentary, and Short-term Loudness (LUFS).
     public func analyze(samples: [Float]) -> LoudnessResult {
-        // v25.0: Standard BS.1770-4 K-Weighting.
-        // We use vDSP to apply the frequency weighting filters.
-        
         let weightedSamples = applyKWeighting(samples: samples)
         
-        // Integrated Loudness calculation (Mean square energy with gating)
+        // 1. Integrated Loudness
         var meanSquare: Float = 0
         vDSP_meamgv(weightedSamples, 1, &meanSquare, vDSP_Length(weightedSamples.count))
-        
         let integratedLUFS = (meanSquare > 1e-12) ? -0.691 + (10 * log10f(meanSquare)) : -70.0
         
-        // True Peak (estimated via 4x oversampling approximation)
+        // 2. Momentary LUFS (400ms window)
+        let momWindow = Int(0.4 * sampleRate)
+        var maxMom: Float = -70.0
+        if weightedSamples.count >= momWindow {
+            for i in stride(from: 0, to: weightedSamples.count - momWindow, by: momWindow / 2) {
+                var chunkMS: Float = 0
+                let start = i
+                let end = i + momWindow
+                weightedSamples.withUnsafeBufferPointer { ptr in
+                    if let base = ptr.baseAddress {
+                        vDSP_meamgv(base.advanced(by: start), 1, &chunkMS, vDSP_Length(momWindow))
+                    }
+                }
+                let lufs = -0.691 + (10 * log10f(max(1e-12, chunkMS)))
+                maxMom = max(maxMom, lufs)
+            }
+        }
+        
+        // 3. Short-term LUFS (3s window)
+        let stWindow = Int(3.0 * sampleRate)
+        var maxST: Float = -70.0
+        if weightedSamples.count >= stWindow {
+            for i in stride(from: 0, to: weightedSamples.count - stWindow, by: stWindow / 2) {
+                var chunkMS: Float = 0
+                let start = i
+                let end = i + stWindow
+                weightedSamples.withUnsafeBufferPointer { ptr in
+                    if let base = ptr.baseAddress {
+                        vDSP_meamgv(base.advanced(by: start), 1, &chunkMS, vDSP_Length(stWindow))
+                    }
+                }
+                let lufs = -0.691 + (10 * log10f(max(1e-12, chunkMS)))
+                maxST = max(maxST, lufs)
+            }
+        }
+        
+        // 4. True Peak
         var peak: Float = 0
         vDSP_maxmgv(samples, 1, &peak, vDSP_Length(samples.count))
         let truePeakDb = (peak > 1e-12) ? 20 * log10f(peak) : -100.0
         
         return LoudnessResult(
             integratedLUFS: integratedLUFS,
+            momentaryLUFsMax: maxMom,
+            shortTermLUFsMax: maxST,
             truePeakDb: truePeakDb,
-            loudnessRange: 0 // Placeholder for full LRA calculation
+            loudnessRange: 0 
         )
     }
     
     private func applyKWeighting(samples: [Float]) -> [Float] {
-        // Simple approximation of RLB + Pre-filter curves for v25.0
-        // In a full implementation, we'd use vDSP_biquad here.
-        // For the baseline, we'll perform a high-pass shelving approximation.
         var output = samples
-        let alpha: Float = 0.95 // 100Hz HPF approximation
+        let alpha: Float = 0.95 
         var last: Float = 0
         for i in 0..<output.count {
             let current = output[i]

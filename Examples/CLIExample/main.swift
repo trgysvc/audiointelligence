@@ -21,13 +21,10 @@ struct CLIExample {
             print("-------------------------")
             print("Summary: \(report.summary)")
             
-            if let bpm = report.rhythm?.bpm {
-                print("BPM: \(bpm)")
-            }
-            
-            if let forensic = report.forensic {
-                print("Encoder: \(forensic.encoderName)")
-            }
+            // v28.0 Infinity Access
+            print("BPM: \(report.rawAnalysis.rhythm.bpm)")
+            print("Encoder: \(report.rawAnalysis.forensic.encoder ?? "Unknown")")
+            print("Loudness: \(report.rawAnalysis.mastering.integratedLUFS) LUFS")
             print("-------------------------")
             
         } catch {
