@@ -52,6 +52,11 @@ public final class DNAReportBuilder: @unchecked Sendable {
         let stereoEngine = StereoEngine()
         let stereo = stereoEngine.analyze(left: buffer.samples, right: buffer.samples)
 
+        let yinEngine = YINEngine(sampleRate: buffer.sampleRate)
+        let pitchResult = yinEngine.analyze(samples: buffer.samples)
+
+        let sContrast = SpectralFeatureEngine.spectralContrast(from: stft)
+
         progress(93, "Raporlar yazılıyor...", nil)
 
         let home = FileManager.default.homeDirectoryForCurrentUser
@@ -77,6 +82,14 @@ public final class DNAReportBuilder: @unchecked Sendable {
                 keySignature: chromaResult.meanChroma,
                 tendency: chromaResult.isMinor ? "Minör Eğilimli" : "Majör Eğilimli"
             ),
+            pitch: PitchMetrics(
+                meanF0: pitchResult.meanF0,
+                medianF0: pitchResult.medianF0,
+                minF0: (pitchResult.f0Series.compactMap { $0.isNaN ? nil : $0 }).min() ?? 0,
+                maxF0: (pitchResult.f0Series.compactMap { $0.isNaN ? nil : $0 }).max() ?? 0,
+                voicedRatio: Float(pitchResult.voicedFrames.count) / Float(max(1, pitchResult.f0Series.count)),
+                stability: 1.0 - (vDSP.standardDeviation(pitchResult.f0Series.compactMap { $0.isNaN ? nil : $0 }) / (pitchResult.meanF0 > 0 ? pitchResult.meanF0 : 1.0))
+            ),
             spectral: AdvancedSpectralMetrics(
                 centroid: spectral.centroidHz,
                 rolloff: spectral.rolloffHz,
@@ -98,7 +111,10 @@ public final class DNAReportBuilder: @unchecked Sendable {
             ),
             timbre: TimbreMetrics(
                 mfcc: mfccResult.mfcc,
-                spectralContrast: [0, 0, 0, 0, 0, 0, 0]
+                spectralContrast: sContrast.map { bandFrames in
+                    let valid = bandFrames.compactMap { $0.isNaN ? nil : $0 }
+                    return valid.isEmpty ? 0 : valid.reduce(0, +) / Float(valid.count)
+                }
             ),
             mastering: MasteringMetrics(
                 integratedLUFS: loudness.integratedLUFS,
