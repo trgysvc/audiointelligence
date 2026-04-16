@@ -39,10 +39,8 @@ public enum MusicDNAReporter {
         let phaseStatus: String = pCorr < 0.7 ? "⚠️ NARROW STEREO" : "✅ WIDE & COMPATIBLE"
         lines.append("| **Phase Correlation** | \(phaseVal) | \(phaseStatus) |")
         
-        let mCompOpt: Float? = analysis.mastering.monoCompatibility
-        let mComp: Double = Double(mCompOpt ?? 0.0)
-        let monoPct: String = (mComp * 100.0).formatted(.number.precision(.fractionLength(1)))
-        lines.append("| **Mono Compatibility** | \(monoPct)% | Summed Integrity |")
+        let mComp: String = analysis.mastering.monoCompatibility
+        lines.append("| **Mono Compatibility** | \(mComp) | Summed Integrity |")
         
         let bLRFloat: Float = analysis.mastering.balanceLR
         let bLR: Double = Double(bLRFloat)

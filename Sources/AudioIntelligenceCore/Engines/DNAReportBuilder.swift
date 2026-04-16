@@ -1,4 +1,5 @@
 import Foundation
+import Accelerate
 
 public final class DNAReportBuilder: @unchecked Sendable {
 
@@ -88,7 +89,14 @@ public final class DNAReportBuilder: @unchecked Sendable {
                 minF0: (pitchResult.f0Series.compactMap { $0.isNaN ? nil : $0 }).min() ?? 0,
                 maxF0: (pitchResult.f0Series.compactMap { $0.isNaN ? nil : $0 }).max() ?? 0,
                 voicedRatio: Float(pitchResult.voicedFrames.count) / Float(max(1, pitchResult.f0Series.count)),
-                stability: 1.0 - (vDSP.standardDeviation(pitchResult.f0Series.compactMap { $0.isNaN ? nil : $0 }) / (pitchResult.meanF0 > 0 ? pitchResult.meanF0 : 1.0))
+                stability: {
+                    let values = pitchResult.f0Series.compactMap { $0.isNaN ? nil : $0 }
+                    guard !values.isEmpty else { return 1.0 }
+                    let mean = values.reduce(0, +) / Float(values.count)
+                    let variance = values.reduce(0) { $0 + pow($1 - mean, 2) } / Float(values.count)
+                    let stdDev = sqrt(variance)
+                    return 1.0 - (stdDev / (pitchResult.meanF0 > 0 ? pitchResult.meanF0 : 1.0))
+                }()
             ),
             spectral: AdvancedSpectralMetrics(
                 centroid: spectral.centroidHz,
@@ -145,7 +153,7 @@ public final class DNAReportBuilder: @unchecked Sendable {
         )
 
         let reportText = MusicDNAReporter.generateReport(analysis: analysis)
-        try reportText.write(toFile: mdPath, atomically: true, encoding: .utf8)
+        try reportText.write(toFile: mdPath, atomically: true, encoding: String.Encoding.utf8)
 
         progress(100, "Analiz tamamlandı!", nil)
 
