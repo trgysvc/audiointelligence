@@ -1,3 +1,0 @@
-module AudioIntelligenceCore {
-    header "/Users/trgysvc/Developer/audiointelligence/.build/arm64-apple-macosx/debug/AudioIntelligenceCore.build/include/AudioIntelligenceCore-Swift.h"
-}

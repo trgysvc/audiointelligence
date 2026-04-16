@@ -1,3 +1,0 @@
-module Atomics {
-    header "/Users/trgysvc/Developer/audiointelligence/.build/index-build/arm64-apple-macosx/debug/Atomics.build/include/Atomics-Swift.h"
-}
