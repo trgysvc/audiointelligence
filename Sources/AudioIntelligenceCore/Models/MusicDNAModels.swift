@@ -10,6 +10,7 @@ public struct MusicDNAAnalysis: Codable, Sendable, Identifiable {
     // Core MIR Metrics
     public let rhythm: RhythmMetrics
     public let tonality: TonalMetrics
+    public let pitch: PitchMetrics
     public let spectral: AdvancedSpectralMetrics
     public let hpss: HPSSMetrics
     public let timbre: TimbreMetrics
@@ -27,23 +28,25 @@ public struct MusicDNAAnalysis: Codable, Sendable, Identifiable {
     public var reportPath: String?
     
     public init(id: UUID = UUID(), 
-                timestamp: Date = Date(), 
-                fileName: String,
-                rhythm: RhythmMetrics,
-                tonality: TonalMetrics,
-                spectral: AdvancedSpectralMetrics,
-                hpss: HPSSMetrics,
-                timbre: TimbreMetrics,
-                mastering: MasteringMetrics,
-                forensic: ForensicMetrics,
-                waveformPeaks: [Float],
-                chromaProfile: [Float],
-                segments: [MusicSegment]) {
+                 timestamp: Date = Date(), 
+                 fileName: String,
+                 rhythm: RhythmMetrics,
+                 tonality: TonalMetrics,
+                 pitch: PitchMetrics,
+                 spectral: AdvancedSpectralMetrics,
+                 hpss: HPSSMetrics,
+                 timbre: TimbreMetrics,
+                 mastering: MasteringMetrics,
+                 forensic: ForensicMetrics,
+                 waveformPeaks: [Float],
+                 chromaProfile: [Float],
+                 segments: [MusicSegment]) {
         self.id = id
         self.timestamp = timestamp
         self.fileName = fileName
         self.rhythm = rhythm
         self.tonality = tonality
+        self.pitch = pitch
         self.spectral = spectral
         self.hpss = hpss
         self.timbre = timbre
@@ -68,6 +71,15 @@ public struct TonalMetrics: Codable, Sendable {
     public let strength: Float
     public let keySignature: [Float] // 12 semitone key weights
     public let tendency: String
+}
+
+public struct PitchMetrics: Codable, Sendable {
+    public let meanF0: Float
+    public let medianF0: Float
+    public let minF0: Float
+    public let maxF0: Float
+    public let voicedRatio: Float // 0.0 to 1.0
+    public let stability: Float   // Consistency of pitch
 }
 
 public struct AdvancedSpectralMetrics: Codable, Sendable {

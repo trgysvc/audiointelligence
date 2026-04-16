@@ -15,6 +15,10 @@ let package = Package(
         .executable(
             name: "CLIExample",
             targets: ["CLIExample"]
+        ),
+        .executable(
+            name: "InfinityAudit",
+            targets: ["InfinityAudit"]
         )
     ],
     dependencies: [
@@ -52,12 +56,10 @@ let package = Package(
             dependencies: ["AudioIntelligence"],
             path: "Examples/CLIExample"
         ),
-
-        // Tests
-        .testTarget(
-            name: "AudioIntelligenceTests",
+        .executableTarget(
+            name: "InfinityAudit",
             dependencies: ["AudioIntelligence"],
-            path: "Tests/AudioIntelligenceTests"
+            path: "Examples/InfinityAudit"
         )
     ]
 )

@@ -109,7 +109,7 @@ public final class AudioLoader: @unchecked Sendable {
             return inputBuffer
         }
 
-        guard status == .haveData || status == .endOfStream else {
+        guard status == .haveData || status == .endOfStream || status == .inputRanDry else {
             throw AudioLoadError.conversionFailed
         }
 

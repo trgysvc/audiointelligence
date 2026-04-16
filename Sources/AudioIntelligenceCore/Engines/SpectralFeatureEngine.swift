@@ -100,4 +100,53 @@ public enum SpectralFeatureEngine {
         
         return flatness
     }
+    
+    // MARK: - Spectral Contrast
+    
+    /// Librosa: feature.spectral_contrast()
+    /// Computes the intensity difference between peaks and valleys in spectral bands.
+    public static func spectralContrast(
+        from stft: STFTMatrix, 
+        nBands: Int = 6, 
+        fMin: Float = 200.0
+    ) -> [[Float]] {
+        let nFreqs = stft.nFreqs
+        let nFrames = stft.nFrames
+        let freqs = stft.frequencies()
+        
+        // Octopus-style bands (logarithmic separation)
+        var bandEdges = [Int](repeating: 0, count: nBands + 1)
+        for i in 0...nBands {
+            let f = fMin * powf(2.0, Float(i))
+            var idx = 0
+            for (j, freq) in freqs.enumerated() {
+                if freq >= f { idx = j; break }
+            }
+            bandEdges[i] = idx
+        }
+        bandEdges[nBands] = nFreqs - 1
+        
+        var contrast = [[Float]](repeating: [Float](repeating: 0, count: nFrames), count: nBands + 1)
+        
+        for t in 0..<nFrames {
+            for b in 0..<nBands {
+                let start = bandEdges[b]
+                let end = bandEdges[b+1]
+                guard end > start else { continue }
+                
+                var bandMags: [Float] = []
+                for f in start...end {
+                    bandMags.append(stft.magnitude[f * nFrames + t])
+                }
+                
+                let sorted = bandMags.sorted()
+                let valley = sorted[Int(Float(sorted.count) * 0.1)] // 10th percentile
+                let peak = sorted[Int(Float(sorted.count) * 0.9)]   // 90th percentile
+                
+                contrast[b][t] = log10f(max(1e-10, peak) / max(1e-10, valley))
+            }
+        }
+        
+        return contrast
+    }
 }

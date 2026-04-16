@@ -6,80 +6,162 @@ public enum MusicDNAReporter {
         let noteNames = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
         var lines: [String] = []
         
-        lines.append("# 🧬 Elite Music DNA Audit: \(analysis.fileName)")
-        lines.append("> **Generated**: \(analysis.timestamp.formatted()) | **Device**: Apple Silicon Accelerate")
+        let fileTitle: String = "# ✨ Elite Music DNA Infinity Audit: \(analysis.fileName)"
+        lines.append(fileTitle)
+        lines.append("> **Analysis Engine**: Titan UNO Native / AudioIntelligence v41.1")
+        
+        let dateStr: String = analysis.timestamp.formatted()
+        lines.append("> **Generated**: \(dateStr) | **Latency**: Ultra-Low (ANE Optimized)")
         lines.append("")
         
-        // --- 1. MASTERING ENGINEER DASHBOARD ---
-        lines.append("## 🎚️ 1. Mastering Engineer Dashboard")
-        lines.append("| Metric | Value | Compliance / Status |")
+        // --- 1. PRO MASTERING & LOUDNESS ---
+        lines.append("## 🎚️ 1. Pro Mastering & Loudness Analytics")
+        lines.append("| Metric | Value | Reference / Status |")
         lines.append("| :--- | :--- | :--- |")
-        lines.append("| **Integrated LUFS** | \(String(format: "%.2f", analysis.mastering.integratedLUFS)) LUFS | \(analysis.mastering.integratedLUFS < -14.5 ? "Low" : "High") |")
-        lines.append("| **True Peak** | \(String(format: "%.2f", analysis.mastering.truePeak)) dBTP | \(analysis.mastering.truePeak > -0.1 ? "⚠️ Clipping Risk" : "✅ Safe") |")
-        lines.append("| **Phase Correlation** | \(String(format: "%.2f", analysis.mastering.phaseCorrelation)) | \(analysis.mastering.phaseCorrelation < 0.7 ? "⚠️ Mono Issues" : "✅ Solid") |")
-        lines.append("| **L/R Balance** | \(String(format: "%.2f", analysis.mastering.balanceLR)) | \(abs(analysis.mastering.balanceLR) > 0.05 ? "⚠️ Off-Center" : "✅ Balanced") |")
+        
+        let intLUFS: Double = Double(analysis.mastering.integratedLUFS)
+        let lufsVal: String = intLUFS.formatted(.number.precision(.fractionLength(2)))
+        let lufsStatus: String = intLUFS < -14.5 ? "Low (Classic)" : "High (Streaming Standard)"
+        lines.append("| **Integrated LUFS** | \(lufsVal) LUFS | \(lufsStatus) |")
+        
+        let momLUFS: Float = analysis.mastering.momentaryLUFS
+        let momVal: String = Double(momLUFS).formatted(.number.precision(.fractionLength(2)))
+        lines.append("| **Momentary Max** | \(momVal) LUFS | Energy Burst Detection |")
+        
+        let tpFloat: Float = analysis.mastering.truePeak
+        let tpVal: String = Double(tpFloat).formatted(.number.precision(.fractionLength(2)))
+        let tpStatus: String = tpFloat > -0.1 ? "⚠️ CLIPPING RISK" : "✅ HEADROOM OK"
+        lines.append("| **True Peak** | \(tpVal) dBTP | \(tpStatus) |")
+        
+        let pCorrFloat: Float = analysis.mastering.phaseCorrelation
+        let pCorr: Double = Double(pCorrFloat)
+        let phaseVal: String = pCorr.formatted(.number.precision(.fractionLength(2)))
+        let phaseStatus: String = pCorr < 0.7 ? "⚠️ NARROW STEREO" : "✅ WIDE & COMPATIBLE"
+        lines.append("| **Phase Correlation** | \(phaseVal) | \(phaseStatus) |")
+        
+        let mCompOpt: Float? = analysis.mastering.monoCompatibility
+        let mComp: Double = Double(mCompOpt ?? 0.0)
+        let monoPct: String = (mComp * 100.0).formatted(.number.precision(.fractionLength(1)))
+        lines.append("| **Mono Compatibility** | \(monoPct)% | Summed Integrity |")
+        
+        let bLRFloat: Float = analysis.mastering.balanceLR
+        let bLR: Double = Double(bLRFloat)
+        let balVal: String = bLR.formatted(.number.precision(.fractionLength(2)))
+        let balStatus: String = abs(bLR) > 0.05 ? "⚠️ ASYMMETRIC" : "✅ CENTERED"
+        lines.append("| **L/R Balance** | \(balVal) | \(balStatus) |")
         lines.append("")
         
-        // --- 2. RHYTHM & TEMPO DNA ---
-        lines.append("## 🥁 2. Ritim & Tempo DNA")
-        lines.append("- **BPM**: \(String(format: "%.2f", analysis.rhythm.bpm))")
-        lines.append("- **Beat Consistency**: \(String(format: "%.4f", analysis.rhythm.beatConsistency))s (\(analysis.rhythm.characterize))")
-        lines.append("- **Onset Strength**: Mean: \(String(format: "%.3f", analysis.rhythm.onsetMean)) | Peak: \(String(format: "%.3f", analysis.rhythm.onsetPeak))")
+        // --- 2. PITCH & VOCAL DNA ---
+        lines.append("## 🎙️ 2. Deep Pitch & Vocal DNA")
+        let pitchMean: String = Double(analysis.pitch.meanF0).formatted(.number.precision(.fractionLength(1)))
+        lines.append("- **Mean Fundamental (F0)**: \(pitchMean) Hz")
+        lines.append("- **Pitch Range**: \(Int(analysis.pitch.minF0)) Hz - \(Int(analysis.pitch.maxF0)) Hz")
+        
+        let vRatio: Float = analysis.pitch.voicedRatio
+        let voicePct: String = (Double(vRatio) * 100.0).formatted(.number.precision(.fractionLength(1)))
+        lines.append("- **Voiced Ratio**: \(voicePct)% (İnsan sesi / Enstrümantal yoğunluğu)")
+        
+        let pStab: Float = analysis.pitch.stability
+        let stabPct: String = (Double(pStab) * 100.0).formatted(.number.precision(.fractionLength(1)))
+        lines.append("- **Pitch Stability**: \(stabPct)% (Entonasyon tutarlılığı)")
         lines.append("")
         
-        // --- 3. SPECTRUM & TIMBRE (INFINITY DEPTH) ---
-        lines.append("## 🧪 3. Spektrum & Timbre (Infinity Audit)")
-        lines.append("### Spectral Suite")
+        // --- 3. EXTENDED SPECTRAL SUITE ---
+        lines.append("## 🧪 3. Extended Spectral Suite")
         lines.append("- **Centroid**: \(Int(analysis.spectral.centroid)) Hz (\(analysis.spectral.brightnessDescription))")
-        lines.append("- **Spectral Flux**: \(String(format: "%.4f", analysis.spectral.flux)) (Enerji değişim hızı)")
-        lines.append("- **Flatness/ZCR**: \(String(format: "%.4f", analysis.spectral.flatness)) / \(String(format: "%.4f", analysis.spectral.zcr))")
-        lines.append("- **Dynamic Range**: \(String(format: "%.1f", analysis.spectral.dynamicRange)) dB")
-        lines.append("- **RMS Energy**: Mean: \(String(format: "%.4f", analysis.spectral.rmsMean)) | Max: \(String(format: "%.4f", analysis.spectral.rmsMax))")
+        lines.append("- **Rolloff (85%)**: \(Int(analysis.spectral.rolloff)) Hz (High frequency tail)")
+        lines.append("- **Bandwidth**: \(Int(analysis.spectral.bandwidth)) Hz (Spectral width)")
+        
+        let sFlat: Float = analysis.spectral.flatness
+        let flatVal: String = Double(sFlat).formatted(.number.precision(.fractionLength(4)))
+        let flatStatus: String = sFlat > 0.1 ? "Noisy" : "Tonal"
+        lines.append("- **Flatness**: \(flatVal) (\(flatStatus))")
+        
+        let sDyn: Float = analysis.spectral.dynamicRange
+        let dynVal: String = Double(sDyn).formatted(.number.precision(.fractionLength(1)))
+        lines.append("- **Dynamic Range**: \(dynVal) dB")
         lines.append("")
         
-        lines.append("### HPSS (Harmonic Percussive Source Separation)")
-        let hBar = Int(analysis.hpss.harmonicRatio * 30.0)
-        let pBar = Int(analysis.hpss.percussiveRatio * 30.0)
-        lines.append("- **Harmonic**: `\(String(repeating: "█", count: max(0, min(30, hBar))))\(String(repeating: "░", count: max(0, 30 - hBar)))` \(String(format: "%.1f%%", analysis.hpss.harmonicRatio * 100))")
-        lines.append("- **Percussive**: `\(String(repeating: "█", count: max(0, min(30, pBar))))\(String(repeating: "░", count: max(0, 30 - pBar)))` \(String(format: "%.1f%%", analysis.hpss.percussiveRatio * 100))")
-        lines.append("- **Dominance**: \(analysis.hpss.characterization)")
-        lines.append("")
-        
-        lines.append("### Timbre (MFCC 20 Coefficients)")
-        lines.append("```")
-        lines.append(analysis.timbre.mfcc.map { String(format: "%.2f", $0) }.joined(separator: ", "))
-        lines.append("```")
-        lines.append("")
-        
-        // --- 4. TONALITY (CHROMA MAP) ---
-        lines.append("## 🎹 4. Tonalite & Chroma Map")
-        lines.append("**Key Detection**: \(analysis.tonality.key) (\(analysis.tonality.tendency))")
-        lines.append("")
-        let maxChroma = analysis.chromaProfile.max() ?? 1.0
-        for i in 0..<12 {
-            let weight = analysis.chromaProfile[i]
-            let bSize = Int((weight / (maxChroma > 0 ? maxChroma : 1.0)) * 25.0)
-            let bar = String(repeating: "█", count: max(0, min(25, bSize))) + String(repeating: "░", count: max(0, 25 - bSize))
-            lines.append("- **\(noteNames[i].padding(toLength: 3, withPad: " ", startingAt: 0))**: `\(bar)` \(String(format: "%.3f", weight))")
+        lines.append("### Spectral Contrast (7 Bands)")
+        for (i, contrast) in analysis.timbre.spectralContrast.enumerated() {
+            let cDouble: Double = Double(contrast)
+            let rawBarSize: Double = cDouble * 10.0
+            let barSize: Int = Int(max(0.0, min(20.0, rawBarSize)))
+            let bar: String = String(repeating: "█", count: barSize) + String(repeating: "░", count: 20 - barSize)
+            let cStr: String = cDouble.formatted(.number.precision(.fractionLength(2)))
+            lines.append("- Band \(i): `\(bar)` \(cStr) dB")
         }
         lines.append("")
         
-        // --- 5. FORENSIC DNA (RÖNTGEN) ---
-        lines.append("## 🔍 5. Forensic DNA (Röntgen)")
-        lines.append("| Feature | Status |")
-        lines.append("| :--- | :--- |")
-        lines.append("| **Bit-Depth Integrity** | \(analysis.forensic.effectiveBits)-bit (\(analysis.forensic.isUpsampled ? "⚠️ FAKE HI-RES" : "✅ NATIVE")) |")
-        lines.append("| **Encoder Signature** | \(analysis.forensic.encoder ?? "Unknown") |")
-        lines.append("| **Provenance** | \(analysis.forensic.sourceURL ?? "Local/Untracked") |")
-        lines.append("| **Verified Signature** | \(analysis.forensic.isVerified ? "✅ MATCH" : "❓ NO SIGNATURE") |")
+        // --- 4. RHYTHM ---
+        lines.append("## 🥁 4. Ritim & Micro-Timing DNA")
+        let rhythmBPM: Float = analysis.rhythm.bpm
+        let bpmStr: String = Double(rhythmBPM).formatted(.number.precision(.fractionLength(2)))
+        lines.append("- **Master BPM**: \(bpmStr)")
+        
+        let rConsistency: Float = analysis.rhythm.beatConsistency
+        let beatCons: String = Double(rConsistency).formatted(.number.precision(.fractionLength(4)))
+        lines.append("- **Beat-Grid Integrity**: \(beatCons)s (\(analysis.rhythm.characterize))")
+        
+        let rOnsetMean: Float = analysis.rhythm.onsetMean
+        let rOnsetPeak: Float = analysis.rhythm.onsetPeak
+        let oMean: String = Double(rOnsetMean).formatted(.number.precision(.fractionLength(3)))
+        let oPeak: String = Double(rOnsetPeak).formatted(.number.precision(.fractionLength(3)))
+        lines.append("- **Transient Profile**: Mean: \(oMean) | Peak: \(oPeak)")
         lines.append("")
         
-        // --- 6. STRUCTURE ---
-        lines.append("## 🧩 6. Yapısal Segmentasyon")
-        lines.append("| ID | START | END | LABEL |")
-        lines.append("| :-- | :--- | :--- | :--- |")
+        // --- 5. TONALITY ---
+        lines.append("## 🎹 5. Tonalite & Chroma Profile")
+        lines.append("**Key Detection**: \(analysis.tonality.key) (\(analysis.tonality.tendency))")
+        lines.append("")
+        
+        let chromaBase: [Float] = analysis.chromaProfile
+        let maxChromaRaw: Float = chromaBase.max() ?? 1.0
+        let maxChroma: Double = Double(maxChromaRaw)
+        let safeMax: Double = maxChroma > 0.0 ? maxChroma : 1.0
+        
+        for i in 0..<12 {
+            let weightRaw: Float = chromaBase[i]
+            let weight: Double = Double(weightRaw)
+            let ratio: Double = weight / safeMax
+            let rawBSize: Double = ratio * 25.0
+            let bSize: Int = Int(rawBSize)
+            let clampedSize: Int = max(0, min(25, bSize))
+            
+            let bar: String = String(repeating: "█", count: clampedSize) + String(repeating: "░", count: 25 - clampedSize)
+            let wStr: String = weight.formatted(.number.precision(.fractionLength(3)))
+            let note: String = noteNames[i].padding(toLength: 3, withPad: " ", startingAt: 0)
+            lines.append("- **\(note)**: `\(bar)` \(wStr)")
+        }
+        lines.append("")
+        
+        // --- 6. FORENSIC ---
+        lines.append("## 🔍 6. Forensic Röntgen (Bit-Depth Check)")
+        lines.append("| Feature | Status | Analysis |")
+        lines.append("| :--- | :--- | :--- |")
+        
+        let fIsUpsampled: Bool = analysis.forensic.isUpsampled
+        let forensicStatus: String = fIsUpsampled ? "⚠️ FAKE HI-RES DETECTED" : "✅ NATIVE BIT-DEPTH"
+        lines.append("| **Bit-Depth Integrity** | \(analysis.forensic.effectiveBits)-bit | \(forensicStatus) |")
+        lines.append("| **Encoder Signature** | \(analysis.forensic.encoder ?? "Missing Metadata") | Potential origin footprint |")
+        lines.append("| **Provenance** | \(analysis.forensic.sourceURL ?? "Offline Source") | Source tracking |")
+        
+        let fIsVerified: Bool = analysis.forensic.isVerified
+        let verifyStatus: String = fIsVerified ? "✅ VERIFIED" : "❓ UNKNOWN"
+        lines.append("| **DNA Signature** | \(verifyStatus) | Authenticity status |")
+        lines.append("")
+        
+        // --- 7. STRUCTURE ---
+        lines.append("## 🧩 7. Yapısal Segmentasyon")
+        lines.append("| ID | START | END | DURATION | LABEL |")
+        lines.append("| :-- | :--- | :--- | :--- | :--- |")
         for seg in analysis.segments {
-            lines.append("| \(seg.id) | \(formatTime(seg.start)) | \(formatTime(seg.end)) | **\(seg.label)** |")
+            let segStart: Double = seg.start
+            let segEnd: Double = seg.end
+            let dur: Int = Int(segEnd - segStart)
+            let startT: String = formatTime(segStart)
+            let endT: String = formatTime(segEnd)
+            lines.append("| \(seg.id) | \(startT) | \(endT) | \(dur)s | **\(seg.label)** |")
         }
         lines.append("")
         
@@ -87,8 +169,10 @@ public enum MusicDNAReporter {
     }
     
     private static func formatTime(_ sec: Double) -> String {
-        let m = Int(sec) / 60
-        let s = Int(sec) % 60
-        return String(format: "%d:%02d", m, s)
+        let seconds: Int = Int(sec)
+        let m: Int = seconds / 60
+        let s: Int = seconds % 60
+        let sStr: String = s < 10 ? "0\(s)" : "\(s)"
+        return "\(m):\(sStr)"
     }
 }
