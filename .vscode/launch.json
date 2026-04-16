@@ -19,6 +19,26 @@
             "target": "CLIExample",
             "configuration": "release",
             "preLaunchTask": "swift: Build Release CLIExample"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:audiointelligence}",
+            "name": "Debug InfinityAudit",
+            "target": "InfinityAudit",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug InfinityAudit"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:audiointelligence}",
+            "name": "Release InfinityAudit",
+            "target": "InfinityAudit",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release InfinityAudit"
         }
     ]
 }
