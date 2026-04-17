@@ -66,24 +66,34 @@ public final class CQTEngine: @unchecked Sendable {
         for i in 0..<binsPerOctave {
             let freq = centerFreq * powf(2.0, Float(i) / Float(binsPerOctave))
             let kernelLen = Int(Float(sampleRate) * Q / freq)
-            let kernel = createComplexKernel(len: kernelLen, freq: freq)
+            let (kernelRe, kernelIm) = createComplexKernel(len: kernelLen, freq: freq)
+            
+            var respRe = [Float](repeating: 0, count: samples.count)
+            var respIm = [Float](repeating: 0, count: samples.count)
+            
+            // Perform complex convolution via vDSP
+            vDSP_conv(samples, 1, kernelRe, 1, &respRe, 1, vDSP_Length(samples.count), vDSP_Length(kernelLen))
+            vDSP_conv(samples, 1, kernelIm, 1, &respIm, 1, vDSP_Length(samples.count), vDSP_Length(kernelLen))
             
             var magnitude = [Float](repeating: 0, count: samples.count)
-            // Perform complex convolution via vDSP
-            // For a "Perfect Tool", we use sliding window RMS of the filter response
-            vDSP_conv(samples, 1, kernel, 1, &magnitude, 1, vDSP_Length(samples.count), vDSP_Length(kernelLen))
+            var respComplex = DSPSplitComplex(realp: &respRe, imagp: &respIm)
+            vDSP_zvabs(&respComplex, 1, &magnitude, 1, vDSP_Length(samples.count))
+            
             bins.append(magnitude)
         }
         return bins
     }
     
-    private func createComplexKernel(len: Int, freq: Float) -> [Float] {
-        var kernel = [Float](repeating: 0, count: len)
+    private func createComplexKernel(len: Int, freq: Float) -> (real: [Float], imag: [Float]) {
+        var kernelRe = [Float](repeating: 0, count: len)
+        var kernelIm = [Float](repeating: 0, count: len)
         for i in 0..<len {
             let window = 0.5 * (1.0 - cosf(2.0 * Float.pi * Float(i) / Float(len - 1)))
-            kernel[i] = window * cosf(2.0 * Float.pi * freq * Float(i) / Float(sampleRate))
+            let angle = 2.0 * Float.pi * freq * Float(i) / Float(sampleRate)
+            kernelRe[i] = window * cosf(angle)
+            kernelIm[i] = window * -sinf(angle)
         }
-        return kernel
+        return (kernelRe, kernelIm)
     }
     
     private func decimateByTwo(_ samples: [Float]) -> [Float] {

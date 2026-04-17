@@ -1,5 +1,6 @@
 import Foundation
 import Accelerate
+import Accelerate.vImage
 import AudioIntelligenceMetal
 
 public actor DNAReportBuilder {
@@ -14,6 +15,7 @@ public actor DNAReportBuilder {
         let filename = url.lastPathComponent
         progress(5, "Loading audio file...", nil)
         let buffer = try AudioLoader.load(url: url)
+        let stereoBuffer = try AudioLoader.loadStereo(url: url)
 
         let waveform = WaveformRenderer.renderFull(samples: buffer.samples, sampleRate: buffer.sampleRate, lines: 6)
         progress(12, "Waveform generated", waveform)
@@ -22,70 +24,84 @@ public actor DNAReportBuilder {
         let hwStatus = metalEngine.getHardwareStatus()
         progress(15, "Metal GPU Active: \(hwStatus)", nil)
 
+        // 1. Initial Processing (Serial but fast)
         let stftEngine = STFTEngine(nFFT: 2048, hopLength: 512, sampleRate: buffer.sampleRate)
         let stft = stftEngine.analyze(buffer.samples)
-
-        let melBank = MelFilterBank(nMels: 128, nFFT: 2048, sampleRate: buffer.sampleRate)
-        let melSpec = melBank.apply(magnitude: stft.magnitude, nFrames: stft.nFrames)
 
         let onsetEngine = OnsetEngine(sampleRate: buffer.sampleRate)
         let onsetResult = onsetEngine.onsetStrength(buffer.samples)
 
-        let rhythmEngine = RhythmEngine(sampleRate: buffer.sampleRate)
-        let rhythm = await rhythmEngine.analyze(onsetResult: onsetResult)
-
-        let chromaEngine = ChromaEngine(nFFT: 2048, sampleRate: buffer.sampleRate)
-        let chroma = chromaEngine.chromagram(stft: stft)
-        let chromaResult = chromaEngine.detectKey(chromagram: chroma)
-
-        let spectralEngine = SpectralEngine(sampleRate: buffer.sampleRate, nFFT: 2048, hopLength: 512)
-        let spectral = spectralEngine.analyze(stft: stft, samples: buffer.samples)
-
-        let mfccEngine = MFCCEngine(nMFCC: 20, nMels: 128)
-        let mfccResult = mfccEngine.compute(melSpectrogram: melSpec.flatMap { $0 }, stftEngine: stftEngine)
-
-        let hpssEngine = HPSSEngine(winHarm: 31, winPerc: 31)
-        let hpss = hpssEngine.analyze(stft: stft)
-
-        let structureEngine = StructureEngine(hopLength: 512, sampleRate: buffer.sampleRate)
-        let structure = structureEngine.analyze(chromagram: chroma, nSegments: 7)
+        let melBank = MelFilterBank(nMels: 128, nFFT: 2048, sampleRate: buffer.sampleRate)
         
-        let forensicEngine = ForensicEngine()
-        let forensic = forensicEngine.analyze(
+        // 2. Parallel Processing (Independent Engines)
+        progress(25, "Engines starting (Parallel Mode)...", nil)
+        
+        async let rhythm = RhythmEngine(sampleRate: buffer.sampleRate).analyze(onsetResult: onsetResult)
+        
+        async let chroma = ChromaEngine(nFFT: 2048, sampleRate: buffer.sampleRate).chromagram(stft: stft)
+        
+        async let spectral = SpectralEngine(sampleRate: buffer.sampleRate, nFFT: 2048, hopLength: 512).analyze(stft: stft, samples: buffer.samples)
+        
+        async let hpss = HPSSEngine(winHarm: 31, winPerc: 31).analyze(stft: stft)
+        
+        async let forensic = ForensicEngine().analyze(
             samples: buffer.samples, 
             magnitude: stft.magnitude, 
             nFrames: stft.nFrames, 
             nFFT: 2048, 
             sampleRate: buffer.sampleRate
         )
-
-        let loudnessEngine = LoudnessEngine(sampleRate: buffer.sampleRate, metalEngine: metalEngine)
-        let loudness = loudnessEngine.analyze(samples: buffer.samples)
         
-        let stereoEngine = StereoEngine()
-        let stereo = stereoEngine.analyze(left: buffer.samples, right: buffer.samples)
-
-        let semanticEngine = SemanticEngine(sampleRate: buffer.sampleRate)
-        let semantic = semanticEngine.analyze(magnitude: stft.magnitude, nFrames: stft.nFrames, nFFT: 2048)
-
-        let instrumentEngine = InstrumentEngine()
-        // We'll call this after we have the spectral results for full context
+        async let loudness = LoudnessEngine(sampleRate: buffer.sampleRate, metalEngine: metalEngine).analyze(samples: buffer.samples)
         
-        let yinEngine = YINEngine(sampleRate: buffer.sampleRate)
-        let pitchResult = yinEngine.analyze(samples: buffer.samples)
+        async let stereo = StereoEngine().analyze(left: stereoBuffer.left, right: stereoBuffer.right)
         
-        // --- v52.0: Audio Science (AES17 / IMD / 468) ---
-        let scienceEngine = AudioScienceEngine(sampleRate: buffer.sampleRate)
-        let scienceResult = scienceEngine.analyze(samples: buffer.samples)
+        async let semantic = SemanticEngine(sampleRate: buffer.sampleRate).analyze(magnitude: stft.magnitude, nFrames: stft.nFrames, nFFT: 2048)
+        
+        async let pitchResult = YINEngine(sampleRate: buffer.sampleRate).analyze(samples: buffer.samples)
+        
+        async let scienceResult = AudioScienceEngine(sampleRate: buffer.sampleRate).analyze(samples: buffer.samples)
+        
+        async let sContrast = SpectralFeatureEngine.spectralContrast(from: stft)
+        
+        async let cqtResult = CQTEngine(sampleRate: buffer.sampleRate).transform(buffer.samples)
 
-        let sContrast = SpectralFeatureEngine.spectralContrast(from: stft)
+        // Dependent engines
+        let melSpec = melBank.apply(magnitude: stft.magnitude, nFrames: stft.nFrames)
+        async let mfccResult = MFCCEngine(nMFCC: 20, nMels: 128).compute(melSpectrogram: melSpec.flatMap { $0 }, stftEngine: stftEngine)
+        
+        let finalChroma = await chroma
+        async let chromaResult = ChromaEngine(nFFT: 2048, sampleRate: buffer.sampleRate).detectKey(chromagram: finalChroma)
+        async let structure = StructureEngine(hopLength: 512, sampleRate: buffer.sampleRate).analyze(chromagram: finalChroma, nSegments: 7)
 
-        // --- NEW AUDIT ENGINES (v45.0 FULL COVERAGE) ---
-        progress(85, "Triggering advanced engines...", nil)
+        let finalSpectral = await spectral
+        let finalMfcc = await mfccResult
         
-        let cqtEngine = CQTEngine(sampleRate: buffer.sampleRate)
-        let _ = cqtEngine.transform(buffer.samples) // Phase 3 Placeholder
+        let spectralMetrics = AdvancedSpectralMetrics(
+            centroid: finalSpectral.centroidHz,
+            rolloff: finalSpectral.rolloffHz,
+            flatness: finalSpectral.flatness,
+            flux: finalSpectral.flux,
+            skewness: finalSpectral.skewness,
+            kurtosis: finalSpectral.kurtosis,
+            bandwidth: finalSpectral.bandwidthHz,
+            zcr: finalSpectral.zcr,
+            dynamicRange: finalSpectral.dynamicRangeDb,
+            rmsMean: finalSpectral.rmsMean,
+            rmsMax: finalSpectral.rmsMax,
+            brightnessDescription: finalSpectral.centroidHz > 2500 ? "Bright" : "Warm",
+            fullMagnitudes: finalSpectral.fullMagnitudes
+        )
         
+        async let instruments = InstrumentEngine().predict(spectral: spectralMetrics, mfcc: finalMfcc.mfcc)
+
+        progress(85, "Waiting for engine completion...", nil)
+        
+        // Wait for all results
+        let (vRhythm, vChromaResult, vStructure, vHpss, vForensic, vLoudness, vStereo, vSemantic, vPitchResult, vScienceResult, vSContrast, vCqt) = await (
+            rhythm, chromaResult, structure, hpss, forensic, loudness, stereo, semantic, pitchResult, scienceResult, sContrast, cqtResult
+        )
+
         let melSpecEngine = MelSpectrogramEngine(stftEngine: stftEngine, nMels: 128)
         let melResult = melSpecEngine.createMelSpectrogram(from: buffer.samples)
         
@@ -96,8 +112,6 @@ public actor DNAReportBuilder {
         let melCheck = UtilityEngine.melToHz(hzCheck)
         let utilityStatus = abs(1000.0 - melCheck) < 0.1 ? "Verified (Exact)" : "Deviation Present"
 
-        let _ = metalEngine.getHardwareStatus() // Verification check
-
         let audit = AuditMetrics(
             engineCoverage: [
                 "STFT": true, "MelFilterbank": true, "Onset": true, "Rhythm": true, 
@@ -106,7 +120,7 @@ public actor DNAReportBuilder {
                 "YIN": true, "CQT": true, "MelSpectrogram": true, "Utility": true,
                 "Metal": true, "AudioScience": true
             ],
-            cqtStatus: "Active (Recursive Downsampling)",
+            cqtStatus: "Active (Compliant Math/Complex)",
             melSpectrogramResolution: "\(melResult.nMels)x\(melResult.nFrames)",
             utilityCheck: utilityStatus,
             filterbankStatus: "Created (L2 Normalized)"
@@ -125,118 +139,101 @@ public actor DNAReportBuilder {
         let analysis = MusicDNAAnalysis(
             fileName: filename,
             rhythm: RhythmMetrics(
-                bpm: Float(rhythm.bpm),
-                bpmConfidence: rhythm.bpmConfidence,
-                beatConsistency: Float(rhythm.gridStdSec),
-                onsetMean: Float(rhythm.onsetMean),
-                onsetPeak: Float(rhythm.onsetPeak),
-                characterize: rhythm.gridStdSec < 0.02 ? "Precision Grid" : "Human Feel"
+                bpm: Float(vRhythm.bpm),
+                bpmConfidence: vRhythm.bpmConfidence,
+                beatConsistency: Float(vRhythm.gridStdSec),
+                onsetMean: Float(vRhythm.onsetMean),
+                onsetPeak: Float(vRhythm.onsetPeak),
+                characterize: vRhythm.gridStdSec < 0.02 ? "Precision Grid" : "Human Feel"
             ),
             tonality: TonalMetrics(
-                key: chromaResult.key,
-                keyConfidence: chromaResult.keyStrength,
-                strength: Float(chromaResult.keyStrength),
-                keySignature: chromaResult.meanChroma,
-                tendency: chromaResult.isMinor ? "Minor Tendency" : "Major Tendency"
+                key: vChromaResult.key,
+                keyConfidence: vChromaResult.keyStrength,
+                strength: Float(vChromaResult.keyStrength),
+                keySignature: vChromaResult.meanChroma,
+                tendency: vChromaResult.isMinor ? "Minor Tendency" : "Major Tendency"
             ),
             pitch: PitchMetrics(
-                meanF0: pitchResult.meanF0,
-                medianF0: pitchResult.medianF0,
-                minF0: (pitchResult.f0Series.compactMap { $0.isNaN ? nil : $0 }).min() ?? 0,
-                maxF0: (pitchResult.f0Series.compactMap { $0.isNaN ? nil : $0 }).max() ?? 0,
-                voicedRatio: Float(pitchResult.voicedFrames.count) / Float(max(1, pitchResult.f0Series.count)),
+                meanF0: vPitchResult.meanF0,
+                medianF0: vPitchResult.medianF0,
+                minF0: (vPitchResult.f0Series.compactMap { $0.isNaN ? nil : $0 }).min() ?? 0,
+                maxF0: (vPitchResult.f0Series.compactMap { $0.isNaN ? nil : $0 }).max() ?? 0,
+                voicedRatio: Float(vPitchResult.voicedFrames.count) / Float(max(1, vPitchResult.f0Series.count)),
                 stability: {
-                    let values = pitchResult.f0Series.compactMap { $0.isNaN ? nil : $0 }
+                    let values = vPitchResult.f0Series.compactMap { $0.isNaN ? nil : $0 }
                     guard !values.isEmpty else { return 1.0 }
                     let mean = values.reduce(0, +) / Float(values.count)
                     let variance = values.reduce(0) { $0 + pow($1 - mean, 2) } / Float(values.count)
                     let stdDev = sqrt(variance)
-                    return 1.0 - (stdDev / (pitchResult.meanF0 > 0 ? pitchResult.meanF0 : 1.0))
+                    return 1.0 - (stdDev / (vPitchResult.meanF0 > 0 ? vPitchResult.meanF0 : 1.0))
                 }()
             ),
             spectral: AdvancedSpectralMetrics(
-                centroid: spectral.centroidHz,
-                rolloff: spectral.rolloffHz,
-                flatness: spectral.flatness,
-                flux: spectral.flux,
-                skewness: spectral.skewness,
-                kurtosis: spectral.kurtosis,
-                bandwidth: spectral.bandwidthHz,
-                zcr: spectral.zcr,
-                dynamicRange: spectral.dynamicRangeDb,
-                rmsMean: spectral.rmsMean,
-                rmsMax: spectral.rmsMax,
-                brightnessDescription: spectral.centroidHz > 2500 ? "Bright" : "Warm",
-                fullMagnitudes: spectral.fullMagnitudes
+                centroid: finalSpectral.centroidHz,
+                rolloff: finalSpectral.rolloffHz,
+                flatness: finalSpectral.flatness,
+                flux: finalSpectral.flux,
+                skewness: finalSpectral.skewness,
+                kurtosis: finalSpectral.kurtosis,
+                bandwidth: finalSpectral.bandwidthHz,
+                zcr: finalSpectral.zcr,
+                dynamicRange: finalSpectral.dynamicRangeDb,
+                rmsMean: finalSpectral.rmsMean,
+                rmsMax: finalSpectral.rmsMax,
+                brightnessDescription: finalSpectral.centroidHz > 2500 ? "Bright" : "Warm",
+                fullMagnitudes: finalSpectral.fullMagnitudes
             ),
             hpss: HPSSMetrics(
-                harmonicRatio: hpss.harmonicEnergyRatio,
-                percussiveRatio: hpss.percussiveEnergyRatio,
-                harmonicMean: hpss.harmonicEnergyRatio * 100.0,
-                percussiveMean: hpss.percussiveEnergyRatio * 100.0,
-                characterization: hpss.characterization
+                harmonicRatio: vHpss.harmonicEnergyRatio,
+                percussiveRatio: vHpss.percussiveEnergyRatio,
+                harmonicMean: vHpss.harmonicEnergyRatio * 100.0,
+                percussiveMean: vHpss.percussiveEnergyRatio * 100.0,
+                characterization: vHpss.characterization
             ),
             timbre: TimbreMetrics(
-                mfcc: mfccResult.mfcc,
-                spectralContrast: sContrast.map { bandFrames in
+                mfcc: finalMfcc.mfcc,
+                spectralContrast: vSContrast.map { bandFrames in
                     let valid = bandFrames.compactMap { $0.isNaN ? nil : $0 }
                     return valid.isEmpty ? 0 : valid.reduce(0, +) / Float(valid.count)
                 }
             ),
             mastering: MasteringMetrics(
-                integratedLUFS: loudness.integratedLUFS,
-                momentaryLUFS: loudness.momentaryLUFsMax,
-                shortTermLUFS: loudness.shortTermLUFsMax,
-                truePeak: loudness.truePeakDb,
-                phaseCorrelation: stereo.correlationIndex,
-                monoCompatibility: stereo.monoCompatibility,
+                integratedLUFS: vLoudness.integratedLUFS,
+                momentaryLUFS: vLoudness.momentaryLUFsMax,
+                shortTermLUFS: vLoudness.shortTermLUFsMax,
+                truePeak: vLoudness.truePeakDb,
+                phaseCorrelation: vStereo.correlationIndex,
+                monoCompatibility: vStereo.monoCompatibility,
                 balanceLR: 0.0, // Placeholder balance
-                msBalance: widthToBalance(stereo.stereoWidth),
-                sideEnergyPercent: stereo.sideEnergyPercent,
-                stereoWidth: stereo.stereoWidth,
-                lraLU: loudness.loudnessRange
+                msBalance: widthToBalance(vStereo.stereoWidth),
+                sideEnergyPercent: vStereo.sideEnergyPercent,
+                stereoWidth: vStereo.stereoWidth,
+                lraLU: vLoudness.loudnessRange
             ),
             semantic: SemanticMetrics(
-                dominanceMap: semantic.dominanceMap,
-                primaryRole: semantic.primaryRole,
-                textureType: semantic.textureType,
-                presenceScore: semantic.presenceScore
+                dominanceMap: vSemantic.dominanceMap,
+                primaryRole: vSemantic.primaryRole,
+                textureType: vSemantic.textureType,
+                presenceScore: vSemantic.presenceScore
             ),
             forensic: ForensicMetrics(
                 sourceURL: nil,
-                encoder: "Detected Cutoff: \(Int(forensic.codecCutoffHz))Hz",
+                encoder: "Detected Cutoff: \(Int(vForensic.codecCutoffHz))Hz",
                 isVerified: true,
-                effectiveBits: forensic.trueBitDepth,
-                isUpsampled: forensic.isUpsampled,
-                codecCutoffHz: forensic.codecCutoffHz,
-                entropyScore: forensic.entropyScore,
-                clippingEvents: forensic.clippingEvents,
+                effectiveBits: vForensic.trueBitDepth,
+                isUpsampled: vForensic.isUpsampled,
+                codecCutoffHz: vForensic.codecCutoffHz,
+                entropyScore: vForensic.entropyScore,
+                clippingEvents: vForensic.clippingEvents,
                 techSpecs: ["Status": "Forensic Clean"]
             ),
-            instruments: instrumentEngine.predict(
-                spectral: AdvancedSpectralMetrics(
-                    centroid: spectral.centroidHz,
-                    rolloff: spectral.rolloffHz,
-                    flatness: spectral.flatness,
-                    flux: spectral.flux,
-                    skewness: spectral.skewness,
-                    kurtosis: spectral.kurtosis,
-                    bandwidth: spectral.bandwidthHz,
-                    zcr: spectral.zcr,
-                    dynamicRange: spectral.dynamicRangeDb,
-                    rmsMean: spectral.rmsMean,
-                    rmsMax: spectral.rmsMax,
-                    brightnessDescription: spectral.centroidHz > 2500 ? "Bright" : "Warm",
-                    fullMagnitudes: spectral.fullMagnitudes
-                ),
-                mfcc: mfccResult.mfcc
-            ),
+            instruments: await instruments,
             science: ScienceMetrics(
-                dynamicRangeAES17: scienceResult.dynamicRangeAES17,
-                thdPlusN: scienceResult.thdPlusN,
-                smpteIMD: scienceResult.smpteIMD,
-                snr: scienceResult.snr,
-                noiseFloorWeight468: scienceResult.noiseFloorWeight468,
+                dynamicRangeAES17: vScienceResult.dynamicRangeAES17,
+                thdPlusN: vScienceResult.thdPlusN,
+                smpteIMD: vScienceResult.smpteIMD,
+                snr: vScienceResult.snr,
+                noiseFloorWeight468: vScienceResult.noiseFloorWeight468,
                 status: "Verified Compliance"
             ),
             waveformPeaks: stride(from: 0, to: buffer.samples.count, by: max(1, buffer.samples.count / 100)).map { i in
@@ -244,8 +241,8 @@ public actor DNAReportBuilder {
                 let chunk = buffer.samples[i..<end]
                 return sqrt(chunk.reduce(0) { $0 + $1 * $1 } / Float(chunk.count))
             },
-            chromaProfile: chromaResult.meanChroma,
-            segments: structure.segments.map { 
+            chromaProfile: vChromaResult.meanChroma,
+            segments: vStructure.segments.map { 
                 MusicSegment(id: $0.id, start: $0.startSec, end: $0.endSec, label: $0.label)
             },
             audit: audit

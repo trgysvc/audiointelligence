@@ -20,7 +20,7 @@ final class ScientificValidationTests: XCTestCase {
             samples[i] = amplitude * sinf(2.0 * Float.pi * frequency * Float(i) / Float(sampleRate))
         }
         
-        let engine = LoudnessEngine(sampleRate: sampleRate)
+        let engine = LoudnessEngine(sampleRate: sampleRate, metalEngine: nil)
         let result = engine.analyze(samples: samples)
         
         XCTAssertEqual(result.integratedLUFS, -23.0, accuracy: 0.1, "Loudness should be exactly -23.0 LUFS for a -23dBFS 1kHz sine.")
@@ -46,7 +46,7 @@ final class ScientificValidationTests: XCTestCase {
             samples[i] = ampLow
         }
         
-        let engine = LoudnessEngine(sampleRate: sampleRate)
+        let engine = LoudnessEngine(sampleRate: sampleRate, metalEngine: nil)
         let result = engine.analyze(samples: samples)
         
         XCTAssertEqual(result.integratedLUFS, -20.0, accuracy: 0.5, "Integrated loudness should match the loud section, gating out the silence.")
@@ -117,7 +117,7 @@ final class ScientificValidationTests: XCTestCase {
             samples[i + nHalf] = amp2 * sinf(2.0 * Float.pi * 1000.0 * Float(i) / Float(sampleRate))
         }
         
-        let engine = LoudnessEngine(sampleRate: sampleRate)
+        let engine = LoudnessEngine(sampleRate: sampleRate, metalEngine: nil)
         let result = engine.analyze(samples: samples)
         
         XCTAssertGreaterThan(result.loudnessRange, 9.0, "LRA should detect the 10 LU dynamic shift.")

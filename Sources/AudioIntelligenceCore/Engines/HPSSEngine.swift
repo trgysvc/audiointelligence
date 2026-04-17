@@ -131,37 +131,43 @@ public final class HPSSEngine: Sendable {
         let half = size / 2
         
         if axis == .horizontal {
-            // Horizontal (along frames for each frequency bin)
             for f in 0..<nFreqs {
                 let rowStart = f * nFrames
+                var window = [Float](repeating: 0, count: size)
                 for t in 0..<nFrames {
-                    let rangeStart = max(0, t - half)
-                    let rangeEnd = min(nFrames - 1, t + half)
+                    let rStart = max(0, t - half)
+                    let rEnd = min(nFrames - 1, t + half)
+                    let count = rEnd - rStart + 1
                     
-                    var window: [Float] = []
-                    for i in rangeStart...rangeEnd {
-                        window.append(data[rowStart + i])
+                    // Direct copy to window buffer
+                    data.withUnsafeBufferPointer { ptr in
+                        window.withUnsafeMutableBufferPointer { wPtr in
+                            memcpy(wPtr.baseAddress!, ptr.baseAddress! + (rowStart + rStart), count * MemoryLayout<Float>.size)
+                        }
                     }
                     
-                    // Simple sort for median (could be optimized with quickselect)
-                    window.sort()
-                    result[rowStart + t] = window[window.count / 2]
+                    // Sort only the active portion (Quickselect would be even faster, but sort is O(K log K))
+                    var subWindow = Array(window[0..<count])
+                    subWindow.sort()
+                    result[rowStart + t] = subWindow[count / 2]
                 }
             }
         } else {
-            // Vertical (along frequencies for each frame)
             for t in 0..<nFrames {
+                var window = [Float](repeating: 0, count: size)
                 for f in 0..<nFreqs {
-                    let rangeStart = max(0, f - half)
-                    let rangeEnd = min(nFreqs - 1, f + half)
+                    let rStart = max(0, f - half)
+                    let rEnd = min(nFreqs - 1, f + half)
+                    let count = rEnd - rStart + 1
                     
-                    var window: [Float] = []
-                    for i in rangeStart...rangeEnd {
-                        window.append(data[i * nFrames + t])
+                    // Vertical is strided, copy one by one
+                    for i in 0..<count {
+                        window[i] = data[(rStart + i) * nFrames + t]
                     }
                     
-                    window.sort()
-                    result[f * nFrames + t] = window[window.count / 2]
+                    var subWindow = Array(window[0..<count])
+                    subWindow.sort()
+                    result[f * nFrames + t] = subWindow[count / 2]
                 }
             }
         }
