@@ -26,7 +26,8 @@ public actor AudioIntelligence {
         progress: @Sendable @escaping (Double, String, String?) -> Void = { _, _, _ in }
     ) async throws -> AudioReport {
         
-        let result = try await DNAReportBuilder.analyze(url: url, progress: progress)
+        let builder = DNAReportBuilder()
+        let result = try await builder.analyze(url: url, progress: progress)
         
         return AudioReport(
             summary: explain ? "Analysis complete for \(url.lastPathComponent). BPM: \(result.analysis.rhythm.bpm)" : "",
