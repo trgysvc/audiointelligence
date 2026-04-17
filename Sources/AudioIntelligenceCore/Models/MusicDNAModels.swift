@@ -17,7 +17,10 @@ public struct MusicDNAAnalysis: Codable, Sendable, Identifiable {
     
     // Mastering & Forensic
     public let mastering: MasteringMetrics
+    public let semantic: SemanticMetrics // v55.0 Addition
     public let forensic: ForensicMetrics
+    public let instruments: InstrumentMetrics // v56.0 Addition
+    public let science: ScienceMetrics // v52.0 Addition
     
     // Visualization Data
     public let waveformPeaks: [Float]
@@ -40,7 +43,10 @@ public struct MusicDNAAnalysis: Codable, Sendable, Identifiable {
                  hpss: HPSSMetrics,
                  timbre: TimbreMetrics,
                  mastering: MasteringMetrics,
+                 semantic: SemanticMetrics,
                  forensic: ForensicMetrics,
+                 instruments: InstrumentMetrics,
+                 science: ScienceMetrics,
                  waveformPeaks: [Float],
                  chromaProfile: [Float],
                  segments: [MusicSegment],
@@ -55,7 +61,10 @@ public struct MusicDNAAnalysis: Codable, Sendable, Identifiable {
         self.hpss = hpss
         self.timbre = timbre
         self.mastering = mastering
+        self.semantic = semantic
         self.forensic = forensic
+        self.instruments = instruments
+        self.science = science
         self.waveformPeaks = waveformPeaks
         self.chromaProfile = chromaProfile
         self.segments = segments
@@ -126,6 +135,16 @@ public struct MasteringMetrics: Codable, Sendable {
     public let monoCompatibility: String
     public let balanceLR: Float // -1.0 (Left) to +1.0 (Right)
     public let msBalance: Float // v51.0 Addition
+    public let sideEnergyPercent: Float // v55.0 Addition
+    public let stereoWidth: Float       // v55.0 Addition
+    public let lraLU: Float     // v52.0 Addition: EBU Tech 3342
+}
+
+public struct SemanticMetrics: Codable, Sendable {
+    public let dominanceMap: [String: Float]
+    public let primaryRole: String
+    public let textureType: String
+    public let presenceScore: Float
 }
 
 public struct ForensicMetrics: Codable, Sendable {
@@ -134,7 +153,21 @@ public struct ForensicMetrics: Codable, Sendable {
     public let isVerified: Bool
     public let effectiveBits: Int // Forensic entropy check
     public let isUpsampled: Bool
+    public let codecCutoffHz: Float // v55.0 Addition
+    public let entropyScore: Float  // v55.0 Addition
+    public let clippingEvents: Int  // v55.0 Addition
     public let techSpecs: [String: String]
+}
+
+public struct InstrumentMetrics: Codable, Sendable {
+    public let predictions: [InstrumentPrediction]
+    public let primaryLabel: String
+}
+
+public struct InstrumentPrediction: Codable, Sendable {
+    public let label: String
+    public let confidence: Float // 0.0 - 1.0
+    public let technicalBasis: String
 }
 
 public struct MusicSegment: Codable, Sendable, Identifiable {
@@ -142,6 +175,15 @@ public struct MusicSegment: Codable, Sendable, Identifiable {
     public let start: Double
     public let end: Double
     public let label: String
+}
+
+public struct ScienceMetrics: Codable, Sendable {
+    public let dynamicRangeAES17: Float
+    public let thdPlusN: Float
+    public let smpteIMD: Float
+    public let snr: Float
+    public let noiseFloorWeight468: Float // ITU-R 468
+    public let status: String // "Verified Compliance"
 }
 public struct AuditMetrics: Codable, Sendable {
     public let engineCoverage: [String: Bool]

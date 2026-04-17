@@ -31,6 +31,7 @@ AudioIntelligence/
 │
 ├── docs/                       # Technical documentation
 │   ├── ProjectStructure.txt    # (This file)
+│   ├── Calibration.md          # Official EBU/Forensic Verification Data
 │   └── roadmap.md              # Future milestones
 │
 ├── LICENSE                     # Apache 2.0 License

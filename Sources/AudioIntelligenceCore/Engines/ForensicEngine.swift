@@ -1,0 +1,123 @@
+import Foundation
+import Accelerate
+
+/**
+ * v55.1: High-Trust Forensic Integrity Engine
+ * Detects upsampling, codec artifacts, and digital truth.
+ */
+public final class ForensicEngine: @unchecked Sendable {
+    
+    public struct ForensicResult: Sendable {
+        public let trueBitDepth: Int
+        public let codecCutoffHz: Float
+        public let clippingEvents: Int
+        public let entropyScore: Float       // 0.0 - 1.0 (Higher = more unique data)
+        public let isUpsampled: Bool
+    }
+    
+    public init() {}
+    
+    public func analyze(samples: [Float], magnitude: [Float], nFrames: Int, nFFT: Int, sampleRate: Double) -> ForensicResult {
+        let bitDepth = detectTrueBitDepth(samples: samples)
+        let cutoff = detectCodecCutoff(magnitude: magnitude, nFrames: nFrames, nFFT: nFFT, sampleRate: sampleRate)
+        let clipping = countClippingEvents(samples: samples)
+        
+        let entropy = calculateEntropy(samples: samples)
+        
+        // Logical check: If bit depth is reported as 24 but entropy is low, it's likely upsampled
+        let upsampled = (bitDepth > 16 && entropy < 0.7)
+        
+        return ForensicResult(
+            trueBitDepth: bitDepth,
+            codecCutoffHz: cutoff,
+            clippingEvents: clipping,
+            entropyScore: entropy,
+            isUpsampled: upsampled
+        )
+    }
+    
+    private func detectTrueBitDepth(samples: [Float]) -> Int {
+        // Statistical approach: Measure the minimum step size between unique values
+        let uniqueSamples = Array(Set(samples.prefix(10000))).sorted()
+        if uniqueSamples.count < 2 { return 0 }
+        
+        var minDiff: Float = 1.0
+        for i in 1..<uniqueSamples.count {
+            let diff = uniqueSamples[i] - uniqueSamples[i-1]
+            if diff > 0 && diff < minDiff {
+                minDiff = diff
+            }
+        }
+        
+        // 16-bit step is 1/32768 (~3e-5)
+        // 24-bit step is 1/8388608 (~1e-7)
+        if minDiff < 2e-7 { return 24 }
+        if minDiff < 5e-5 { return 16 }
+        return 8
+    }
+    
+    private func detectCodecCutoff(magnitude: [Float], nFrames: Int, nFFT: Int, sampleRate: Double) -> Float {
+        let nBins = nFFT / 2 + 1
+        let binFreq = Float(sampleRate) / Float(nFFT)
+        
+        // Search from top down for the first bin with significant energy
+        var cutoffBin = nBins - 1
+        let threshold: Float = 1e-6 // -60dB relative to 1.0
+        
+        for f in stride(from: nBins - 1, through: 0, by: -1) {
+            var binMax: Float = 0
+            let start = f * nFrames
+            vDSP_maxv(Array(magnitude[start..<(start + nFrames)]), 1, &binMax, vDSP_Length(nFrames))
+            
+            if binMax > threshold {
+                cutoffBin = f
+                break
+            }
+        }
+        
+        return Float(cutoffBin) * binFreq
+    }
+    
+    private func countClippingEvents(samples: [Float]) -> Int {
+        var count = 0
+        let threshold: Float = 0.9999
+        
+        var i = 0
+        while i < samples.count - 1 {
+            if abs(samples[i]) >= threshold && abs(samples[i+1]) >= threshold {
+                count += 1
+                // Skip consecutive clipped samples to count as one "event"
+                while i < samples.count && abs(samples[i]) >= threshold {
+                    i += 1
+                }
+            } else {
+                i += 1
+            }
+        }
+        return count
+    }
+    
+    private func calculateEntropy(samples: [Float]) -> Float {
+        // Simplified Shannon Entropy on sample values
+        let bucketCount = 256
+        var buckets = [Int](repeating: 0, count: bucketCount)
+        
+        for s in samples {
+            let normalized = (s + 1.0) / 2.0 // 0.0 to 1.0
+            let bucketIdx = min(bucketCount - 1, max(0, Int(normalized * Float(bucketCount))))
+            buckets[bucketIdx] += 1
+        }
+        
+        var h: Double = 0
+        let total = Double(samples.count)
+        for count in buckets {
+            if count > 0 {
+                let p = Double(count) / total
+                h -= p * log2(p)
+            }
+        }
+        
+        // Max entropy for 256 buckets is log2(256) = 8
+        return Float(h / 8.0)
+    }
+}
