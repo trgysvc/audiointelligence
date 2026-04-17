@@ -41,7 +41,7 @@ private final class ConversionState: @unchecked Sendable {
 
 /// AVAssetReader-based audio loader with Sliding Window support.
 /// Swift equivalent of Librosa's `load()` + `to_mono()` + `resample()` functions.
-public final class AudioLoader: @unchecked Sendable {
+public enum AudioLoader {
 
     public static let defaultSampleRate: Double = 22050.0
 

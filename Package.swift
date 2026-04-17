@@ -35,6 +35,9 @@ let package = Package(
             path: "Sources/AudioIntelligence",
             resources: [
                 .process("Resources")
+            ],
+            swiftSettings: [
+                .enableUpcomingFeature("StrictConcurrency")
             ]
         ),
         
@@ -44,13 +47,19 @@ let package = Package(
             dependencies: [
                 "AudioIntelligenceMetal"
             ],
-            path: "Sources/AudioIntelligenceCore"
+            path: "Sources/AudioIntelligenceCore",
+            swiftSettings: [
+                .enableUpcomingFeature("StrictConcurrency")
+            ]
         ),
 
         // Optional Metal Layer
         .target(
             name: "AudioIntelligenceMetal",
-            path: "Sources/AudioIntelligenceMetal"
+            path: "Sources/AudioIntelligenceMetal",
+            swiftSettings: [
+                .enableUpcomingFeature("StrictConcurrency")
+            ]
         ),
 
         // Hello World Example CLI

@@ -2,9 +2,11 @@ import Foundation
 import Accelerate
 import AudioIntelligenceMetal
 
-public final class DNAReportBuilder: @unchecked Sendable {
+public actor DNAReportBuilder {
+    
+    public init() {}
 
-    public static func analyze(
+    public func analyze(
         url: URL,
         progress: @Sendable @escaping (Double, String, String?) -> Void
     ) async throws -> (analysis: MusicDNAAnalysis, reportText: String, mdPath: String) {
