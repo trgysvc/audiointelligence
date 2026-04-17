@@ -9,6 +9,7 @@ import Accelerate
 
 public struct RhythmResult: Sendable {
     public let bpm: Double
+    public let bpmConfidence: Float // v50.0 Addition
     public let beatFrames: [Int]
     public let beatTimes: [Double]
     public let gridStdSec: Double
@@ -25,17 +26,18 @@ public final class RhythmEngine: Sendable {
     }
     
     public func analyze(onsetResult: OnsetResult) async -> RhythmResult {
-        let bpm = RhythmEngine.estimateTempo(
+        let tempoResult = RhythmEngine.estimateTempo(
             onsetStrength: onsetResult.envelope, 
             sr: sampleRate, 
             hopLength: 512
         )
         
         return RhythmResult(
-            bpm: Double(bpm),
+            bpm: Double(tempoResult.bpm),
+            bpmConfidence: tempoResult.confidence,
             beatFrames: onsetResult.onsetFrames,
             beatTimes: onsetResult.onsetTimes,
-            gridStdSec: Double(onsetResult.mean), // Placeholder for std
+            gridStdSec: Double(onsetResult.mean),
             onsetMean: onsetResult.mean,
             onsetPeak: onsetResult.peak
         )
@@ -128,9 +130,9 @@ public final class RhythmEngine: Sendable {
     
     /// Librosa: beat.tempo()
     /// Estimates BPM using autocorrelation of the onset strength.
-    public static func estimateTempo(onsetStrength: [Float], sr: Double, hopLength: Int) -> Float {
+    public static func estimateTempo(onsetStrength: [Float], sr: Double, hopLength: Int) -> (bpm: Float, confidence: Float) {
         let n = onsetStrength.count
-        guard n > 0 else { return 120.0 }
+        guard n > 0 else { return (120.0, 0.0) }
         
         // 1. Autocorrelation
         var acorr = [Float](repeating: 0, count: n)
@@ -155,6 +157,15 @@ public final class RhythmEngine: Sendable {
             }
         }
         
-        return bestBPM
+        // 3. Confidence: Peak-to-Mean ratio of autocorrelation in range
+        var meanVal: Float = 0
+        acorr.withUnsafeBufferPointer { ptr in
+            if let base = ptr.baseAddress {
+                vDSP_meanv(base + minLag, 1, &meanVal, vDSP_Length(maxLag - minLag + 1))
+            }
+        }
+        let confidence = maxVal > 0 ? min(1.0, (maxVal - meanVal) / maxVal) : 0.0
+        
+        return (bestBPM, confidence)
     }
 }

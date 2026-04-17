@@ -1,4 +1,4 @@
-// swift-tools-version: 6.0
+// swift-tools-version: 6.3.0
 import PackageDescription
 
 let package = Package(
@@ -41,6 +41,9 @@ let package = Package(
         // Private Implementation Layer
         .target(
             name: "AudioIntelligenceCore",
+            dependencies: [
+                "AudioIntelligenceMetal"
+            ],
             path: "Sources/AudioIntelligenceCore"
         ),
 

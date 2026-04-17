@@ -22,6 +22,8 @@ public final class SpectralEngine: Sendable {
         public let flatness: Float
         public let zcr: Float
         public let flux: Float // v28.0 Addition
+        public let skewness: Float // v50.0 Addition
+        public let kurtosis: Float // v50.0 Addition
         public let rmsMean: Float
         public let rmsMax: Float
         public let dynamicRangeDb: Float
@@ -57,10 +59,41 @@ public final class SpectralEngine: Sendable {
         var meanCentroid: Float = 0
         vDSP_meanv(centroidSeries, 1, &meanCentroid, vDSP_Length(nFrames))
 
-        // 3. Bandwidth
+        // 3. Bandwidth (Spread)
         let bandwidthSeries = spectralBandwidth(magnitude: mag, nFrames: nFrames, frequencies: freqs, centroids: centroidSeries)
         var meanBandwidth: Float = 0
         vDSP_meanv(bandwidthSeries, 1, &meanBandwidth, vDSP_Length(nFrames))
+
+        // 8. Higher-Order Statistics (Skewness & Kurtosis) - v50.0
+        var totalSkewness: Float = 0
+        var totalKurtosis: Float = 0
+        
+        for t in 0..<nFrames {
+            let mu1 = centroidSeries[t]
+            let sigma = bandwidthSeries[t]
+            let sigmaSq = sigma * sigma
+            
+            var m3: Float = 0
+            var m4: Float = 0
+            var totalMag: Float = 0
+            
+            for f in 0..<nBins {
+                let m = mag[f * nFrames + t]
+                let diff = freqs[f] - mu1
+                let d2 = diff * diff
+                m3 += d2 * diff * m
+                m4 += d2 * d2 * m
+                totalMag += m
+            }
+            
+            if totalMag > 1e-12 && sigma > 1e-6 {
+                totalSkewness += (m3 / totalMag) / powf(sigma, 3.0)
+                totalKurtosis += (m4 / totalMag) / (sigmaSq * sigmaSq)
+            }
+        }
+        
+        let meanSkewness = totalSkewness / Float(nFrames)
+        let meanKurtosis = totalKurtosis / Float(nFrames)
 
         // 4. Rolloff
         let rolloffSeries = spectralRolloff(magnitude: mag, nFrames: nFrames, frequencies: freqs)
@@ -95,6 +128,8 @@ public final class SpectralEngine: Sendable {
             flatness: meanFlatness,
             zcr: meanZCR,
             flux: totalFlux,
+            skewness: meanSkewness,
+            kurtosis: meanKurtosis,
             rmsMean: rmsMean,
             rmsMax: rmsMax,
             dynamicRangeDb: dynamicRangeDb,

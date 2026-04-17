@@ -24,6 +24,9 @@ public struct MusicDNAAnalysis: Codable, Sendable, Identifiable {
     public let chromaProfile: [Float] // 12 semitones
     public let segments: [MusicSegment]
     
+    // Audit & Extension Data (v45.0)
+    public let audit: AuditMetrics
+    
     // Metadata / Paths
     public var reportPath: String?
     
@@ -40,7 +43,8 @@ public struct MusicDNAAnalysis: Codable, Sendable, Identifiable {
                  forensic: ForensicMetrics,
                  waveformPeaks: [Float],
                  chromaProfile: [Float],
-                 segments: [MusicSegment]) {
+                 segments: [MusicSegment],
+                 audit: AuditMetrics) {
         self.id = id
         self.timestamp = timestamp
         self.fileName = fileName
@@ -55,11 +59,13 @@ public struct MusicDNAAnalysis: Codable, Sendable, Identifiable {
         self.waveformPeaks = waveformPeaks
         self.chromaProfile = chromaProfile
         self.segments = segments
+        self.audit = audit
     }
 }
 
 public struct RhythmMetrics: Codable, Sendable {
     public let bpm: Float
+    public let bpmConfidence: Float
     public let beatConsistency: Float
     public let onsetMean: Float
     public let onsetPeak: Float
@@ -68,6 +74,7 @@ public struct RhythmMetrics: Codable, Sendable {
 
 public struct TonalMetrics: Codable, Sendable {
     public let key: String
+    public let keyConfidence: Float
     public let strength: Float
     public let keySignature: [Float] // 12 semitone key weights
     public let tendency: String
@@ -87,6 +94,8 @@ public struct AdvancedSpectralMetrics: Codable, Sendable {
     public let rolloff: Float
     public let flatness: Float
     public let flux: Float
+    public let skewness: Float
+    public let kurtosis: Float
     public let bandwidth: Float
     public let zcr: Float
     public let dynamicRange: Float
@@ -116,6 +125,7 @@ public struct MasteringMetrics: Codable, Sendable {
     public let phaseCorrelation: Float
     public let monoCompatibility: String
     public let balanceLR: Float // -1.0 (Left) to +1.0 (Right)
+    public let msBalance: Float // v51.0 Addition
 }
 
 public struct ForensicMetrics: Codable, Sendable {
@@ -132,4 +142,11 @@ public struct MusicSegment: Codable, Sendable, Identifiable {
     public let start: Double
     public let end: Double
     public let label: String
+}
+public struct AuditMetrics: Codable, Sendable {
+    public let engineCoverage: [String: Bool]
+    public let cqtStatus: String
+    public let melSpectrogramResolution: String
+    public let utilityCheck: String
+    public let filterbankStatus: String
 }

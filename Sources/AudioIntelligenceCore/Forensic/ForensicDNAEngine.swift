@@ -115,26 +115,39 @@ public final class ForensicDNAEngine: Sendable {
     /// Analyzes if a file claiming higher bit depth actually contains that much information.
     /// Detects 'Fake Hi-Res' (Upsampled 16-bit to 24-bit).
     public func analyzeBitDepthIntegrity(samples: [Float]) -> (isLikelyUpsampled: Bool, effectiveBits: Int) {
-        // v25.0: Entropy Analysis
-        // We look for patterns in the LSBs (Least Significant Bits).
-        // If the LSBs are consistently zero or repetitive, it's fake.
+        // v51.0: Professional Entropy Analysis
+        // We calculate the Shannon Entropy of the LSBs to distinguish between 
+        // real 24-bit noise/detail and zero-padded 16-bit audio.
         
-        let sampleCount = min(samples.count, 44100) // 1 second is enough
-        var zeroLSBCount = 0
+        let sampleCount = min(samples.count, 88200) // 2 seconds for better stat confidence
+        var binCounts = [Int](repeating: 0, count: 256) // 8-bit LSB distribution
         
         for i in 0..<sampleCount {
-            let s = Int32(samples[i] * 8388608) // Scale to 24-bit Int
-            if (s & 0xFF) == 0 {
-                zeroLSBCount += 1
+            // Convert to 24-bit integer space
+            let s = Int32(clamp(samples[i], min: -1.0, max: 1.0) * 8388607)
+            let lsb = Int(s & 0xFF)
+            binCounts[lsb] += 1
+        }
+        
+        // Calculate Shannon Entropy: H = -sum(p * log2(p))
+        var entropy: Float = 0
+        for count in binCounts {
+            if count > 0 {
+                let p = Float(count) / Float(sampleCount)
+                entropy -= p * (logf(p) / logf(2.0))
             }
         }
         
-        let zeroRatio = Float(zeroLSBCount) / Float(sampleCount)
+        // 16-bit upsampled to 24-bit will have near-zero LSB entropy (0-1 bits)
+        // Real 24-bit audio will have high LSB entropy (6-8 bits)
+        let isUpsampled = entropy < 3.0
+        let effectiveBits = isUpsampled ? 16 : 24
         
-        if zeroRatio > 0.95 {
-            return (true, 16) // 95% of LSBs are zero -> Likely 16-bit upsampled
-        }
-        return (false, 24)
+        return (isUpsampled, effectiveBits)
+    }
+    
+    private func clamp<T: Comparable>(_ value: T, min: T, max: T) -> T {
+        return Swift.max(min, Swift.min(max, value))
     }
 
     // MARK: - Binary Header Signature Search (Restored)
