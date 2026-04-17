@@ -1,7 +1,7 @@
 // ForensicDNAEngine.swift
 // Elite Music DNA Engine — Phase 4
 //
-// "Röntgen" Forensic Analysis.
+// "Audit" Forensic Analysis.
 // Traces file provenance, encoding details, and system metadata.
 
 import Foundation

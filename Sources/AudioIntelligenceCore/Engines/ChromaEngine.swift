@@ -1,7 +1,7 @@
 // ChromaEngine.swift
 // Elite Music DNA Engine — Phase 2
 //
-// Librosa eşdeğerleri:
+// Librosa equivalents:
 //   filters.chroma() — Gaussian chroma filter bank
 //   feature.chroma_stft() — chromagram from STFT
 //   feature.tonnetz() (optional)
@@ -10,13 +10,13 @@
 import Accelerate
 import Foundation
 
-// MARK: - Chroma Sonuç
+// MARK: - Chroma Result
 
 public struct ChromaResult: Sendable {
     public let chromagram: [[Float]]    // [12 × nFrames]
-    public let meanChroma: [Float]      // [12] — tüm süre ortalaması
+    public let meanChroma: [Float]      // [12] — Full duration average
     public let key: String              // "C Major", "A Minor" etc.
-    public let keyStrength: Float       // Korelasyon gücü [0..1]
+    public let keyStrength: Float       // Correlation strength [0..1]
     public let isMinor: Bool
 
     public static let noteNames = ["C", "C#", "D", "D#", "E", "F",
@@ -25,7 +25,7 @@ public struct ChromaResult: Sendable {
 
 // MARK: - Chroma Filter Bank
 
-/// Librosa filters.chroma() — birebir implementasyon
+/// Librosa filters.chroma() — one-to-one implementation
 /// n_chroma=12, ctroct=5.0, octwidth=2.0, base_c=True
 final class ChromaFilterBank: @unchecked Sendable {
 
@@ -207,8 +207,8 @@ public final class ChromaEngine: @unchecked Sendable {
 
     // MARK: Key Detection (Krumhansl-Schmuckler)
 
-    /// Krumhansl-Schmuckler anahtar profil korelasyonu.
-    /// Mean chroma vektörünü 24 profil (12 major + 12 minor) ile karşılaştır.
+    /// Krumhansl-Schmuckler key profile correlation.
+    /// Compare the mean chroma vector with 24 profiles (12 major + 12 minor).
     public func detectKey(chromagram: [[Float]]) -> ChromaResult {
         let nFrames = chromagram[0].count
 

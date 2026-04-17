@@ -1,19 +1,19 @@
 // YINEngine.swift
 // Elite Music DNA Engine — Phase 2
 //
-// Librosa eşdeğeri: core/pitch.py → yin()
+// Librosa equivalent: core/pitch.py → yin()
 //
-// Tam algoritma (kaynak koddan):
-//   1. Frame'e böl
-//   2. CMND (Cumulative Mean Normalized Difference) hesapla
-//   3. Threshold trough: tau < 0.1
+// Full algorithm (from source code):
+//   1. Frame decomposition
+//   2. CMND (Cumulative Mean Normalized Difference) calculation
+//   3. Threshold trough detection: tau < 0.1
 //   4. Parabolic interpolation (sub-bin refinement)
 //   5. f0 = sr / period
 //
-// KRİTİK EK: V/UV (Voiced/Unvoiced) karar mekanizması
-//   - Unvoiced: trough_value >= threshold (0.1), yani belirsiz F0
-//   - Energy gate: RMS < energy_threshold → sessiz bölge → NaN
-//   - Bu olmadan davul ve sessiz bölgeler sahte frekans üretir
+// CRITICAL ADDITION: V/UV (Voiced/Unvoiced) Decision Logic
+//   - Unvoiced: trough_value >= threshold (0.1), i.e., ambiguous F0
+//   - Energy gate: RMS < energy_threshold → silent region → NaN
+//   - Without this, percussion and silent regions generate false pitch data.
 
 import Accelerate
 import Foundation
@@ -68,21 +68,21 @@ public final class YINEngine: @unchecked Sendable {
 
             let frame = Array(samples[start..<end])
 
-            // V/UV Energy gate (kullanıcı feedbackinden: energy threshold ekle)
+            // V/UV Energy gate (from user feedback: add energy threshold)
             var rms: Float = 0
             vDSP_measqv(frame, 1, &rms, vDSP_Length(frameLen))
             rms = sqrtf(rms)
             guard rms >= energyThreshold else {
-                f0Series[t] = Float.nan  // Sessiz bölge
+                f0Series[t] = Float.nan  // Silent region
                 continue
             }
 
-            // CMND hesabı
+            // CMND calculation
             let cmnd = computeCMND(frame: frame, tauMin: tauMin, tauMax: tauMax)
 
             // Threshold trough: ilk tau < threshold
             guard let period = findPeriod(cmnd: cmnd, tauMin: tauMin, tauMax: tauMax) else {
-                // Unvoiced: güvenilir pitch yok
+                // Unvoiced: no reliable pitch found
                 f0Series[t] = Float.nan
                 continue
             }
@@ -121,7 +121,7 @@ public final class YINEngine: @unchecked Sendable {
 
     // MARK: CMND (Cumulative Mean Normalized Difference)
 
-    /// YIN algoritması step 2-4:
+    /// YIN algorithm step 2-4:
     /// 1. Difference function: d[tau] = sum(x[n] - x[n+tau])^2
     ///    = 2 * acf[0] - 2 * acf[tau]  (autocorrelation formulation)
     /// 2. CMND: cmnd[tau] = d[tau] / (sum(d[1..tau]) / tau)

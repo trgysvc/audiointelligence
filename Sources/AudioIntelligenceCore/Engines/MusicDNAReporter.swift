@@ -58,11 +58,11 @@ public enum MusicDNAReporter {
         
         let vRatio: Float = analysis.pitch.voicedRatio
         let voicePct: String = (Double(vRatio) * 100.0).formatted(.number.precision(.fractionLength(1)))
-        lines.append("- **Voiced Ratio**: \(voicePct)% (İnsan sesi / Enstrümantal yoğunluğu)")
+        lines.append("- **Voiced Ratio**: \(voicePct)% (Speech / Instrument Density)")
         
         let pStab: Float = analysis.pitch.stability
         let stabPct: String = (Double(pStab) * 100.0).formatted(.number.precision(.fractionLength(1)))
-        lines.append("- **Pitch Stability**: \(stabPct)% (Entonasyon tutarlılığı)")
+        lines.append("- **Pitch Stability**: \(stabPct)% (Intonation consistency)")
         lines.append("")
         
         // --- 3. EXTENDED SPECTRAL SUITE ---
@@ -98,7 +98,7 @@ public enum MusicDNAReporter {
         lines.append("")
         
         // --- 4. RHYTHM ---
-        lines.append("## 🥁 4. Ritim & Micro-Timing DNA")
+        lines.append("## 🥁 4. Rhythm & Micro-Timing DNA")
         let rhythmBPM: Float = analysis.rhythm.bpm
         let bpmStr: String = Double(rhythmBPM).formatted(.number.precision(.fractionLength(2)))
         let bpmConf: String = (Double(analysis.rhythm.bpmConfidence) * 100.0).formatted(.number.precision(.fractionLength(1)))
@@ -116,7 +116,7 @@ public enum MusicDNAReporter {
         lines.append("")
         
         // --- 5. TONALITY ---
-        lines.append("## 🎹 5. Tonalite & Chroma Profile")
+        lines.append("## 🎹 5. Tonality & Chroma Profile")
         let keyConf: String = (Double(analysis.tonality.keyConfidence) * 100.0).formatted(.number.precision(.fractionLength(1)))
         lines.append("**Key Detection**: \(analysis.tonality.key) (Reliability: **\(keyConf)%**)")
         lines.append("- Tendency: \(analysis.tonality.tendency)")
@@ -143,7 +143,7 @@ public enum MusicDNAReporter {
         lines.append("")
         
         // --- 6. FORENSIC ---
-        lines.append("## 🔍 6. Forensic Röntgen (Bit-Depth Check)")
+        lines.append("## 🔍 6. Forensic Analysis (Bit-Depth Check)")
         lines.append("| Feature | Status | Analysis |")
         lines.append("| :--- | :--- | :--- |")
         
@@ -159,7 +159,7 @@ public enum MusicDNAReporter {
         lines.append("")
         
         // --- 7. STRUCTURE ---
-        lines.append("## 🧩 7. Yapısal Segmentasyon")
+        lines.append("## 🧩 7. Structural Segmentation")
         lines.append("| ID | START | END | DURATION | LABEL |")
         lines.append("| :-- | :--- | :--- | :--- | :--- |")
         for seg in analysis.segments {
@@ -203,7 +203,7 @@ public enum MusicDNAReporter {
         // --- 10. INFINITY DATA DUMP ---
         lines.append("## 📊 10. Infinity Data Dump (Raw DSP Output)")
         lines.append("<details>")
-        lines.append("<summary>Tüm Spektral ve Ritmik Verileri Görüntüle</summary>")
+        lines.append("<summary>View Detailed Spectral and Rhythmic Metrics</summary>")
         lines.append("")
         lines.append("### 🧪 Raw Spectral Data")
         lines.append("- Skewness: `\(analysis.spectral.skewness)`")

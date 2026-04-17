@@ -40,11 +40,11 @@ public final class HPSSEngine: Sendable {
         
         let characterization: String
         if hRatio > 0.7 {
-            characterization = "Harmonik Baskın (Melodik/Enstrümantal)"
+            characterization = "Harmonic Dominant (Melodic/Instrumental)"
         } else if pRatio > 0.7 {
-            characterization = "Perküsif Baskın (Ritmik/Davul)"
+            characterization = "Percussive Dominant (Rhythmic/Drums)"
         } else {
-            characterization = "Dengeli Karışım"
+            characterization = "Balanced Mix"
         }
         
         return HPSSResult(

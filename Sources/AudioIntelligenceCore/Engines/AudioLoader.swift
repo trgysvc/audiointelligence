@@ -1,12 +1,12 @@
 // AudioLoader.swift
 // Elite Music DNA Engine — Phase 1
 //
-// Strateji:
-//   - Sliding Window Buffer: tüm dosyayı değil, 30s chunk'lar halinde işle
-//   - Mono downmix: vDSP_vadd ile kanal ortalaması (zero-copy intent)
-//   - autoreleasepool: her chunk sonrası bellek bırakma
-//   - Float32 normalize: Int16 → [-1.0, 1.0] vDSP_vflt16 ile
-//   - AVAudioConverter: native mastering-quality resampling
+// Strategy:
+//   - Sliding Window Buffer: Process in 30s chunks instead of loading entirely for memory efficiency.
+//   - Mono Downmix: Average channels using vDSP_vadd (zero-copy intent).
+//   - autoreleasepool: Release memory explicitly after each chunk processing.
+//   - Float32 Normalization: Convert Int16 → [-1.0, 1.0] using vDSP_vflt16.
+//   - AVAudioConverter: Native mastering-quality resampling.
 //
 
 @preconcurrency import AVFoundation
@@ -39,8 +39,8 @@ private final class ConversionState: @unchecked Sendable {
 
 // MARK: - AudioLoader
 
-/// AVAssetReader tabanlı, Sliding Window destekli ses yükleyici.
-/// Librosa'nın `load()` + `to_mono()` + `resample()` fonksiyonlarının Swift eşdeğeri.
+/// AVAssetReader-based audio loader with Sliding Window support.
+/// Swift equivalent of Librosa's `load()` + `to_mono()` + `resample()` functions.
 public final class AudioLoader: @unchecked Sendable {
 
     public static let defaultSampleRate: Double = 22050.0
@@ -64,7 +64,7 @@ public final class AudioLoader: @unchecked Sendable {
 
     // MARK: Full Load (≤ ~5 dakika)
 
-    /// Tüm dosyayı mono Float32 olarak yükler.
+    /// Loads the entire file as mono Float32 samples.
     /// Librosa: `y, sr = librosa.load(path, sr=22050, mono=True)`
     public static func load(url: URL, targetSampleRate: Double = defaultSampleRate) throws -> AudioBuffer {
         // Output format: mono, Float32, target SR
@@ -118,7 +118,7 @@ public final class AudioLoader: @unchecked Sendable {
             throw AudioLoadError.noChannelData
         }
 
-        // Peak normalize varsa koru, yoksa bırak (Librosa bırakır)
+        // Keep peak normalization if present, otherwise leave as is (matching Librosa behavior)
         let samples = Array(UnsafeBufferPointer(start: channelData, count: frameLength))
         let duration = Double(frameLength) / targetSampleRate
 
@@ -127,10 +127,10 @@ public final class AudioLoader: @unchecked Sendable {
 
     // MARK: Sliding Window Iterator
 
-    /// Büyük dosyalar için chunk bazlı işleme iterator'ı.
-    /// Her chunk ~30 saniyedir. `autoreleasepool` ile bellek serbest bırakılır.
+    /// Chunk-based processing iterator for large files.
+    /// Each chunk is ~30 seconds. Memory is explicitly released using `autoreleasepool`.
     ///
-    /// Librosa streaming karşılığı: `librosa.stream(path, block_length=...)`
+    /// Librosa streaming equivalent: `librosa.stream(path, block_length=...)`
     public static func chunks(
         url: URL,
         chunkDuration: Double = 30.0,
@@ -213,11 +213,11 @@ public enum AudioLoadError: Error, LocalizedError {
 
     public var errorDescription: String? {
         switch self {
-        case .formatCreationFailed: return "AVAudioFormat oluşturulamadı"
-        case .bufferAllocationFailed: return "PCM buffer tahsis edilemedi"
-        case .conversionFailed: return "Ses dönüşümü başarısız"
-        case .noChannelData: return "Kanal verisi alınamadı"
-        case .fileNotFound(let url): return "Dosya bulunamadı: \(url.path)"
+        case .formatCreationFailed: return "Could not create AVAudioFormat"
+        case .bufferAllocationFailed: return "Could not allocate PCM buffer"
+        case .conversionFailed: return "Audio conversion failed"
+        case .noChannelData: return "Could not retrieve channel data"
+        case .fileNotFound(let url): return "File not found at path: \(url.path)"
         }
     }
 }

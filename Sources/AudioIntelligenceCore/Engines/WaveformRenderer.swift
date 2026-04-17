@@ -8,7 +8,7 @@ public enum WaveformRenderer {
 
     // MARK: ASCII Waveform
 
-    /// Samples → ASCII waveform satırı. Unicode block characters.
+    /// Samples → ASCII waveform row. Unicode block characters.
     /// Çıktı: "0:30  ▁▂▃▅▆▇▇▆▅▄▃▂▁░░░░░░░░░░░░░"
     public static func renderLine(
         samples: [Float],
@@ -35,7 +35,7 @@ public enum WaveformRenderer {
         return "\(timeStr)  \(String(chars))"
     }
 
-    /// Tüm parçanın waveform özeti (8 satır)
+    /// Full waveform summary of the entire track (ASCII)
     public static func renderFull(samples: [Float], sampleRate: Double, lines: Int = 8) -> String {
         let totalSec = Double(samples.count) / sampleRate
         let duration = totalSec / Double(lines)
@@ -105,7 +105,7 @@ public enum WaveformRenderer {
         let segLines = structure.map { seg -> String in
             let start = formatTime(seg.start)
             let end = formatTime(seg.end)
-            return "  [\(start)-\(end)] Bölüm \(seg.id) — \(seg.label)"
+            return "  [\(start)-\(end)] Segment \(seg.id) — \(seg.label)"
         }
 
         let mfccStr = mfcc.prefix(8).map { String(format: "%.1f", $0) }.joined(separator: ", ")
@@ -117,27 +117,27 @@ public enum WaveformRenderer {
             "┌──────────────────────────────────────────────────────────────────┐",
             "│  🧬 MUSIC DNA REPORT                  \(filename.prefix(26).padding(toLength: 26, withPad: " ", startingAt: 0))│",
             "├──────────────────────────────────────────────────────────────────┤",
-            "│  SÜRE: \(formatTime(duration))   SR: 22050 Hz                               │",
+            "│  DURATION: \(formatTime(duration))   SR: 22050 Hz                             │",
             "├──────────────────────────────────────────────────────────────────┤",
-            "│  RİTİM                                                           │",
-            "│  BPM: \(String(format: "%-8.1f", rhythm.bpm))  Beat Tutarlılığı: ±\(String(format: "%.3f", rhythm.gridStd))s               │",
+            "│  RHYTHM                                                          │",
+            "│  BPM: \(String(format: "%-8.1f", rhythm.bpm))  Beat Consistency: ±\(String(format: "%.3f", rhythm.gridStd))s             │",
             "├──────────────────────────────────────────────────────────────────┤",
-            "│  TONALİTE → \(key.padding(toLength: 54, withPad: " ", startingAt: 0))│",
-            "│  CHROMA PROFİLİ                                                  │",
+            "│  TONALITY → \(key.padding(toLength: 53, withPad: " ", startingAt: 0))│",
+            "│  CHROMA PROFILE                                                  │",
         ] + chromaLines.map { "│ \($0.padding(toLength: 67, withPad: " ", startingAt: 0))│" } + [
             "├──────────────────────────────────────────────────────────────────┤",
-            "│  SPEKTRAL ÖZELLİKLER                                             │",
+            "│  SPECTRAL FEATURES                                               │",
             "│  Centroid: \(String(format: "%-6.0f", spectral.centroid)) Hz  Rolloff: \(String(format: "%-6.0f", spectral.rolloff)) Hz  Flatness: \(String(format: "%.3f", spectral.flatness))  │",
             "│  Bandwidth: \(String(format: "%-5.0f", spectral.bandwidth)) Hz  ZCR: \(String(format: "%.3f", spectral.zcr))                           │",
             "│  MFCC: [\(mfccStr.prefix(52))...]  │",
             "├──────────────────────────────────────────────────────────────────┤",
-            "│  DİNAMİK                                                         │",
-            "│  RMS: \(String(format: "%.3f", dynamics.rmsMean)) (peak: \(String(format: "%.3f", dynamics.rmsMax)))  Dinamik Aralık: \(String(format: "%.1f", dynamics.dynamicRangeDb)) dB          │",
+            "│  DYNAMICS                                                        │",
+            "│  RMS: \(String(format: "%.3f", dynamics.rmsMean)) (peak: \(String(format: "%.3f", dynamics.rmsMax)))  Dynamic Range: \(String(format: "%.1f", dynamics.dynamicRangeDb)) dB          │",
             "├──────────────────────────────────────────────────────────────────┤",
             "│  HPSS — \(charStr.padding(toLength: 57, withPad: " ", startingAt: 0))│",
-            "│  Harmonik: \(harmPct.padding(toLength: 4, withPad: " ", startingAt: 0))  Perküsif: \(percPct.padding(toLength: 4, withPad: " ", startingAt: 0))                              │",
+            "│  Harmonic: \(harmPct.padding(toLength: 4, withPad: " ", startingAt: 0)) Percussive: \(percPct.padding(toLength: 4, withPad: " ", startingAt: 0))                              │",
             "├──────────────────────────────────────────────────────────────────┤",
-            "│  YAPI — \(structure.count) BÖLÜM                                               │",
+            "│  STRUCTURE — \(structure.count) SEGMENTS                                          │",
         ] + segLines.map { "│ \($0.padding(toLength: 67, withPad: " ", startingAt: 0))│" } + [
             "├──────────────────────────────────────────────────────────────────┤",
         ]

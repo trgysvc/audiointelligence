@@ -61,13 +61,13 @@ public final class StereoEngine: Sendable {
         // 4. Status
         let compatibility: String
         if correlation > 0.8 {
-            compatibility = "Mükemmel"
+            compatibility = "Excellent"
         } else if correlation > 0.5 {
-            compatibility = "İyi"
+            compatibility = "Good"
         } else if correlation > 0 {
-            compatibility = "Zayıf (Mono sorunları olabilir)"
+            compatibility = "Weak (Mono issues possible)"
         } else {
-            compatibility = "Faz İptali Riski"
+            compatibility = "Phase Cancellation Risk"
         }
         
         return StereoResult(
