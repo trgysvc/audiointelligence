@@ -10,11 +10,11 @@ public final class DNAReportBuilder: @unchecked Sendable {
     ) async throws -> (analysis: MusicDNAAnalysis, reportText: String, mdPath: String) {
 
         let filename = url.lastPathComponent
-        progress(5, "Ses dosyası yükleniyor...", nil)
+        progress(5, "Loading audio file...", nil)
         let buffer = try AudioLoader.load(url: url)
 
         let waveform = WaveformRenderer.renderFull(samples: buffer.samples, sampleRate: buffer.sampleRate, lines: 6)
-        progress(12, "Waveform oluşturuldu", waveform)
+        progress(12, "Waveform generated", waveform)
 
         let stftEngine = STFTEngine(nFFT: 2048, hopLength: 512, sampleRate: buffer.sampleRate)
         let stft = stftEngine.analyze(buffer.samples)
@@ -60,7 +60,7 @@ public final class DNAReportBuilder: @unchecked Sendable {
         let sContrast = SpectralFeatureEngine.spectralContrast(from: stft)
 
         // --- NEW AUDIT ENGINES (v45.0 FULL COVERAGE) ---
-        progress(85, "Gelişmiş motorlar tetikleniyor...", nil)
+        progress(85, "Triggering advanced engines...", nil)
         
         let cqtEngine = CQTEngine(sampleRate: buffer.sampleRate)
         let _ = cqtEngine.transform(buffer.samples) // Phase 3 Placeholder
@@ -73,7 +73,7 @@ public final class DNAReportBuilder: @unchecked Sendable {
         
         let hzCheck = UtilityEngine.hzToMel(1000.0)
         let melCheck = UtilityEngine.melToHz(hzCheck)
-        let utilityStatus = abs(1000.0 - melCheck) < 0.1 ? "Doğrulandı (Exact)" : "Sapma Mevcut"
+        let utilityStatus = abs(1000.0 - melCheck) < 0.1 ? "Verified (Exact)" : "Deviation Present"
 
         let metalEngine = MetalEngine()
         let _ = metalEngine.getHardwareStatus() // Verification check
@@ -86,13 +86,13 @@ public final class DNAReportBuilder: @unchecked Sendable {
                 "YIN": true, "CQT": true, "MelSpectrogram": true, "Utility": true,
                 "Metal": true
             ],
-            cqtStatus: "Aktif (Recursive Downsampling)",
+            cqtStatus: "Active (Recursive Downsampling)",
             melSpectrogramResolution: "\(melResult.nMels)x\(melResult.nFrames)",
             utilityCheck: utilityStatus,
-            filterbankStatus: "Oluşturuldu (L2 Normalized)"
+            filterbankStatus: "Created (L2 Normalized)"
         )
 
-        progress(93, "Raporlar yazılıyor...", nil)
+        progress(93, "Writing reports...", nil)
 
         let home = FileManager.default.homeDirectoryForCurrentUser
         let aiWorksDir = home.appendingPathComponent("Documents/AI Works", isDirectory: true)
@@ -110,14 +110,14 @@ public final class DNAReportBuilder: @unchecked Sendable {
                 beatConsistency: Float(rhythm.gridStdSec),
                 onsetMean: Float(rhythm.onsetMean),
                 onsetPeak: Float(rhythm.onsetPeak),
-                characterize: rhythm.gridStdSec < 0.02 ? "Hassas Grid" : "İnsan Hissi"
+                characterize: rhythm.gridStdSec < 0.02 ? "Precision Grid" : "Human Feel"
             ),
             tonality: TonalMetrics(
                 key: chromaResult.key,
                 keyConfidence: chromaResult.keyStrength,
                 strength: Float(chromaResult.keyStrength),
                 keySignature: chromaResult.meanChroma,
-                tendency: chromaResult.isMinor ? "Minör Eğilimli" : "Majör Eğilimli"
+                tendency: chromaResult.isMinor ? "Minor Tendency" : "Major Tendency"
             ),
             pitch: PitchMetrics(
                 meanF0: pitchResult.meanF0,
@@ -146,7 +146,7 @@ public final class DNAReportBuilder: @unchecked Sendable {
                 dynamicRange: spectral.dynamicRangeDb,
                 rmsMean: spectral.rmsMean,
                 rmsMax: spectral.rmsMax,
-                brightnessDescription: spectral.centroidHz > 2500 ? "Parlak" : "Ilık"
+                brightnessDescription: spectral.centroidHz > 2500 ? "Bright" : "Warm"
             ),
             hpss: HPSSMetrics(
                 harmonicRatio: hpss.harmonicEnergyRatio,
@@ -195,7 +195,7 @@ public final class DNAReportBuilder: @unchecked Sendable {
         let reportText = MusicDNAReporter.generateReport(analysis: analysis)
         try reportText.write(toFile: mdPath, atomically: true, encoding: String.Encoding.utf8)
 
-        progress(100, "Analiz tamamlandı!", nil)
+        progress(100, "Analysis complete!", nil)
 
         var finalAnalysis = analysis
         finalAnalysis.reportPath = mdPath

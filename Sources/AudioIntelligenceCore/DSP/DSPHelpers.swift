@@ -1,10 +1,10 @@
 // DSPHelpers.swift
 // Elite Music DNA Engine — Phase 1
 //
-// vDSP helper koleksiyonu: tüm motor dosyaları bunu kullanır.
-// - Cosine similarity (vDSP_dotpr tabanlı)
-// - Autocorrelation (YIN için)
-// - Median filter (1D — HPSS 2D için temel)
+// vDSP helper collection: used across all analysis engines.
+// - Cosine similarity (vDSP_dotpr based)
+// - Autocorrelation (for YIN)
+// - Median filter (1D — foundation for HPSS 2D)
 // - Normalize, softmax, cumulative sum
 
 import Accelerate
@@ -16,25 +16,25 @@ public enum DSPHelpers {
 
     // MARK: Cosine Similarity
 
-    /// İki L2-normalized vektör arasında cosine similarity.
-    /// StructureEngine SSM için: vDSP_dotpr tabanlı, O(n) vectorized.
+    /// Cosine similarity between two L2-normalized vectors.
+    /// Used by StructureEngine SSM: vDSP_dotpr based, O(n) vectorized.
     ///
-    /// Librosa: cosine_similarity via sklearn, biz: dot(a/|a|, b/|b|)
+    /// Librosa: cosine_similarity via sklearn, US: dot(a/|a|, b/|b|)
     public static func cosineSimilarity(_ a: [Float], _ b: [Float]) -> Float {
         guard a.count == b.count, !a.isEmpty else { return 0 }
         var dot: Float = 0
         vDSP_dotpr(a, 1, b, 1, &dot, vDSP_Length(a.count))
-        return dot  // Önceden L2-normalize edilmişse direkt dot product = cosine
+        return dot  // If already L2-normalized, the dot product equals cosine similarity
     }
 
-    /// Batch cosine similarity: Self-Similarity Matrix hesabı.
-    /// Input: features [nFeatures × nFrames] (her sütun bir frame)
+    /// Batch cosine similarity: Self-Similarity Matrix calculation.
+    /// Input: features [nFeatures × nFrames] (each column is a frame)
     /// Output: SSM [nFrames × nFrames]
     public static func selfSimilarityMatrix(_ features: [[Float]]) -> [[Float]] {
         let nFrames = features[0].count
         let nFeats = features.count
 
-        // Her frame'i sütun vektörü olarak hazırla ve L2-normalize et
+        // Prepare each frame as a column vector and L2-normalize
         var frames: [[Float]] = (0..<nFrames).map { t in
             (0..<nFeats).map { f in features[f][t] }
         }
@@ -64,16 +64,16 @@ public enum DSPHelpers {
         return ssm
     }
 
-    // MARK: Autocorrelation (YIN için)
+    // MARK: Autocorrelation (YIN for)
 
     /// Full autocorrelation via vDSP_conv.
-    /// YIN algoritması: acf = autocorrelate(y, max_size)
+    /// YIN algorithm: acf = autocorrelate(y, max_size)
     public static func autocorrelate(_ signal: [Float], maxSize: Int) -> [Float] {
         let n = signal.count
         let size = min(maxSize, n)
         var result = [Float](repeating: 0, count: size)
 
-        // vDSP_conv: cross-correlation (signal ile signal'ın ters kopyası)
+        // vDSP_conv: cross-correlation (signal with reversed copy of signal)
         let _ = n + size - 1
         let paddedSignal = signal + [Float](repeating: 0, count: size - 1)
 
@@ -90,11 +90,11 @@ public enum DSPHelpers {
 
     // MARK: 1D Median Filter
 
-    /// 1D sliding window median. Hem HPSS için (2D bileşen),
-    /// hem onset max-filter için kullanılır.
+    /// 1D sliding window median. Hem HPSS for (2D component),
+    /// hem onset max-filter for used.
     /// Librosa: scipy.ndimage.maximum_filter1d(S, max_size, axis)
     ///
-    /// Not: 2D HPSS için HPSSEngine'de vImage kullanılır (bu fonksiyon 1D).
+    /// Note: 2D HPSS for HPSSEngine'de vImage used (bu fonksiyon 1D).
     public static func medianFilter1D(_ signal: [Float], windowSize: Int) -> [Float] {
         let halfW = windowSize / 2
         let n = signal.count
@@ -111,7 +111,7 @@ public enum DSPHelpers {
         return result
     }
 
-    /// 1D Max filter. Librosa onset'in `maximum_filter1d` karşılığı.
+    /// 1D Max filter. Librosa onset'in `maximum_filter1d` equivalent.
     public static func maxFilter1D(_ signal: [Float], windowSize: Int) -> [Float] {
         let halfW = windowSize / 2
         let n = signal.count
@@ -128,7 +128,7 @@ public enum DSPHelpers {
 
     // MARK: Normalization
 
-    /// L2-normalize bir vektörü. Librosa: util.normalize(x, norm=2)
+    /// L2-normalize a vector. Librosa: util.normalize(x, norm=2)
     public static func normalizeL2(_ v: [Float]) -> [Float] {
         var norm: Float = 0
         vDSP_svesq(v, 1, &norm, vDSP_Length(v.count))
@@ -165,9 +165,9 @@ public enum DSPHelpers {
         return out
     }
 
-    // MARK: Cumulative Sum (YIN CMND için)
+    // MARK: Cumulative Sum (YIN CMND for)
 
-    /// Kümülatif toplam. NumPy: np.cumsum(x)
+    /// Cumulative sum. NumPy: np.cumsum(x)
     public static func cumsum(_ v: [Float]) -> [Float] {
         var result = [Float](repeating: 0, count: v.count)
         var running: Float = 0
@@ -180,7 +180,7 @@ public enum DSPHelpers {
 
     // MARK: Log + Tiny
 
-    /// log ile tiny (Librosa: util.tiny) → sayısal kararlılık
+    /// log with tiny constant (Librosa: util.tiny) for numerical stability.
     /// tiny(float32) ≈ 1.175e-38
     public static let tinyFloat: Float = 1.175494351e-38
 
@@ -190,7 +190,7 @@ public enum DSPHelpers {
 
     // MARK: Peak Picking
 
-    /// Local maxima bulma. Librosa: util.localmax(x)
+    /// Finding local maxima. Librosa: util.localmax(x)
     public static func localMax(_ signal: [Float]) -> [Int] {
         var peaks: [Int] = []
         for i in 1..<(signal.count - 1) {
@@ -201,7 +201,7 @@ public enum DSPHelpers {
         return peaks
     }
 
-    /// Peak picking with threshold. Librosa: util.peak_pick parametreleri:
+    /// Peak picking with threshold. Librosa: util.peak_pick parameters:
     /// pre_max=30ms, post_max=0ms, pre_avg=100ms, post_avg=100ms, wait=30ms, delta=0.07
     public static func peakPick(
         _ signal: [Float],
@@ -234,10 +234,10 @@ public enum DSPHelpers {
         return peaks
     }
 
-    // MARK: Checkerboard Kernel (Foote Novelty - StructureEngine için)
+    // MARK: Checkerboard Kernel (Foote Novelty - StructureEngine for)
 
-    /// Foote (2000) checkerboard kernel: yapısal sınır tespiti.
-    /// k × k kernel, sol üst + sağ alt = +1, sağ üst + sol alt = -1
+    /// Foote (2000) checkerboard kernel: structural boundary detection.
+    /// k × k kernel, top-left + bottom-right = +1, top-right + bottom-left = -1
     public static func footeKernel(size: Int) -> [[Float]] {
         var kernel = [[Float]](repeating: [Float](repeating: 0, count: size), count: size)
         let half = size / 2
@@ -254,7 +254,7 @@ public enum DSPHelpers {
         return kernel
     }
 
-    /// SSM üzerinde Foote novelty score uygula → boundary skor dizisi
+    /// Apply Foote novelty score on SSM → boundary score array
     public static func footeNovelty(ssm: [[Float]], kernelSize: Int = 64) -> [Float] {
         let n = ssm.count
         let kernel = footeKernel(size: kernelSize)
@@ -278,10 +278,10 @@ public enum DSPHelpers {
         return novelty
     }
 
-    // MARK: DCT-II (MFCC için)
+    // MARK: DCT-II (MFCC for)
 
     /// Type-II DCT. Librosa: scipy.fft.dct(log_mel_spec, type=2, norm='ortho')
-    /// n_mfcc: ilk n katsayı döndür
+    /// returns first n coefficients
     public static func dct2(_ input: [Float], nCoeffs: Int) -> [Float] {
         let n = input.count
         var result = [Float](repeating: 0, count: nCoeffs)

@@ -1,9 +1,9 @@
 // OnsetEngine.swift
 // Elite Music DNA Engine — Phase 2
 //
-// Librosa eşdeğeri: onset.onset_strength_multi() + onset_detect()
+// Librosa equivalent: onset.onset_strength_multi() + onset_detect()
 //
-// Tam algoritma (kaynak koddan):
+// Full algorithm (kaynak koddan):
 //   1. Mel spectrogram → power_to_db (log scale)
 //   2. max_size=1 → ref = S (no max-filter in default mode)
 //   3. onset_env = maximum(0, S[t+1] - S[t])  (spectral flux, half-wave rectified)

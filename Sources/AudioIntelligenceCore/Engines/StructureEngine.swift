@@ -1,8 +1,8 @@
 // StructureEngine.swift
 // Elite Music DNA Engine — Phase 3
 //
-// Librosa eşdeğerleri: segment.py
-//   recurrence_matrix() → cosine SSM (vDSP_dotpr tabanlı)
+// Librosa equivalents: segment.py
+//   recurrence_matrix() → cosine SSM (vDSP_dotpr based)
 //   Foote (2000) novelty score → structural boundaries
 //   Agglomerative clustering → segment merging
 
@@ -21,7 +21,7 @@ public struct AudioSegment: Sendable {
     public let startSec: Double
     public let endSec: Double
     public let durationSec: Double
-    public let label: String   // "Giriş", "Verse", "Nakarat", "Köprü", "Outro"
+    public let label: String   // "Intro", "Verse", "Chorus", "Bridge", "Outro"
 }
 
 public final class StructureEngine: @unchecked Sendable {
@@ -51,7 +51,7 @@ public final class StructureEngine: @unchecked Sendable {
 
         // Step 3: Peak pick on novelty curve
         let frameRate = sampleRate / Double(hopLength)
-        let minWait = Int(frameRate * 8.0)  // Minimum 8 saniye arası
+        let minWait = Int(frameRate * 8.0)  // Minimum 8 second interval
 
         var boundaryFrames = DSPHelpers.peakPick(
             novelty,
@@ -99,12 +99,12 @@ public final class StructureEngine: @unchecked Sendable {
 
     // MARK: Agglomerative Merging
 
-    /// En kısa ardışık segmentleri birleştirerek hedef segment sayısına indir.
+    /// Merge the shortest consecutive segments to target the specified segment count.
     private func agglomerativeMerge(boundaries: [Int], targetCount: Int) -> [Int] {
         var b = boundaries
 
         while b.count > targetCount {
-            // En kısa segment aralığını bul ve sil (orta sınırı kaldır)
+            // Find and remove the shortest segment interval (remove middle boundary)
             var minDist = Int.max
             var minIdx = 1
             for i in 1..<(b.count - 1) {
@@ -122,16 +122,16 @@ public final class StructureEngine: @unchecked Sendable {
 
     // MARK: Segment Labeling
 
-    /// Konum bazlı bölüm isimlendirme (heuristic)
+    /// Heuristic location-based segment labeling
     private func labelSegment(index: Int, total: Int) -> String {
-        if total <= 1 { return "Ana Bölüm" }
+        if total <= 1 { return "Main Section" }
         let ratio = Double(index) / Double(total)
         switch ratio {
-        case 0..<0.12: return "Giriş"
+        case 0..<0.12: return "Intro"
         case 0.12..<0.35: return "Verse"
-        case 0.35..<0.55: return "Nakarat"
+        case 0.35..<0.55: return "Chorus"
         case 0.55..<0.75: return "Verse 2"
-        case 0.75..<0.9: return "Nakarat 2"
+        case 0.75..<0.9: return "Chorus 2"
         default: return "Outro"
         }
     }

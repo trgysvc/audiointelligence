@@ -1,10 +1,10 @@
 // MelFilterBank.swift
 // Elite Music DNA Engine — Phase 1
 //
-// Librosa eşdeğeri: librosa.filters.mel() — filters.py
+// Librosa equivalents: librosa.filters.mel() — filters.py
 //
-// Tam algoritma (kaynak koddan):
-//   1. FFT bin frekansları: fftfreqs = [0, sr/n_fft, ..., sr/2]
+// Full algorithm (from source code):
+//   1. FFT bin frequencies: fftfreqs = [0, sr/n_fft, ..., sr/2]
 //   2. Mel-spaced center freqs: mel_frequencies(n_mels+2, fmin, fmax)
 //   3. Triangular filters: lower/upper slopes
 //   4. Slaney area normalization: enorm = 2.0 / (mel_f[2:] - mel_f[:n_mels])
@@ -91,18 +91,18 @@ public final class MelFilterBank: @unchecked Sendable {
 
     // MARK: Build Filter Weights
 
-    /// Librosa'nın filters.mel() algoritmasının birebir Swift dönüşümü.
+    /// One-to-one Swift conversion of Librosa's filters.mel() algorithm.
     private static func buildWeights(nMels: Int, nFFT: Int, sampleRate: Float,
                                      fMin: Float, fMax: Float) -> [[Float]] {
         let nFreqs = nFFT / 2 + 1
 
-        // FFT frekans ekseni
+        // FFT frequency axis
         let fftFreqs = (0..<nFreqs).map { Float($0) * sampleRate / Float(nFFT) }
 
-        // Mel-spaced center freqs (n_mels + 2 nokta)
+        // Mel-spaced center freqs (n_mels + 2 points)
         let melFreqs = melFrequencies(n: nMels + 2, fMin: fMin, fMax: fMax)
 
-        // Triangular filter construction (Librosa kaynak kodu ile bire bir)
+        // Triangular filter construction (identical to Librosa source)
         var weights = [[Float]](repeating: [Float](repeating: 0, count: nFreqs), count: nMels)
 
         for i in 0..<nMels {
@@ -137,7 +137,7 @@ public final class MelFilterBank: @unchecked Sendable {
     /// Hz → Mel (HTK=false, Slaney)
     /// Librosa: librosa.hz_to_mel(freq, htk=False)
     public static func hzToMel(_ hz: Float) -> Float {
-        // Slaney formülü (librosa default)
+        // Slaney formula (librosa default)
         let fMin: Float = 0.0
         let fSp: Float = 200.0 / 3.0
         let minLogHz: Float = 1000.0
