@@ -4,13 +4,13 @@ import Accelerate
 /// v52.1: Scientific Auditor
 /// A specialized internal engine for performing critical diagnostic sweeps.
 /// This tool acts as the "Internal Internal" verification layer.
-internal final class ScientificAuditor: Sendable {
+public final class ScientificAuditor: Sendable {
     
     private let sampleRate: Double = 48000.0
     
-    init() {}
+    public init() {}
     
-    struct AuditReport: Sendable {
+    public struct AuditReport: Sendable {
         let scenarioName: String
         let expectedValue: Float
         let measuredValue: Float
@@ -19,7 +19,7 @@ internal final class ScientificAuditor: Sendable {
     }
     
     /// Scenario A: EBU Tech 3341 - 2.1 (Reference Sine)
-    func runScenarioA() -> AuditReport {
+    public func runScenarioA() -> AuditReport {
         let n = Int(sampleRate * 5.0)
         let amp = powf(10.0, -23.0 / 20.0) // -23dBFS Peak Sine
         
@@ -44,7 +44,7 @@ internal final class ScientificAuditor: Sendable {
     }
     
     /// Scenario B: EBU Tech 3341 - 2.2 (Gate Sensitivity)
-    func runScenarioB() -> AuditReport {
+    public func runScenarioB() -> AuditReport {
         let nHalf = Int(sampleRate * 5.0)
         // Correct EBU test: -20 LUFS signal followed by "digital zero" or sub-gate noise.
         let amp = powf(10.0, -20.0 / 20.0) 
@@ -71,7 +71,7 @@ internal final class ScientificAuditor: Sendable {
     }
     
     /// Scenario C: EBU Tech 3342 (LRA Performance)
-    func runScenarioC() -> AuditReport {
+    public func runScenarioC() -> AuditReport {
         let nHalf = Int(sampleRate * 10.0)
         let amp1 = powf(10.0, -20.0 / 20.0)
         let amp2 = powf(10.0, -30.0 / 20.0)
@@ -98,7 +98,7 @@ internal final class ScientificAuditor: Sendable {
     }
     
     /// Scenario D: AES17 Forensic Accuracy
-    func runScenarioD() -> AuditReport {
+    public func runScenarioD() -> AuditReport {
         let n = 48000
         let ampStim = powf(10.0, -60.0 / 20.0) // -60 dBFS
         let ampNoise = powf(10.0, -110.0 / 20.0) // -110 dBFS Noise Floor

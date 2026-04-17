@@ -61,8 +61,15 @@ public final class StereoEngine: Sendable {
         let width = midEnergy > 1e-12 ? (sideEnergy / midEnergy) : 0
         
         // 3. Status
+        var isMono = false
+        if correlation > 0.999 && sidePercent < 0.01 {
+            isMono = true
+        }
+
         var status = "Unknown"
-        if correlation > 0.8 {
+        if isMono {
+            status = "Mono Downmix (N/A)"
+        } else if correlation > 0.8 {
             status = "Excellent (Precise Mono)"
         } else if correlation > 0.5 {
             status = "Good (Natural Stereo)"

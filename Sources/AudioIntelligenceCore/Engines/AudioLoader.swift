@@ -32,6 +32,15 @@ public struct AudioBuffer: Sendable {
     public var frameCount: Int { samples.count }
 }
 
+public struct StereoAudioBuffer: Sendable {
+    public let left: [Float]
+    public let right: [Float]
+    public let sampleRate: Double
+    public let duration: Double
+    
+    public var frameCount: Int { left.count }
+}
+
 // Helper to bypass Sendability mutation issues in synchronous AVAudioConverter loops
 private final class ConversionState: @unchecked Sendable {
     var consumed = false
@@ -123,6 +132,68 @@ public enum AudioLoader {
         let duration = Double(frameLength) / targetSampleRate
 
         return AudioBuffer(samples: samples, sampleRate: targetSampleRate, duration: duration)
+    }
+
+    /// Loads the file as stereo Float32 samples.
+    /// Returns separate buffers for left and right channels.
+    public static func loadStereo(url: URL, targetSampleRate: Double = defaultSampleRate) throws -> StereoAudioBuffer {
+        let file = try AVAudioFile(forReading: url)
+        let inputFormat = file.processingFormat
+        let channelCount = Int(inputFormat.channelCount)
+        
+        // Output format: stereo, Float32, target SR
+        guard let outputFormat = AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: targetSampleRate,
+            channels: 2,
+            interleaved: false
+        ) else {
+            throw AudioLoadError.formatCreationFailed
+        }
+
+        let totalFrames = AVAudioFrameCount(file.length)
+        guard let inputBuffer = AVAudioPCMBuffer(pcmFormat: inputFormat, frameCapacity: totalFrames) else {
+            throw AudioLoadError.bufferAllocationFailed
+        }
+        try file.read(into: inputBuffer)
+        inputBuffer.frameLength = totalFrames
+
+        let converter = AVAudioConverter(from: inputFormat, to: outputFormat)
+        let outputFrames = AVAudioFrameCount(
+            Double(totalFrames) * targetSampleRate / inputFormat.sampleRate
+        ) + 1
+
+        guard let outputBuffer = AVAudioPCMBuffer(pcmFormat: outputFormat, frameCapacity: outputFrames) else {
+            throw AudioLoadError.bufferAllocationFailed
+        }
+
+        let state = ConversionState()
+        let status = converter?.convert(to: outputBuffer, error: nil) { _, outStatus in
+            if state.consumed {
+                outStatus.pointee = .noDataNow
+                return nil
+            }
+            outStatus.pointee = .haveData
+            state.consumed = true
+            return inputBuffer
+        }
+
+        guard status == .haveData || status == .endOfStream || status == .inputRanDry else {
+            throw AudioLoadError.conversionFailed
+        }
+
+        let frameLength = Int(outputBuffer.frameLength)
+        
+        guard let leftData = outputBuffer.floatChannelData?[0],
+              let rightData = channelCount > 1 ? outputBuffer.floatChannelData?[1] : outputBuffer.floatChannelData?[0] else {
+            throw AudioLoadError.noChannelData
+        }
+
+        let leftSamples = Array(UnsafeBufferPointer(start: leftData, count: frameLength))
+        let rightSamples = Array(UnsafeBufferPointer(start: rightData, count: frameLength))
+        let duration = Double(frameLength) / targetSampleRate
+
+        return StereoAudioBuffer(left: leftSamples, right: rightSamples, sampleRate: targetSampleRate, duration: duration)
     }
 
     // MARK: Sliding Window Iterator
