@@ -61,7 +61,7 @@ public struct MainDashboardView: View {
                         Text("3D SPECTRAL TOPOGRAPHY")
                             .font(AITheme.Typography.headline())
                             .foregroundColor(.white)
-                        SpectralLandscapeView(magnitudes: [[0.1, 0.2, 0.5]]) // Placeholder data
+                        SpectralLandscapeView(magnitudes: analysis.spectral.fullMagnitudes)
                             .frame(height: 300)
                     }
                 }

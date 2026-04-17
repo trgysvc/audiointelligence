@@ -17,27 +17,35 @@ public struct SpectralLandscapeView: View {
             if nBins == 0 { return }
             let nFrames = magnitudes[0].count
             
-            let spacingX = size.width / CGFloat(nFrames)
-            let spacingY = size.height / CGFloat(nBins)
+            let spacingX = size.width / CGFloat(max(1, nFrames - 1))
+            let spacingY = size.height / CGFloat(max(1, nBins / 4)) // Skip bins for performance
             
-            // Perspective Projection Simulation
-            for i in stride(from: 0, through: nBins - 1, by: 4) {
-                var path = Path()
-                let yPos = size.height - CGFloat(i) * spacingY
+            context.withCGContext { cgContext in
+                cgContext.setLineWidth(1.0)
+                cgContext.setLineCap(.round)
                 
-                for j in 0..<nFrames {
-                    let mag = magnitudes[i][j]
-                    let x = CGFloat(j) * spacingX
-                    let y = yPos - CGFloat(mag * 100.0) // Peak height
+                // Render from back to front for "landscape" effect
+                for i in stride(from: nBins - 1, through: 0, by: -16) {
+                    var path = Path()
+                    let depthOffset = CGFloat(i) * 0.5 // Simulated perspective
+                    let yOrigin = size.height - CGFloat(i / 16) * spacingY
                     
-                    if j == 0 {
-                        path.move(to: CGPoint(x: x, y: y))
-                    } else {
-                        path.addLine(to: CGPoint(x: x, y: y))
+                    for j in stride(from: 0, to: nFrames, by: 4) {
+                        let mag = magnitudes[i][j]
+                        let x = CGFloat(j) * spacingX + depthOffset
+                        let y = yOrigin - CGFloat(mag * 150.0) // Sensitivity scaling
+                        
+                        if j == 0 {
+                            path.move(to: CGPoint(x: x, y: y))
+                        } else {
+                            path.addLine(to: CGPoint(x: x, y: y))
+                        }
                     }
+                    
+                    // HIG: Dynamic Color Coding
+                    let color = i < nBins / 4 ? AITheme.Colors.accentOrange : AITheme.Colors.accentCyan
+                    context.stroke(path, with: .color(color.opacity(0.4)), lineWidth: 0.8)
                 }
-                
-                context.stroke(path, with: .color(AITheme.Colors.accentCyan.opacity(0.3)), lineWidth: 1)
             }
         }
         .padding()

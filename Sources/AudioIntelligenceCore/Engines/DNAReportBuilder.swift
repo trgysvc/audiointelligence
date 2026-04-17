@@ -166,7 +166,8 @@ public actor DNAReportBuilder {
                 dynamicRange: spectral.dynamicRangeDb,
                 rmsMean: spectral.rmsMean,
                 rmsMax: spectral.rmsMax,
-                brightnessDescription: spectral.centroidHz > 2500 ? "Bright" : "Warm"
+                brightnessDescription: spectral.centroidHz > 2500 ? "Bright" : "Warm",
+                fullMagnitudes: spectral.fullMagnitudes
             ),
             hpss: HPSSMetrics(
                 harmonicRatio: hpss.harmonicEnergyRatio,
@@ -225,7 +226,8 @@ public actor DNAReportBuilder {
                     dynamicRange: spectral.dynamicRangeDb,
                     rmsMean: spectral.rmsMean,
                     rmsMax: spectral.rmsMax,
-                    brightnessDescription: spectral.centroidHz > 2500 ? "Bright" : "Warm"
+                    brightnessDescription: spectral.centroidHz > 2500 ? "Bright" : "Warm",
+                    fullMagnitudes: spectral.fullMagnitudes
                 ),
                 mfcc: mfccResult.mfcc
             ),
