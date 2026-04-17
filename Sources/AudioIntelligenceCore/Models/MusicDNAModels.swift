@@ -111,6 +111,7 @@ public struct AdvancedSpectralMetrics: Codable, Sendable {
     public let rmsMean: Float
     public let rmsMax: Float
     public let brightnessDescription: String
+    public let fullMagnitudes: [[Float]] // [FreqBin][FrameIndex] for visualization
 }
 
 public struct HPSSMetrics: Codable, Sendable {

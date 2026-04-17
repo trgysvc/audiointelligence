@@ -31,6 +31,7 @@ public final class SpectralEngine: Sendable {
         // Time series for visualization
         public let centroidTimeSeries: [Float]
         public let rmsSeries: [Float]
+        public let fullMagnitudes: [[Float]] // [FreqBin][FrameIndex]
     }
     
     public func analyze(stft: STFTMatrix, samples: [Float]) -> SpectralResult {
@@ -121,6 +122,14 @@ public final class SpectralEngine: Sendable {
 
         let dynamicRangeDb = (rmsMean > 1e-8) ? 20.0 * log10f(max(1e-8, rmsMax / rmsMean)) : 0.0
 
+        // Reconstruct matrix for visualization (decimated for UI performance)
+        var visualMatrix = [[Float]]()
+        for i in 0..<nBins {
+            let start = i * nFrames
+            let frameData = Array(mag[start..<start+nFrames])
+            visualMatrix.append(frameData)
+        }
+        
         return SpectralResult(
             centroidHz: meanCentroid,
             bandwidthHz: meanBandwidth,
@@ -134,7 +143,8 @@ public final class SpectralEngine: Sendable {
             rmsMax: rmsMax,
             dynamicRangeDb: dynamicRangeDb,
             centroidTimeSeries: centroidSeries,
-            rmsSeries: rmsSeries
+            rmsSeries: rmsSeries,
+            fullMagnitudes: visualMatrix
         )
     }
 
