@@ -24,9 +24,10 @@ struct InfinityAudit {
         do {
             let result = try await intelligence.analyze(url: url) { percent, message, _ in
                 let barWidth = 30
-                let filled = Int(percent * Double(barWidth))
-                let bar = String(repeating: "█", count: filled) + String(repeating: "░", count: barWidth - filled)
-                print("\r[\(bar)] \(Int(percent * 100))% | \(message)", terminator: "")
+                let filled = max(0, min(barWidth, Int((percent / 100.0) * Double(barWidth))))
+                let empty = max(0, barWidth - filled)
+                let bar = String(repeating: "█", count: filled) + String(repeating: "░", count: empty)
+                print("\r[\(bar)] \(Int(percent))% | \(message)", terminator: "")
                 fflush(stdout)
             }
             
