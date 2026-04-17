@@ -123,9 +123,9 @@ public final class ForensicDNAEngine: Sendable {
         var binCounts = [Int](repeating: 0, count: 256) // 8-bit LSB distribution
         
         for i in 0..<sampleCount {
-            // Convert to 24-bit integer space
-            let s = Int32(clamp(samples[i], min: -1.0, max: 1.0) * 8388607)
-            let lsb = Int(s & 0xFF)
+            // Convert to 24-bit integer space (Power of 2 scaling for bit-alignment)
+            let s = Int32(clamp(samples[i], min: -1.0, max: 1.0) * 8388608)
+            let lsb = Int(abs(s) & 0xFF)
             binCounts[lsb] += 1
         }
         

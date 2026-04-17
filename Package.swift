@@ -19,6 +19,14 @@ let package = Package(
         .executable(
             name: "InfinityAudit",
             targets: ["InfinityAudit"]
+        ),
+        .executable(
+            name: "AudioIntelligenceApp",
+            targets: ["AudioIntelligenceApp"]
+        ),
+        .library(
+            name: "AudioIntelligenceUI",
+            targets: ["AudioIntelligenceUI"]
         )
     ],
     dependencies: [
@@ -61,6 +69,26 @@ let package = Package(
                 .enableUpcomingFeature("StrictConcurrency")
             ]
         ),
+        
+        // Reusable UI Component Layer (SDK Friendly)
+        .target(
+            name: "AudioIntelligenceUI",
+            dependencies: ["AudioIntelligence"],
+            path: "Sources/AudioIntelligenceUI",
+            swiftSettings: [
+                .enableUpcomingFeature("StrictConcurrency")
+            ]
+        ),
+
+        // Premium Standalone Application (macOS)
+        .executableTarget(
+            name: "AudioIntelligenceApp",
+            dependencies: ["AudioIntelligenceUI"],
+            path: "Sources/AudioIntelligenceApp",
+            swiftSettings: [
+                .enableUpcomingFeature("StrictConcurrency")
+            ]
+        ),
 
         // Hello World Example CLI
         .executableTarget(
@@ -72,6 +100,13 @@ let package = Package(
             name: "InfinityAudit",
             dependencies: ["AudioIntelligence"],
             path: "Examples/InfinityAudit"
+        ),
+        
+        // Scientific Validation Tests
+        .testTarget(
+            name: "AudioIntelligenceTests",
+            dependencies: ["AudioIntelligence"],
+            path: "Tests"
         )
     ]
 )

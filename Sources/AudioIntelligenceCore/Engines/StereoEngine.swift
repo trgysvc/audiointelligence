@@ -1,80 +1,82 @@
 import Foundation
 import Accelerate
 
-/// v28.0: The Infinity Engine — Stereo & Phase Analysis
-/// Provides Phase Correlation, Mono Compatibility, and L/R Balance.
+/**
+ * v55.1: Stereo & Phase Analysis Engine
+ * Laboratory-grade verification of mono compatibility and spatial integrity.
+ */
 public final class StereoEngine: Sendable {
+    
+    public struct StereoResult: Sendable {
+        public let correlationIndex: Float   // -1.0 to +1.0
+        public let monoCompatibility: String // Excellent, Good, Risky, Phase Issues
+        public let sideEnergyPercent: Float  // 0-100%
+        public let stereoWidth: Float        // Normalized 0.0 - 1.0 (Side/Mid ratio)
+    }
     
     public init() {}
     
-    public struct StereoResult: Sendable {
-        public let correlation: Float
-        public let monoCompatibility: String
-        public let balance: Float // v28.0: -1.0 (Left) to +1.0 (Right)
-        public let msBalance: Float // v51.0: Mid/Side balance (0.0 = Pure Mono, 1.0 = Pure Side)
-    }
-    
-    /// Analyzes stereo image properties.
     public func analyze(left: [Float], right: [Float]) -> StereoResult {
-        let count = min(left.count, right.count)
-        guard count > 0 else { return StereoResult(correlation: 0, monoCompatibility: "N/A", balance: 0, msBalance: 0) }
+        guard left.count == right.count, !left.isEmpty else {
+            return StereoResult(correlationIndex: 0, monoCompatibility: "Unknown", sideEnergyPercent: 0, stereoWidth: 0)
+        }
         
-        // 1. Phase Correlation: Pearson correlation between L and R
-        var correlation: Float = 0
+        let n = vDSP_Length(left.count)
         
+        // 1. Correlation Index
+        // Correlation = sum(L * R) / sqrt(sum(L^2) * sum(R^2))
         var dotProduct: Float = 0
-        vDSP_dotpr(left, 1, right, 1, &dotProduct, vDSP_Length(count))
+        vDSP_dotpr(left, 1, right, 1, &dotProduct, n)
         
         var sumSqL: Float = 0
-        vDSP_svemg(left, 1, &sumSqL, vDSP_Length(count)) // Approximate energy
-        vDSP_dotpr(left, 1, left, 1, &sumSqL, vDSP_Length(count))
+        vDSP_svesq(left, 1, &sumSqL, n)
         
         var sumSqR: Float = 0
-        vDSP_dotpr(right, 1, right, 1, &sumSqR, vDSP_Length(count))
+        vDSP_svesq(right, 1, &sumSqR, n)
         
         let denominator = sqrtf(sumSqL * sumSqR)
-        correlation = (denominator > 1e-12) ? dotProduct / denominator : 0
+        let correlation = denominator > 1e-12 ? dotProduct / denominator : 0.0
         
-        // 2. L/R Balance
-        var rmsL: Float = 0
-        vDSP_rmsqv(left, 1, &rmsL, vDSP_Length(count))
+        // 2. Mid/Side Energies
+        // Mid = (L+R)/2, Side = (L-R)/2
+        // Mid: (L + R) * 0.5
+        var mid = [Float](repeating: 0, count: left.count)
+        vDSP_vadd(left, 1, right, 1, &mid, 1, n)
+        var half: Float = 0.5
+        vDSP_vsmul(mid, 1, &half, &mid, 1, n)
         
-        var rmsR: Float = 0
-        vDSP_rmsqv(right, 1, &rmsR, vDSP_Length(count))
+        // Side: (L - R) * 0.5 
+        var side = [Float](repeating: 0, count: left.count)
+        vDSP_vsub(right, 1, left, 1, &side, 1, n) // Side = L - R
+        vDSP_vsmul(side, 1, &half, &side, 1, n)
         
-        let balance = (rmsL + rmsR > 1e-12) ? (rmsR - rmsL) / (rmsL + rmsR) : 0
+        var midEnergy: Float = 0
+        vDSP_svesq(mid, 1, &midEnergy, n)
         
-        // 3. Mid/Side Balance (v51.0)
-        var mid = [Float](repeating: 0, count: count)
-        var side = [Float](repeating: 0, count: count)
+        var sideEnergy: Float = 0
+        vDSP_svesq(side, 1, &sideEnergy, n)
         
-        vDSP_vadd(left, 1, right, 1, &mid, 1, vDSP_Length(count))
-        vDSP_vsub(right, 1, left, 1, &side, 1, vDSP_Length(count))
+        let totalMSEnergy = midEnergy + sideEnergy
+        let sidePercent = totalMSEnergy > 1e-12 ? (sideEnergy / totalMSEnergy) * 100.0 : 0
+        let width = midEnergy > 1e-12 ? (sideEnergy / midEnergy) : 0
         
-        var rmsMid: Float = 0
-        var rmsSide: Float = 0
-        vDSP_rmsqv(mid, 1, &rmsMid, vDSP_Length(count))
-        vDSP_rmsqv(side, 1, &rmsSide, vDSP_Length(count))
-        
-        let msBalance = (rmsMid + rmsSide > 1e-12) ? rmsSide / (rmsMid + rmsSide) : 0
-        
-        // 4. Status
-        let compatibility: String
+        // 3. Status
+        var status = "Unknown"
         if correlation > 0.8 {
-            compatibility = "Excellent"
+            status = "Excellent (Precise Mono)"
         } else if correlation > 0.5 {
-            compatibility = "Good"
-        } else if correlation > 0 {
-            compatibility = "Weak (Mono issues possible)"
+            status = "Good (Natural Stereo)"
+        } else if correlation > 0.0 {
+            status = "Risky (Wide/Artificial)"
         } else {
-            compatibility = "Phase Cancellation Risk"
+            status = "Critical (Phase Cancellation)"
         }
         
         return StereoResult(
-            correlation: correlation,
-            monoCompatibility: compatibility,
-            balance: balance,
-            msBalance: msBalance
+            correlationIndex: correlation,
+            monoCompatibility: status,
+            sideEnergyPercent: sidePercent,
+            stereoWidth: min(1.0, width)
         )
     }
 }

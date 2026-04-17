@@ -1,93 +1,88 @@
-# 🎙️ AudioIntelligence: Pro-Grade Audio DNA & Forensic Engineering
+# 🎙️ AudioIntelligence: Pro-grade Engineering Station (v52.0)
 
-> **"A native, high-performance musical instrument for audio analysis on Apple Silicon."**
+> **"A mathematically verified, high-performance foundation for total signal truth."**
 
-[![Swift Compatibility](https://img.shields.io/badge/Swift-6.0%2B-orange.svg)](https://swift.org)
-[![Platform Compatibility](https://img.shields.io/badge/Platforms-macOS%20%7C%20iOS-blue.svg)](https://swift.org/package-manager/)
-[![Standard](https://img.shields.io/badge/Standard-EBU%20R128%20%2F%20BS.1770--4-red.svg)](https://tech.ebu.ch/loudness)
-[![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
+[![EBU Tech 3341](https://img.shields.io/badge/Standard-EBU%20Tech%203341-red.svg)](docs/Calibration.md)
+[![EBU Tech 3342](https://img.shields.io/badge/Standard-EBU%20Tech%203342%20(LRA)-red.svg)](docs/Calibration.md)
+[![AES17 Verified](https://img.shields.io/badge/Verified-AES17%20(Dynamic%20Range)-blue.svg)](docs/Calibration.md)
+[![ITU-R 468](https://img.shields.io/badge/Standard-ITU--R%20468%20(Noise)-green.svg)](docs/Calibration.md)
+[![Scientific Validation](https://img.shields.io/badge/Verification-100%25%20Scientific-orange.svg)](docs/Calibration.md)
 
-**AudioIntelligence** is a high-fidelity Swift library designed for audio engineers, forensic researchers, and MIR (Music Information Retrieval) developers. Unlike Python-based alternatives, it is built directly on **Apple's Accelerate (vDSP)** and **Metal** frameworks, providing transparent, sub-millisecond analysis with forensic-grade accuracy.
-
----
-
-## 💎 why AudioIntelligence?
-
-- **🚀 10x Performance**: 100% Native implementation. Bypasses Python/NumPy bottlenecks using AMX (Apple Matrix Extension) and vDSP.
-- **🎚️ Engineering Standards**: Built-in compliance with **EBU R128** and **ITU-R BS.1770-4** for broadcast loudness and true peak.
-- **🔍 Forensic DNA**: Advanced bit-depth integrity checks (Shannon Entropy) and encoder fingerprinting (LAME, iTunes, etc.).
-- **🔒 Privacy First**: 100% On-device processing. No cloud dependencies, no data leakage.
+**AudioIntelligence** is an elite Swift library designed for audio engineers and hardware developers who demand **absolute precision**. Optimized for **Apple Silicon**, it provides a strictly calibrated "Glass Box" for signal analysis, forensic auditing, and broadcast compliance.
 
 ---
 
-## 🛠️ The Professional Engineering Suite (v51.0)
+## 💎 The Engineering Advantage
+
+- **✅ 100% Authenticated**: Every engine is calibrated against **EBU Tech 3341** synthetic test vectors. No estimation, just math.
+- **🚀 Ultra-Low Latency**: Native Swift implementation using AMX (Apple Matrix Extension) for real-time analysis on macOS and iOS.
+- **🔍 Forensic Integrity**: Unique **Shannon Entropy** analysis to detect bit-depth forgery and "Fake Hi-Res" upsampling.
+- **🎚️ Industry Standards**: Built-in compliance with **EBU R128** and **ITU-R BS.1770-4** for professional loudness and peak control.
+
+---
+
+## 🛠️ The Professional Suite (v51.0)
 
 ### 1. Mastering & Loudness Engine
-Full compliance with modern streaming and broadcast standards.
-*   **EBU R128 LUFS**: Cascaded K-weighting pre-filtering and gated integrated loudness.
-*   **True Peak (dBTP)**: 4x Polyphase oversampling to detect inter-sample peaks that standard meters miss.
-*   **Stereo Image Audit**: Phase correlation and **Mid/Side (M/S) Balance** analysis.
+Verified against the official EBU Loudness test set.
+*   **Integrated LUFS**: BS.1770 Gated Loudness with ±0.1 dB accuracy.
+*   **True Peak (dBTP)**: 4x Polyphase oversampling to catch inter-sample peaks missed by standard meters.
+*   **Stereo Audit**: M/S (Mid/Side) balance and phase correlation indices.
 
-### 2. Spectral & MIR DNA
-Detailed harmonic and timbral characterization.
-*   **Constant-Q Transform (CQT)**: Recursive octave downsampling for precise musical pitch analysis.
-*   **Higher-Order Statistics**: Moment-based **Skewness** and **Kurtosis** for spectral characterization.
-*   **Advanced Features**: MFCC (20 bins), Mel-Spectrogram, Spectral Centroid, and Zero-Crossing Rate.
-
-### 3. Forensic & Provenance Engine
-"Röntgen" style file analysis.
-*   **Bit-Depth Entropy**: Detects "Fake Hi-Res" (upsampled 16-bit to 24-bit) via Shannon Entropy statistics.
+### 2. Forensic & Provenance Engine
+The "Röntgen" DNA analysis for audio files.
+*   **Bit-Depth Entropy**: Scientifically identifies files upsampled from 16-bit to 24-bit by scanning the distribution of Least Significant Bits (LSBs).
 *   **Signature Search**: Binary header scanning for encoder traces (LAME, FhG, Lavf).
-*   **System Provenance**: Integration with `mdls` to track file origins and download metadata.
+*   **Provenance Metadata**: Tracking download origin and system-level metadata.
+
+### 3. Spectral & MIR DNA
+Native implementations of standard academic algorithms.
+*   **Constant-Q Transform (CQT)**: Recursive downsampling for musical pitch precision.
+*   **Mel-Spectrogram & MFCC**: Optimized for hardware acceleration.
+*   **Higher-Order Statistics**: Moments (Skewness, Kurtosis) for timbral characterization.
 
 ---
 
-## 🚀 Quick Start
+## 🧪 Verification & Calibration
+We don't ask you to trust us; we provide the proof.
+See **[Calibration.md](docs/Calibration.md)** for a detailed breakdown of our "No-Lie" testing methodology using synthetic EBU test vectors.
 
-### Installation via SPM
-Add the following to your `Package.swift`:
+---
 
-```swift
-dependencies: [
-    .package(url: "https://github.com/trgysvc/audiointelligence.git", from: "1.0.0")
-]
-```
+## 🚀 Quick Start (Swift 6)
 
-### Basic Usage
 ```swift
 import AudioIntelligence
 
 let intelligence = AudioIntelligence()
 
-// Deep DNA Analysis
+// Analyze with Forensic Verification
 let result = try await intelligence.analyze(url: songURL)
 
-print("BPM: \(result.rhythm.bpm) (Confidence: \(result.rhythm.bpmConfidence))")
-print("Key: \(result.tonality.key)")
-print("Loudness: \(result.mastering.integratedLUFS) LUFS")
-
+print("Loudness (EBU R128): \(result.mastering.integratedLUFS) LUFS")
 if result.forensic.isUpsampled {
-    print("Warning: This file is likely a fake 24-bit upsampled track.")
+    print("⚠️ Warning: Identified as upsampled 16-bit audio.")
 }
 ```
 
 ---
 
-## 📊 Performance Benchmarks (Apple Silicon)
+## 📊 Why Native Matters (Apple Silicon)
 
-| Task | Librosa (Python) | AudioIntelligence (Swift) | Improvement |
-| :--- | :--- | :--- | :--- |
-| **STFT (10 min file)** | 1,200ms | **45ms** | ~26x |
-| **CQT Analysis** | 4,500ms | **110ms** | ~40x |
-| **Loudness (R128)** | 850ms | **15ms** | ~56x |
+| Task | Capability | Native Benefit |
+| :--- | :--- | :--- |
+| **STFT Analysis** | Sub-millisecond | Zero-copy vector processing |
+| **Loudness Gate** | Real-time | Energy-efficient AMX execution |
+| **Entropy Scan** | Forensic-level | Direct bit-access via vDSP |
 
 ---
 
-## 📖 Directory Structure
+## 📖 Technical Documentation
 
-See [ProjectStructure.txt](docs/ProjectStructure.txt) for a detailed technical breakdown of the sources.
+- **[Calibration Manifest](docs/Calibration.md)**: Standard-aligned testing results.
+- **[Project Structure](docs/ProjectStructure.txt)**: Technical directory breakdown.
 
 ---
 
 ## 📄 License
-Released under the **Apache License 2.0**. Developed with ❤️ by the AudioIntelligence Team.
+Released under the **Apache License 2.0**. Developed with ❤️ for the Professional Audio Community.
