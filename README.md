@@ -2,7 +2,7 @@
 
 [![Swift 6.3](https://img.shields.io/badge/Swift-6.3-orange.svg)](https://swift.org)
 [![macOS 15](https://img.shields.io/badge/macOS-15-blue.svg)](https://apple.com)
-[![EBU R128](https://img.shields.io/badge/EBU-R128-green.svg)](https://tech.ebu. Tech)
+[![EBU R128](https://img.shields.io/badge/EBU-R128-green.svg)](https://tech.ebu.ch)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 AudioIntelligence is a premium, high-fidelity Music Information Retrieval (MIR) and DSP framework. Built from the ground up for **Swift 6** and **Apple Silicon**, it delivers bit-exact scientific accuracy combined with the raw power of Accelerate and Metal.
