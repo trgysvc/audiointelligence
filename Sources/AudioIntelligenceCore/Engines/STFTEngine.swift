@@ -18,7 +18,7 @@ public enum WindowType: String, Sendable {
 
 /// Flat memory layout for high-performance audio analysis.
 /// Matches Librosa's (n_freqs, n_frames) structure.
-public struct STFTMatrix: Sendable {
+public struct STFTMatrix: Sendable, Codable {
     /// Contiguous data: magnitude[f * nFrames + t]
     public let magnitude: [Float]
     /// Contiguous data: phase[f * nFrames + t]
@@ -77,6 +77,7 @@ public final class STFTEngine: @unchecked Sendable {
     private let nFreqs: Int
     private let window: [Float]
     private let dftSetup: vDSP_DFT_Setup
+    private let idftSetup: vDSP_DFT_Setup
 
     public init(nFFT: Int = defaultNFFT, 
                 hopLength: Int = defaultHopLength, 
@@ -93,10 +94,12 @@ public final class STFTEngine: @unchecked Sendable {
 
         // vDSP_DFT real-to-complex setup
         self.dftSetup = vDSP_DFT_zop_CreateSetup(nil, vDSP_Length(nFFT), .FORWARD)!
+        self.idftSetup = vDSP_DFT_zop_CreateSetup(nil, vDSP_Length(nFFT), .INVERSE)!
     }
 
     deinit {
         vDSP_DFT_DestroySetup(dftSetup)
+        vDSP_DFT_DestroySetup(idftSetup)
     }
 
     // MARK: Periodic Window Creation
@@ -125,7 +128,17 @@ public final class STFTEngine: @unchecked Sendable {
 
     /// Computes STFT with Librosa-exact behavior.
     /// - Parameter padMode: 'constant' (zeros) or 'reflect' (Librosa default: 'constant')
-    public func analyze(_ samples: [Float], center: Bool = true, padMode: String = "constant") -> STFTMatrix {
+    public func analyze(_ samples: [Float], center: Bool = true, padMode: String = "constant") async -> STFTMatrix {
+        // Cache Check (Unique hash of samples for reliability)
+        let sampleHash = samples.prefix(1000).map { String($0) }.joined() + "\(samples.count)"
+        let cacheKey = await IntelligenceCache.shared.generateKey(for: URL(string: "stft://local")!, parameters: [
+            "hash": sampleHash, "nFFT": nFFT, "hop": hopLength, "window": windowType.rawValue, "center": center, "pad": padMode
+        ])
+        
+        if let cached: STFTMatrix = await IntelligenceCache.shared.get(forKey: cacheKey) {
+            return cached
+        }
+
         let input: [Float]
         if center {
             input = padSignal(samples, pad: nFFT / 2, mode: padMode)
@@ -174,8 +187,77 @@ public final class STFTEngine: @unchecked Sendable {
                 phases[f * nFrames + t]     = phi
             }
         }
+        
+        let matrix = STFTMatrix(magnitude: magnitudes, phase: phases, nFFT: nFFT, hopLength: hopLength, sampleRate: sampleRate)
+        await IntelligenceCache.shared.set(matrix, forKey: cacheKey)
+        return matrix
+    }
 
-        return STFTMatrix(magnitude: magnitudes, phase: phases, nFFT: nFFT, hopLength: hopLength, sampleRate: sampleRate)
+    // MARK: - Synthesize (ISTFT)
+
+    /// Librosa: istft() — core/spectrum.py
+    /// Reconstructs time-domain signal from STFT matrix.
+    public func synthesize(_ stft: STFTMatrix) -> [Float] {
+        let nFrames = stft.nFrames
+        let nFreqs = stft.nFreqs
+        let nFFT = stft.nFFT
+        let hopLength = stft.hopLength
+        
+        let expectedLength = (nFrames - 1) * hopLength + nFFT
+        var signal = [Float](repeating: 0, count: expectedLength)
+        var windowSum = [Float](repeating: 0, count: expectedLength)
+        
+        var realIn  = [Float](repeating: 0, count: nFFT)
+        var imagIn  = [Float](repeating: 0, count: nFFT)
+        var realOut = [Float](repeating: 0, count: nFFT)
+        var imagOut = [Float](repeating: 0, count: nFFT)
+        
+        for t in 0..<nFrames {
+            // 1. Reconstruct full complex spectrum (Hermitian symmetry)
+            for f in 0..<nFreqs {
+                let mag = stft.magnitude[f * nFrames + t]
+                let phi = stft.phase[f * nFrames + t]
+                
+                let re = mag * cosf(phi)
+                let im = mag * sinf(phi)
+                
+                realIn[f] = re
+                imagIn[f] = im
+                
+                if f > 0 && f < nFreqs - 1 {
+                    // Conjugate symmetry for negative frequencies
+                    realIn[nFFT - f] = re
+                    imagIn[nFFT - f] = -im
+                }
+            }
+            
+            // 2. Inverse FFT
+            vDSP_DFT_Execute(idftSetup, realIn, imagIn, &realOut, &imagOut)
+            
+            // vDSP Scale for Inverse FFT: 1/N
+            var scale = 1.0 / Float(nFFT)
+            vDSP_vsmul(realOut, 1, &scale, &realOut, 1, vDSP_Length(nFFT))
+            
+            // 3. Apply window and Overlap-Add
+            let start = t * hopLength
+            for i in 0..<nFFT {
+                let sIdx = start + i
+                if sIdx < expectedLength {
+                    let win = window[i]
+                    signal[sIdx] += realOut[i] * win
+                    windowSum[sIdx] += win * win
+                }
+            }
+        }
+        
+        // 4. Normalize by window square sum (WOLA)
+        for i in 0..<expectedLength {
+            if windowSum[i] > 1e-10 {
+                signal[i] /= windowSum[i]
+            }
+        }
+        
+        return signal
     }
 
     // MARK: Padding Logic

@@ -14,8 +14,8 @@ public actor DNAReportBuilder {
 
         let filename = url.lastPathComponent
         progress(5, "Loading audio file...", nil)
-        let buffer = try AudioLoader.load(url: url)
-        let stereoBuffer = try AudioLoader.loadStereo(url: url)
+        let buffer = try await AudioLoader.load(url: url)
+        let stereoBuffer = try await AudioLoader.loadStereo(url: url)
 
         let waveform = WaveformRenderer.renderFull(samples: buffer.samples, sampleRate: buffer.sampleRate, lines: 6)
         progress(12, "Waveform generated", waveform)
@@ -26,10 +26,10 @@ public actor DNAReportBuilder {
 
         // 1. Initial Processing (Serial but fast)
         let stftEngine = STFTEngine(nFFT: 2048, hopLength: 512, sampleRate: buffer.sampleRate)
-        let stft = stftEngine.analyze(buffer.samples)
+        let stft = await stftEngine.analyze(buffer.samples)
 
         let onsetEngine = OnsetEngine(sampleRate: buffer.sampleRate)
-        let onsetResult = onsetEngine.onsetStrength(buffer.samples)
+        let onsetResult = await onsetEngine.onsetStrength(buffer.samples)
 
         let melBank = MelFilterBank(nMels: 128, nFFT: 2048, sampleRate: buffer.sampleRate)
         
@@ -72,10 +72,16 @@ public actor DNAReportBuilder {
         
         let finalChroma = await chroma
         async let chromaResult = ChromaEngine(nFFT: 2048, sampleRate: buffer.sampleRate).detectKey(chromagram: finalChroma)
-        async let structure = StructureEngine(hopLength: 512, sampleRate: buffer.sampleRate).analyze(chromagram: finalChroma, nSegments: 7)
+        
+        let finalMfcc = await mfccResult
+        let nFrames = finalMfcc.fullData.count / 20
+        let mfccMatrix: [[Float]] = (0..<20).map { i in
+            Array(finalMfcc.fullData[(i * nFrames)..<((i + 1) * nFrames)])
+        }
+        
+        async let structure = StructureEngine(hopLength: 512, sampleRate: buffer.sampleRate).analyze(chromagram: finalChroma, mfccs: mfccMatrix, nSegments: 7)
 
         let finalSpectral = await spectral
-        let finalMfcc = await mfccResult
         
         let spectralMetrics = AdvancedSpectralMetrics(
             centroid: finalSpectral.centroidHz,
@@ -103,7 +109,7 @@ public actor DNAReportBuilder {
         )
 
         let melSpecEngine = MelSpectrogramEngine(stftEngine: stftEngine, nMels: 128)
-        let melResult = melSpecEngine.createMelSpectrogram(from: buffer.samples)
+        let melResult = await melSpecEngine.createMelSpectrogram(from: buffer.samples)
         
         let _ = FilterbankEngine.createMelFilterbank(sr: buffer.sampleRate, nFFT: 2048)
         let _ = FilterbankEngine.createChromaFilterbank(sr: buffer.sampleRate, nFFT: 2048)
@@ -238,8 +244,10 @@ public actor DNAReportBuilder {
             ),
             waveformPeaks: stride(from: 0, to: buffer.samples.count, by: max(1, buffer.samples.count / 100)).map { i in
                 let end = min(i + max(1, buffer.samples.count / 100), buffer.samples.count)
-                let chunk = buffer.samples[i..<end]
-                return sqrt(chunk.reduce(0) { $0 + $1 * $1 } / Float(chunk.count))
+                let chunk = Array(buffer.samples[i..<end])
+                var rms: Float = 0
+                vDSP_rmsqv(chunk, 1, &rms, vDSP_Length(chunk.count))
+                return rms
             },
             chromaProfile: vChromaResult.meanChroma,
             segments: vStructure.segments.map { 

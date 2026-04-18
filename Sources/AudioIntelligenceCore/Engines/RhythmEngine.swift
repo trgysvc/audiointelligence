@@ -25,22 +25,106 @@ public final class RhythmEngine: Sendable {
         self.sampleRate = sampleRate
     }
     
-    public func analyze(onsetResult: OnsetResult) async -> RhythmResult {
+    public func analyze(onsetResult: OnsetResult, hopLength: Int = 512) async -> RhythmResult {
+        // 1. Estimate global tempo
         let tempoResult = RhythmEngine.estimateTempo(
             onsetStrength: onsetResult.envelope, 
             sr: sampleRate, 
-            hopLength: 512
+            hopLength: hopLength
         )
         
+        let bpm = tempoResult.bpm
+        
+        // 2. Dynamic Programming Beat Tracking (Ellis, 2007)
+        let (beatFrames, _) = RhythmEngine.beatTrack(
+            onsetStrength: onsetResult.envelope,
+            bpm: bpm,
+            sr: sampleRate,
+            hopLength: hopLength
+        )
+        
+        let beatTimes = beatFrames.map { Double($0 * hopLength) / sampleRate }
+        
         return RhythmResult(
-            bpm: Double(tempoResult.bpm),
+            bpm: Double(bpm),
             bpmConfidence: tempoResult.confidence,
-            beatFrames: onsetResult.onsetFrames,
-            beatTimes: onsetResult.onsetTimes,
+            beatFrames: beatFrames,
+            beatTimes: beatTimes,
             gridStdSec: Double(onsetResult.mean),
             onsetMean: onsetResult.mean,
             onsetPeak: onsetResult.peak
         )
+    }
+    
+    // MARK: - Dynamic Programming Beat Tracking
+    
+    /// Librosa: beat.beat_track() using Ellis (2007) DP approach.
+    /// Finds the best sequence of beat events that align with onsets and maintain tempo.
+    public static func beatTrack(
+        onsetStrength: [Float],
+        bpm: Float,
+        sr: Double,
+        hopLength: Int,
+        alpha: Float = 100.0 // Tightness parameter
+    ) -> (beats: [Int], score: Float) {
+        let n = onsetStrength.count
+        guard n > 0 else { return ([], 0) }
+        
+        // Preferred period in frames
+        let period = Float(60.0 * sr) / (Float(hopLength) * bpm)
+        
+        var cumScore = [Float](repeating: 0, count: n)
+        var backPointer = [Int](repeating: -1, count: n)
+        
+        // DP: Forward pass
+        for i in 0..<n {
+            var bestScore = onsetStrength[i]
+            var bestJ = -1
+            
+            // Search range: [0.5*period, 2.0*period]
+            let minLag = Int(round(0.5 * period))
+            let maxLag = Int(round(2.0 * period))
+            
+            let startJ = max(0, i - maxLag)
+            let endJ = max(-1, i - minLag)
+            
+            if endJ >= 0 {
+                for j in startJ...endJ {
+                    let lag = Float(i - j)
+                    // Transition cost: -alpha * (log(lag / period))^2
+                    let cost = -alpha * powf(logf(lag / period), 2.0)
+                    let score = cumScore[j] + cost
+                    
+                    if score > bestScore {
+                        bestScore = score
+                        bestJ = j
+                    }
+                }
+            }
+            
+            cumScore[i] = bestScore + onsetStrength[i]
+            backPointer[i] = bestJ
+        }
+        
+        // Backtrack from the maximum cumulative score
+        var maxScore: Float = -Float.infinity
+        var lastIdx = n - 1
+        
+        for i in 0..<n {
+            if cumScore[i] > maxScore {
+                maxScore = cumScore[i]
+                lastIdx = i
+            }
+        }
+        
+        var beats: [Int] = []
+        var curr = lastIdx
+        while curr != -1 {
+            beats.append(curr)
+            curr = backPointer[curr]
+        }
+        
+        return (beats.reversed(), maxScore)
     }
     
     /// Librosa: beat.plp() - Predominant Local Pulse.

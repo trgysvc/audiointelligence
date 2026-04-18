@@ -24,6 +24,10 @@ let package = Package(
             name: "AudioIntelligenceApp",
             targets: ["AudioIntelligenceApp"]
         ),
+        .executable(
+            name: "AIBenchmark",
+            targets: ["AIBenchmark"]
+        ),
         .library(
             name: "AudioIntelligenceUI",
             targets: ["AudioIntelligenceUI"]
@@ -31,6 +35,7 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-atomics.git", from: "1.1.0"),
+        .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.2.0"),
     ],
     targets: [
         // Public API Layer
@@ -100,6 +105,14 @@ let package = Package(
             name: "InfinityAudit",
             dependencies: ["AudioIntelligence"],
             path: "Examples/InfinityAudit"
+        ),
+        .executableTarget(
+            name: "AIBenchmark",
+            dependencies: [
+                "AudioIntelligence",
+                .product(name: "ArgumentParser", package: "swift-argument-parser")
+            ],
+            path: "Sources/AIBenchmark"
         ),
         
         // Scientific Validation Tests
