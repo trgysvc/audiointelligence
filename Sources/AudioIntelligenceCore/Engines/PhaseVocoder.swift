@@ -2,7 +2,7 @@
 // Elite Music DNA Engine — Phase 4
 //
 // Phase Vocoder for time-stretching and pitch-shifting.
-// Mirroring librosa.core.phase_vocoder.
+// Mirroring industry standard.core.phase_vocoder.
 
 import Foundation
 import Accelerate
@@ -11,7 +11,7 @@ public final class PhaseVocoder: Sendable {
     
     public init() {}
     
-    /// Librosa: phase_vocoder()
+    /// Industry Standard: phase_vocoder()
     /// - Parameters:
     ///   - stft: Original STFT matrix
     ///   - rate: Time-stretch rate (>1.0 faster, <1.0 slower)

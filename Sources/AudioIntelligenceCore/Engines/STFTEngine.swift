@@ -1,7 +1,7 @@
 // STFTEngine.swift
 // Elite Music DNA Engine — Phase 1
 //
-// Librosa functional parity: librosa.stft() — core/spectrum.py
+// Industry Standard functional parity: industry standard.stft() — core/spectrum.py
 //
 
 import Accelerate
@@ -17,7 +17,7 @@ public enum WindowType: String, Sendable {
 // MARK: - STFT Result Matrix
 
 /// Flat memory layout for high-performance audio analysis.
-/// Matches Librosa's (n_freqs, n_frames) structure.
+/// Matches Industry Standard's (n_freqs, n_frames) structure.
 public struct STFTMatrix: Sendable, Codable {
     /// Contiguous data: magnitude[f * nFrames + t]
     public let magnitude: [Float]
@@ -89,7 +89,7 @@ public final class STFTEngine: @unchecked Sendable {
         self.windowType = windowType
         self.nFreqs = nFFT / 2 + 1
 
-        // Use periodic window (Librosa default: sym=False)
+        // Use periodic window (Industry Standard default: sym=False)
         self.window = STFTEngine.createPeriodicWindow(type: windowType, length: nFFT)
 
         // vDSP_DFT real-to-complex setup
@@ -126,8 +126,8 @@ public final class STFTEngine: @unchecked Sendable {
 
     // MARK: Analyze
 
-    /// Computes STFT with Librosa-exact behavior.
-    /// - Parameter padMode: 'constant' (zeros) or 'reflect' (Librosa default: 'constant')
+    /// Computes STFT with Industry Standard-exact behavior.
+    /// - Parameter padMode: 'constant' (zeros) or 'reflect' (Industry Standard default: 'constant')
     public func analyze(_ samples: [Float], center: Bool = true, padMode: String = "constant") async -> STFTMatrix {
         // Cache Check (Unique hash of samples for reliability)
         let sampleHash = samples.prefix(1000).map { String($0) }.joined() + "\(samples.count)"
@@ -178,7 +178,7 @@ public final class STFTEngine: @unchecked Sendable {
                 let re = realOut[f]
                 let im = imagOut[f]
                 
-                // Librosa scaling: By default, FFT returns raw sums. 
+                // Industry Standard scaling: By default, FFT returns raw sums. 
                 // However, we remain consistent with the magnitude/phase structure.
                 let mag = sqrtf(re * re + im * im)
                 let phi = atan2f(im, re)
@@ -195,7 +195,7 @@ public final class STFTEngine: @unchecked Sendable {
 
     // MARK: - Synthesize (ISTFT)
 
-    /// Librosa: istft() — core/spectrum.py
+    /// Industry Standard: istft() — core/spectrum.py
     /// Reconstructs time-domain signal from STFT matrix.
     public func synthesize(_ stft: STFTMatrix) -> [Float] {
         let nFrames = stft.nFrames
@@ -264,7 +264,7 @@ public final class STFTEngine: @unchecked Sendable {
 
     private func padSignal(_ samples: [Float], pad: Int, mode: String) -> [Float] {
         if mode == "reflect" {
-            // librosa.util.pad_center(samples, size=n, mode='reflect')
+            // industry standard.util.pad_center(samples, size=n, mode='reflect')
             // Equivalent to np.pad(y, pad, mode='reflect')
             var padded = [Float](repeating: 0, count: samples.count + 2 * pad)
             

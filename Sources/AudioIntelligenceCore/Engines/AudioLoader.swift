@@ -49,7 +49,7 @@ private final class ConversionState: @unchecked Sendable {
 // MARK: - AudioLoader
 
 /// AVAssetReader-based audio loader with Sliding Window support.
-/// Swift equivalent of Librosa's `load()` + `to_mono()` + `resample()` functions.
+/// Swift equivalent of Industry Standard's `load()` + `to_mono()` + `resample()` functions.
 public enum AudioLoader {
 
     public static let defaultSampleRate: Double = 22050.0
@@ -74,7 +74,7 @@ public enum AudioLoader {
     // MARK: Full Load (≤ ~5 dakika)
 
     /// Loads the entire file as mono Float32 samples.
-    /// Librosa: `y, sr = librosa.load(path, sr=22050, mono=True)`
+    /// Industry Standard: `y, sr = industry standard.load(path, sr=22050, mono=True)`
     public static func load(url: URL, targetSampleRate: Double = defaultSampleRate) async throws -> AudioBuffer {
         // Cache Check
         let cacheKey = await IntelligenceCache.shared.generateKey(for: url, parameters: ["sr": targetSampleRate, "mono": true])
@@ -133,7 +133,7 @@ public enum AudioLoader {
             throw AudioIntelligenceError.io(.decodeFailed(url))
         }
 
-        // Keep peak normalization if present, otherwise leave as is (matching Librosa behavior)
+        // Keep peak normalization if present, otherwise leave as is (matching Industry Standard behavior)
         let samples = Array(UnsafeBufferPointer(start: channelData, count: frameLength))
         let duration = Double(frameLength) / targetSampleRate
         let result = AudioBuffer(samples: samples, sampleRate: targetSampleRate, duration: duration)
@@ -217,7 +217,7 @@ public enum AudioLoader {
     /// Chunk-based processing iterator for large files.
     /// Each chunk is ~30 seconds. Memory is explicitly released using `autoreleasepool`.
     ///
-    /// Librosa streaming equivalent: `librosa.stream(path, block_length=...)`
+    /// Industry Standard streaming equivalent: `industry standard.stream(path, block_length=...)`
     public static func chunks(
         url: URL,
         chunkDuration: Double = 30.0,

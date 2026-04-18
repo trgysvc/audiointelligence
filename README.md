@@ -56,13 +56,13 @@ Professional-grade systems for reliability and speed.
 ## 📊 AIBenchmark CLI Suite
 A professional auditing tool to verify AudioIntelligence against industry standards.
 
-- **📊 Rival Comparison**: Direct MSE (Mean Squared Error) and execution time benchmarks against **Librosa**, **Essentia**, and **Aubio**.
+- **📊 Parity Auditing**: Direct MSE (Mean Squared Error) and execution time benchmarks against industry reference implementations.
 - **⚡ Performance Audits**: Detailed profiling of Apple Silicon (AMX/ANE) thermal and throughput efficiency.
-- **✅ Ground Truth Support**: Import JSON truth sets from rivals to verify mathematical parity.
+- **✅ Ground Truth Support**: Import JSON truth sets to verify mathematical parity.
 
 ```bash
 # Run the benchmark
-swift run AIBenchmark path/to/audio.wav --librosa-truth truth.json
+swift run AIBenchmark path/to/audio.wav --ref-primary primary_truth.json
 ```
 
 ---

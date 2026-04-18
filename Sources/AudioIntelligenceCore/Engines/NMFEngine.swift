@@ -2,7 +2,7 @@
 // Elite Music DNA Engine — Phase 4
 //
 // Non-negative Matrix Factorization (NMF).
-// Mirroring librosa.decompose.nmf.
+// Mirroring industry standard.decompose.nmf.
 // Used for blind source separation and component analysis.
 
 import Foundation

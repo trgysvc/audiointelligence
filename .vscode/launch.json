@@ -59,6 +59,26 @@
             "target": "AudioIntelligenceApp",
             "configuration": "release",
             "preLaunchTask": "swift: Build Release AudioIntelligenceApp"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:audiointelligence}",
+            "name": "Debug AIBenchmark",
+            "target": "AIBenchmark",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug AIBenchmark"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:audiointelligence}",
+            "name": "Release AIBenchmark",
+            "target": "AIBenchmark",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release AIBenchmark"
         }
     ]
 }

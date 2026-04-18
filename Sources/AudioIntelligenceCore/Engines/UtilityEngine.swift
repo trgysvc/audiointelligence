@@ -1,13 +1,13 @@
 // UtilityEngine.swift
 // Elite Music DNA Engine — Phase 1
 //
-// Mirroring librosa.core.convert functions.
-// Essential for Librosa-exact filterbank generation.
+// Mirroring industry standard.core.convert functions.
+// Traditionall for Industry Standard-exact filterbank generation.
 
 import Foundation
 
 public enum ScalingMode: Sendable {
-    case slaney    // Default Librosa behavior
+    case slaney    // Default Industry Standard behavior
     case htk       // Hidden Markov Model Toolkit style
 }
 
@@ -15,7 +15,7 @@ public enum UtilityEngine {
     
     // MARK: - Frequency Conversions (Hz ↔ Mel)
     
-    /// Librosa: hz_to_mel()
+    /// Industry Standard: hz_to_mel()
     public static func hzToMel(_ hz: Float, htk: Bool = false) -> Float {
         if htk {
             return 2595.0 * log10f(1.0 + hz / 700.0)
@@ -35,7 +35,7 @@ public enum UtilityEngine {
         }
     }
     
-    /// Librosa: mel_to_hz()
+    /// Industry Standard: mel_to_hz()
     public static func melToHz(_ mel: Float, htk: Bool = false) -> Float {
         if htk {
             return 700.0 * (powf(10.0, mel / 2595.0) - 1.0)
@@ -56,11 +56,11 @@ public enum UtilityEngine {
     
     // MARK: - Octave Conversions
     
-    /// Librosa: hz_to_octs()
+    /// Industry Standard: hz_to_octs()
     /// A0 = 27.5 Hz by default
     public static func hzToOcts(_ hz: Float, tuning: Float = 0.0, binsPerOctave: Int = 12) -> Float {
         let a440: Float = 440.0
-        // Librosa: hz_to_octs uses frequency / (a440 * 2.0**(tuning / bins_per_octave - 4.75))
+        // Industry Standard: hz_to_octs uses frequency / (a440 * 2.0**(tuning / bins_per_octave - 4.75))
         // Simplified: log2(hz / 440) + 4.75
         let baseOct = log2f(hz / a440) + 4.75
         return baseOct + (tuning / Float(binsPerOctave))
@@ -68,7 +68,7 @@ public enum UtilityEngine {
     
     // MARK: - Normalization
     
-    /// Librosa: util.normalize()
+    /// Industry Standard: util.normalize()
     /// Supports axis-wise normalization (mode: 1 for L1, 2 for L2, .infinity for Max)
     public static func normalize(_ vector: [Float], norm: Float = 1.0) -> [Float] {
         guard !vector.isEmpty else { return vector }

@@ -2,7 +2,7 @@
 // Elite Music DNA Engine — Phase 4
 //
 // Pitch tracking using parabolic interpolation of STFT peaks.
-// Mirroring librosa.feature.piptrack for melody extraction.
+// Mirroring industry standard.feature.piptrack for melody extraction.
 
 import Foundation
 import Accelerate
@@ -24,7 +24,7 @@ public final class PiptrackEngine: Sendable {
         self.threshold = threshold
     }
     
-    /// Librosa: feature.piptrack()
+    /// Industry Standard: feature.piptrack()
     /// Extracts pitch and magnitude series from an STFT spectrogram.
     public func track(stft: STFTMatrix) -> PiptrackResult {
         let nFrames = stft.nFrames

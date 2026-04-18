@@ -2,7 +2,7 @@
 // Elite Music DNA Engine — Phase 4
 //
 // High-level audio manipulation: Time-Stretch and Pitch-Shift.
-// Mirroring librosa.effects.
+// Mirroring industry standard.effects.
 
 import Foundation
 import Accelerate
@@ -17,7 +17,7 @@ public final class ManipulationEngine: Sendable {
         self.vocoder = PhaseVocoder()
     }
     
-    /// Librosa: effects.time_stretch()
+    /// Industry Standard: effects.time_stretch()
     /// Changes speed without changing pitch.
     public func timeStretch(_ samples: [Float], rate: Float) async -> [Float] {
         let stft = await stftEngine.analyze(samples)
@@ -25,7 +25,7 @@ public final class ManipulationEngine: Sendable {
         return stftEngine.synthesize(stretchedSTFT)
     }
     
-    /// Librosa: effects.pitch_shift()
+    /// Industry Standard: effects.pitch_shift()
     /// Changes pitch without changing duration.
     /// - Parameters:
     ///   - steps: Number of semitones to shift (positive for up, negative for down)

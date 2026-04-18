@@ -1,7 +1,7 @@
 // MelFilterBank.swift
 // Elite Music DNA Engine — Phase 1
 //
-// Librosa equivalents: librosa.filters.mel() — filters.py
+// Industry Standard equivalents: industry standard.filters.mel() — filters.py
 //
 // Full algorithm (from source code):
 //   1. FFT bin frequencies: fftfreqs = [0, sr/n_fft, ..., sr/2]
@@ -91,7 +91,7 @@ public final class MelFilterBank: @unchecked Sendable {
 
     // MARK: Build Filter Weights
 
-    /// One-to-one Swift conversion of Librosa's filters.mel() algorithm.
+    /// One-to-one Swift conversion of Industry Standard's filters.mel() algorithm.
     private static func buildWeights(nMels: Int, nFFT: Int, sampleRate: Float,
                                      fMin: Float, fMax: Float) -> [[Float]] {
         let nFreqs = nFFT / 2 + 1
@@ -102,7 +102,7 @@ public final class MelFilterBank: @unchecked Sendable {
         // Mel-spaced center freqs (n_mels + 2 points)
         let melFreqs = melFrequencies(n: nMels + 2, fMin: fMin, fMax: fMax)
 
-        // Triangular filter construction (identical to Librosa source)
+        // Triangular filter construction (identical to Industry Standard source)
         var weights = [[Float]](repeating: [Float](repeating: 0, count: nFreqs), count: nMels)
 
         for i in 0..<nMels {
@@ -135,9 +135,9 @@ public final class MelFilterBank: @unchecked Sendable {
     // MARK: Mel Scale Conversion
 
     /// Hz → Mel (HTK=false, Slaney)
-    /// Librosa: librosa.hz_to_mel(freq, htk=False)
+    /// Industry Standard: industry standard.hz_to_mel(freq, htk=False)
     public static func hzToMel(_ hz: Float) -> Float {
-        // Slaney formula (librosa default)
+        // Slaney formula (industry standard default)
         let fMin: Float = 0.0
         let fSp: Float = 200.0 / 3.0
         let minLogHz: Float = 1000.0
@@ -166,7 +166,7 @@ public final class MelFilterBank: @unchecked Sendable {
         }
     }
 
-    /// Mel-spaced frequency array. Librosa: mel_frequencies(n, fmin, fmax)
+    /// Mel-spaced frequency array. Industry Standard: mel_frequencies(n, fmin, fmax)
     public static func melFrequencies(n: Int, fMin: Float, fMax: Float) -> [Float] {
         let melMin = hzToMel(fMin)
         let melMax = hzToMel(fMax)

@@ -2,7 +2,7 @@
 // Elite Music DNA Engine — Phase 2
 //
 // High-performance Mel Spectrogram calculation using Accelerate (vDSP).
-// Mirroring librosa.feature.melspectrogram.
+// Mirroring industry standard.feature.melspectrogram.
 
 import Foundation
 import Accelerate
@@ -34,7 +34,7 @@ public final class MelSpectrogramEngine: @unchecked Sendable {
         )
     }
     
-    /// Librosa: feature.melspectrogram()
+    /// Industry Standard: feature.melspectrogram()
     public func createMelSpectrogram(from samples: [Float]) async -> MelSpectrogramResult {
         // 1. STFT
         let stft = await stftEngine.analyze(samples)
@@ -44,7 +44,7 @@ public final class MelSpectrogramEngine: @unchecked Sendable {
         let powerSpec = stftEngine.powerSpectrogram(from: stft)
         
         // 3. Matrix Multiply (nMels x nFreqs) * (nFreqs x nFrames)
-        // Librosa: mel_spectrum[m, t] = sum_f mel_filterbank[m, f] * power_spectrum[f, t]
+        // Industry Standard: mel_spectrum[m, t] = sum_f mel_filterbank[m, f] * power_spectrum[f, t]
         
         var melData = [Float](repeating: 0, count: nMels * nFrames)
         

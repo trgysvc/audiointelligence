@@ -1,7 +1,7 @@
 // StructureEngine.swift
 // Elite Music DNA Engine — Phase 3
 //
-// Librosa equivalents: segment.py
+// Industry Standard equivalents: segment.py
 //   recurrence_matrix() → cosine SSM (vDSP_dotpr based)
 //   Foote (2000) novelty score → structural boundaries
 //   Agglomerative clustering → segment merging

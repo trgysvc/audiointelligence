@@ -50,7 +50,7 @@ public final class HPSSEngine: Sendable {
         )
     }
     
-    /// Librosa: decompose.hpss()
+    /// Industry Standard: decompose.hpss()
     public static func separate(
         from stft: STFTMatrix, 
         kernelSize: Int = 31, 

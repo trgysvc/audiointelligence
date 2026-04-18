@@ -2,7 +2,7 @@
 // Elite Music DNA Engine — Phase 4
 //
 // Tonal Centroid features (Tonnetz).
-// Mirroring librosa.feature.tonnetz.
+// Mirroring industry standard.feature.tonnetz.
 // Projects chroma features into a 6D space representing harmonic relationships.
 
 import Foundation
@@ -17,7 +17,7 @@ public final class TonnetzEngine: Sendable {
     public init() {}
     
     /// Computes the Tonal Centroids (Tonnetz) from a chromagram.
-    /// Librosa: feature.tonnetz()
+    /// Industry Standard: feature.tonnetz()
     public func compute(chromagram: [[Float]]) -> TonnetzResult {
         guard !chromagram.isEmpty else { return TonnetzResult(tonnetz: []) }
         let nFrames = chromagram[0].count
@@ -62,10 +62,10 @@ public final class TonnetzEngine: Sendable {
             matrix[0][k] = r1 * sinf(angleFifth)
             matrix[1][k] = r1 * cosf(angleFifth)
             
-            let angleM3 = Float(k) * 3.0 * .pi / 2.0 // Actually it's 2*pi*(k*3)/12? No, Librosa uses specific constants.
-            // Librosa defaults:
+            let angleM3 = Float(k) * 3.0 * .pi / 2.0 // Actually it's 2*pi*(k*3)/12? No, Industry Standard uses specific constants.
+            // Industry Standard defaults:
             // d1 = 7 (fifth), d2 = 3 (m3), d3 = 4 (M3)
-            // Librosa uses: 
+            // Industry Standard uses: 
             // Phi(k, d) = [sin(2*pi*k*d/12), cos(2*pi*k*d/12)]
             
             // Fifth (d=7)

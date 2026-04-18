@@ -2,7 +2,7 @@
 // Elite Music DNA Engine — Phase 2
 //
 // High-performance Mel-frequency cepstral coefficients (MFCC).
-// Mirroring librosa.feature.mfcc using vDSP_DCT.
+// Mirroring industry standard.feature.mfcc using vDSP_DCT.
 
 import Foundation
 import Accelerate
@@ -40,7 +40,7 @@ public final class MFCCEngine: @unchecked Sendable {
         vDSP_DFT_DestroySetup(dctSetup)
     }
     
-    /// Librosa: feature.mfcc()
+    /// Industry Standard: feature.mfcc()
     public func createMFCC(from samples: [Float]) async -> MFCCResult {
         let mel = await melEngine.createMelSpectrogram(from: samples)
         return compute(melSpectrogram: mel.melData, stftEngine: STFTEngine(nFFT: 2048, hopLength: 512, sampleRate: 22050))

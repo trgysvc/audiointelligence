@@ -2,7 +2,7 @@
 // Elite Music DNA Engine — Phase 4
 //
 // Tempogram implementation for mapping tempo variations over time.
-// Mirroring librosa.feature.tempogram using Autocorrelation (ACT).
+// Mirroring industry standard.feature.tempogram using Autocorrelation (ACT).
 
 import Foundation
 import Accelerate

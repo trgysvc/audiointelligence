@@ -1,7 +1,7 @@
 // ChromaEngine.swift
 // Elite Music DNA Engine — Phase 2
 //
-// Librosa equivalents:
+// Industry Standard equivalents:
 //   filters.chroma() — Gaussian chroma filter bank
 //   feature.chroma_stft() — chromagram from STFT
 //   feature.tonnetz() (optional)
@@ -25,7 +25,7 @@ public struct ChromaResult: Sendable {
 
 // MARK: - Chroma Filter Bank
 
-/// Librosa filters.chroma() — one-to-one implementation
+/// Industry Standard filters.chroma() — one-to-one implementation
 /// n_chroma=12, ctroct=5.0, octwidth=2.0, base_c=True
 final class ChromaFilterBank: @unchecked Sendable {
 
@@ -39,7 +39,7 @@ final class ChromaFilterBank: @unchecked Sendable {
         self.weights = ChromaFilterBank.buildWeights(nFFT: nFFT, sampleRate: sampleRate, tuning: tuning)
     }
 
-    /// Librosa: filters.chroma() — Gaussian chroma filter bank
+    /// Industry Standard: filters.chroma() — Gaussian chroma filter bank
     static func buildWeights(nFFT: Int, sampleRate: Float, tuning: Float,
                               nChroma: Int = 12, ctroct: Float = 5.0, octwidth: Float = 2.0) -> [[Float]] {
         let nFreqs = nFFT / 2 + 1
@@ -158,7 +158,7 @@ public final class ChromaEngine: @unchecked Sendable {
         filterBank.apply(magnitude: stft.magnitude, nFrames: stft.nFrames)
     }
 
-    /// Librosa: feature.chroma_cqt()
+    /// Industry Standard: feature.chroma_cqt()
     /// Computes a chromagram from a Constant-Q transform.
     /// This is often more musically accurate than STFT-based chroma.
     public func chromaCQT(cqtMagnitude: [[Float]], binsPerOctave: Int = 12) -> [[Float]] {
@@ -178,7 +178,7 @@ public final class ChromaEngine: @unchecked Sendable {
         return ChromaEngine.normalizeChroma(chroma)
     }
 
-    /// Librosa: feature.chroma_cens()
+    /// Industry Standard: feature.chroma_cens()
     /// Chromagram Energy Normalized Statistics (CENS).
     /// Best for cover song detection.
     public func createCENS(from chroma: [[Float]], windowSize: Int = 41) -> [[Float]] {
@@ -208,7 +208,7 @@ public final class ChromaEngine: @unchecked Sendable {
         
         // 5. Transpose back to original format [12 x nFrames]
         // result is already [12 x nFrames], no need for final transpose if we want to return the same shape as input
-        // Actually, Librosa returns [12 x nFrames]. My result is [12 x nFrames].
+        // Actually, Industry Standard returns [12 x nFrames]. My result is [12 x nFrames].
         return result
     }
 
