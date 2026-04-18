@@ -30,6 +30,12 @@ public struct MusicDNAAnalysis: Codable, Sendable, Identifiable {
     // Audit & Extension Data (v45.0)
     public let audit: AuditMetrics
     
+    // v6.1 Infinity Additions (Complete 26 Engine Coverage)
+    public let tonnetz: TonnetzMetrics
+    public let tempogram: TempogramMetrics
+    public let nmf: NMFMetrics
+    public let piptrack: PiptrackMetrics
+    
     // Metadata / Paths
     public var reportPath: String?
     
@@ -50,7 +56,11 @@ public struct MusicDNAAnalysis: Codable, Sendable, Identifiable {
                  waveformPeaks: [Float],
                  chromaProfile: [Float],
                  segments: [MusicSegment],
-                 audit: AuditMetrics) {
+                 audit: AuditMetrics,
+                 tonnetz: TonnetzMetrics,
+                 tempogram: TempogramMetrics,
+                 nmf: NMFMetrics,
+                 piptrack: PiptrackMetrics) {
         self.id = id
         self.timestamp = timestamp
         self.fileName = fileName
@@ -69,6 +79,10 @@ public struct MusicDNAAnalysis: Codable, Sendable, Identifiable {
         self.chromaProfile = chromaProfile
         self.segments = segments
         self.audit = audit
+        self.tonnetz = tonnetz
+        self.tempogram = tempogram
+        self.nmf = nmf
+        self.piptrack = piptrack
     }
 }
 
@@ -192,4 +206,26 @@ public struct AuditMetrics: Codable, Sendable {
     public let melSpectrogramResolution: String
     public let utilityCheck: String
     public let filterbankStatus: String
+}
+
+// MARK: - v6.1 Infinity Extended Metrics
+
+public struct TonnetzMetrics: Codable, Sendable {
+    public let meanTonnetz: [Float] // 6 dimensions
+    public let harmonicStability: Float
+}
+
+public struct TempogramMetrics: Codable, Sendable {
+    public let cyclicTempoMap: [Float]
+    public let dominantPeriod: Int
+}
+
+public struct NMFMetrics: Codable, Sendable {
+    public let reconstructionError: Float
+    public let componentEnergy: [Float]
+}
+
+public struct PiptrackMetrics: Codable, Sendable {
+    public let refinedMeanF0: Float
+    public let trackingConfidence: Float
 }

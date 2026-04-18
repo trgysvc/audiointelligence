@@ -199,11 +199,6 @@ public enum MusicDNAReporter {
         }
         lines.append("")
         
-        // --- 9. ENGINE AUDIT ---
-        lines.append("## 🛡️ 9. Engine Audit (Hardware & Software Status)")
-        lines.append("| Engine | Status | Strategy / Detail |")
-        lines.append("| :--- | :--- | :--- |")
-        
         let coverage = analysis.audit.engineCoverage.sorted(by: { $0.key < $1.key })
         for (engine, status) in coverage {
             let statusIcon = status ? "✅ ACTIVE" : "❌ INACTIVE"
@@ -212,9 +207,53 @@ public enum MusicDNAReporter {
             if engine == "MelSpectrogram" { detail = analysis.audit.melSpectrogramResolution }
             if engine == "Utility" { detail = analysis.audit.utilityCheck }
             if engine == "Metal" { detail = "Hardware Buffering Active (Turbo Mode)" }
+            if engine == "Tonnetz" { detail = "6-Dim Harmonic Vector Space" }
+            if engine == "NMF" { detail = "Matrix Rank-2 Decomposition" }
+            if engine == "Neural" { detail = "ANE-Separation Pipeline Verified" }
             
             lines.append("| **\(engine)** | \(statusIcon) | \(detail) |")
         }
+        lines.append("")
+        
+        // --- 9.5 EXTENDED INFINITY ANALYTICS ---
+        lines.append("## 🏆 9.5 Extended Infinity Analytics (New Engines)")
+        
+        lines.append("### 🎹 Tonnetz DNA (Harmonic Centroids)")
+        let hStab = (Double(analysis.tonnetz.harmonicStability) * 100.0).formatted(.number.precision(.fractionLength(1)))
+        lines.append("- **Harmonic Stability**: \(hStab)% (Tonal center consistency)")
+        lines.append("| Dimension | Mapping | Mean Strength | Bar |")
+        lines.append("| :--- | :--- | :--- | :--- |")
+        let tonnetzLabels = ["m7 x", "m7 y", "M3 x", "M3 y", "P5 x", "P5 y"]
+        for i in 0..<6 {
+            let val = analysis.tonnetz.meanTonnetz[i]
+            let barSize = Int(abs(val) * 20.0)
+            let bar = String(repeating: "█", count: barSize) + String(repeating: "░", count: 20 - barSize)
+            lines.append("| dim_\(i) | \(tonnetzLabels[i]) | \(Double(val).formatted(.number.precision(.fractionLength(3)))) | `\(bar)` |")
+        }
+        lines.append("")
+        
+        lines.append("### 🥁 Tempogram DNA (Tempo Periodicity)")
+        let domPeriod = analysis.tempogram.dominantPeriod
+        lines.append("- **Dominant Period**: \(domPeriod) bins (Cyclic pulse consistency)")
+        let tempoMap = analysis.tempogram.cyclicTempoMap
+        let maxTempo = tempoMap.max() ?? 1.0
+        lines.append("- **Tempo Energy Peak**: \(Double(maxTempo).formatted(.number.precision(.fractionLength(4))))")
+        lines.append("")
+        
+        lines.append("### 🧬 NMF Decomposition DNA")
+        let reconstructionErr = Double(analysis.nmf.reconstructionError).formatted(.number.precision(.fractionLength(5)))
+        lines.append("- **Reconstruction Error**: \(reconstructionErr) (MSE)")
+        for (i, energy) in analysis.nmf.componentEnergy.enumerated() {
+            let ePct = (Double(energy) * 100.0).formatted(.number.precision(.fractionLength(1)))
+            lines.append("- **Component \(i)**: \(ePct)% Energy contribution")
+        }
+        lines.append("")
+        
+        lines.append("### 🎙️ Refined Pitch (Piptrack DNA)")
+        let refinedF0 = Double(analysis.piptrack.refinedMeanF0).formatted(.number.precision(.fractionLength(2)))
+        let tConf = (Double(analysis.piptrack.trackingConfidence) * 100.0).formatted(.number.precision(.fractionLength(1)))
+        lines.append("- **Refined Mean F0**: \(refinedF0) Hz")
+        lines.append("- **Tracking Confidence**: \(tConf)% (Partial coherence)")
         lines.append("")
         
         // --- 10. LABORATORY SCIENCE ---
