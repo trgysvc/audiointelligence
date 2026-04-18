@@ -57,7 +57,7 @@ let package = Package(
         ),
         
         // ---------------------------------------------------------------------
-        // 2. MODULAR CORE LAYER: The high-performance DSP engine (v6.1 Infinity).
+        // 2. MODULAR CORE LAYER: The high-performance DSP engine (v6.3 Infinity).
         // Includes: Core, Feature, Effects, Display, and Util sub-modules.
         // ---------------------------------------------------------------------
         .target(
