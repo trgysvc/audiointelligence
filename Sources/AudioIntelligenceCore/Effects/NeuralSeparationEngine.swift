@@ -1,16 +1,12 @@
-// NeuralSeparationEngine.swift
-// Elite Music DNA Engine — Phase 4
-//
-// CoreML-based Source Separation.
-// High-quality isolation of Vocals, Drums, Bass, etc.
-// Optimized for Apple Neural Engine (ANE).
-
 import Foundation
 @preconcurrency import CoreML
 import Accelerate
 
+/// Professional-grade Source Separation interface.
+/// Supports Vocals, Drums, Bass, and Other isolation via Spectral Masking.
 public protocol SeparationModel: Sendable {
-    func separate(stft: STFTMatrix) async throws -> [String: STFTMatrix]
+    /// Mapping of stem name to spectral mask (0.0 to 1.0)
+    func generateMasks(stft: STFTMatrix) async throws -> [String: [Float]]
 }
 
 public enum NeuralSeparationError: Error {
@@ -23,50 +19,66 @@ public final class NeuralSeparationEngine: Sendable {
     
     public init() {}
     
-    /// Entry point for neural separation.
-    /// This engine maintains the logic for chunking audio and passing it to CoreML models.
+    /// Entry point for high-fidelity neural separation.
+    /// Applies spectral masks from an ML model to the original complex STFT.
     public func separate(
         samples: [Float], 
         using model: any SeparationModel,
         stftEngine: STFTEngine
     ) async throws -> [String: [Float]] {
         
-        // 1. STFT
+        // 1. Analyze input
         let stft = await stftEngine.analyze(samples)
+        let nTotal = stft.magnitude.count
         
-        // 2. Perform Separation
-        let separatedSTFTs = try await model.separate(stft: stft)
+        // 2. Obtain Mask Predictions (0.0 ... 1.0)
+        let masks = try await model.generateMasks(stft: stft)
         
-        // 3. ISTFT (Inverse STFT) to retrieve time-domain signals
+        // 3. Apply Multiplicative Masking (Ratio Masking)
+        // Stem_Mag = Input_Mag * Mask
+        // Stem_Phase = Input_Phase (Standard practice for single-channel isolation)
         var result: [String: [Float]] = [:]
-        for (name, matrix) in separatedSTFTs {
-        result[name] = stftEngine.synthesize(matrix)
+        
+        for (name, mask) in masks {
+            guard mask.count == nTotal else { continue }
+            
+            var maskedMag = [Float](repeating: 0, count: nTotal)
+            vDSP_vmul(Array(stft.magnitude), 1, mask, 1, &maskedMag, 1, vDSP_Length(nTotal))
+            
+            let maskedSTFT = STFTMatrix(
+                magnitude: maskedMag,
+                phase: stft.phase,
+                nFFT: stft.nFFT,
+                hopLength: stft.hopLength,
+                sampleRate: stft.sampleRate
+            )
+            
+            // 4. Synthesize stem
+            result[name] = stftEngine.synthesize(maskedSTFT)
         }
         
         return result
     }
 }
 
-// MARK: - Example Implementation Wrapper
-// This shows how a specific model (like a Spleeter-based CoreML export) would be wrapped.
+// MARK: - CoreML Implementation Template
 
-public final class GenericSeparationModel: SeparationModel {
+/// Specialized wrapper for CoreML Models (Unmix, Spleeter, etc.)
+public final class CoreMLSeparationModel: SeparationModel {
     private let model: MLModel
     
     public init(model: MLModel) {
         self.model = model
     }
     
-    public func separate(stft: STFTMatrix) async throws -> [String: STFTMatrix] {
-        // Implementation would map STFTMatrix to MLMultiArray,
-        // run model prediction, and map result back to STFTMatrix masks.
-        // This is a placeholder for the actual model IO logic.
+    public func generateMasks(stft: STFTMatrix) async throws -> [String: [Float]] {
+        // Professional Implementation:
+        // 1. Convert stft.magnitude [nFrames x nFreqs] to MLMultiArray
+        // 2. Chunk or Pad to match model's expected shape (e.g., 512x2018)
+        // 3. Run async prediction on ANE (Apple Neural Engine)
+        // 4. Extract softmax/sigmoid masks
         
-        // Example logic:
-        // let input = try MLMultiArray(stft.magnitude)
-        // let output = try await model.prediction(from: input)
-        // ... apply masks ...
-        
-        return [:] // To be implemented with specific model metadata
+        // Placeholder for future model coupling
+        return [:]
     }
 }

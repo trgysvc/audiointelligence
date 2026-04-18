@@ -24,9 +24,9 @@ public enum SpectralFeatureEngine {
             var sumMagnitude: Float = 0
             var weightedSum: Float = 0
             
-            // Extract frame (column)
+            // Extract frame (contiguous in Frame-major)
             for f in 0..<nFreqs {
-                let mag = stft.magnitude[f * nFrames + t]
+                let mag = stft.magnitude[t * nFreqs + f]
                 sumMagnitude += mag
                 weightedSum += mag * freqs[f]
             }
@@ -52,17 +52,17 @@ public enum SpectralFeatureEngine {
         let freqs = stft.frequencies()
         
         for t in 0..<nFrames {
-            // Calculate total energy for this frame
+            // Calculate total energy for this frame (Contiguous access)
             var totalEnergy: Float = 0
             for f in 0..<nFreqs {
-                totalEnergy += stft.magnitude[f * nFrames + t]
+                totalEnergy += stft.magnitude[t * nFreqs + f]
             }
             
             let threshold = totalEnergy * rollPercent
             var cumulative: Float = 0
             
             for f in 0..<nFreqs {
-                cumulative += stft.magnitude[f * nFrames + t]
+                cumulative += stft.magnitude[t * nFreqs + f]
                 if cumulative >= threshold {
                     rolloffs[t] = freqs[f]
                     break
@@ -87,7 +87,7 @@ public enum SpectralFeatureEngine {
             var arithmeticSum: Float = 0
             
             for f in 0..<nFreqs {
-                let mag = max(stft.magnitude[f * nFrames + t], 1e-10)
+                let mag = max(stft.magnitude[t * nFreqs + f], 1e-10)
                 logSum += logf(mag)
                 arithmeticSum += mag
             }
@@ -136,7 +136,7 @@ public enum SpectralFeatureEngine {
                 
                 var bandMags: [Float] = []
                 for f in start...end {
-                    bandMags.append(stft.magnitude[f * nFrames + t])
+                    bandMags.append(stft.magnitude[t * nFreqs + f])
                 }
                 
                 let sorted = bandMags.sorted()

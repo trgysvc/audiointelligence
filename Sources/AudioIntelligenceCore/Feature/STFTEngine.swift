@@ -6,6 +6,7 @@
 
 import Accelerate
 import Foundation
+import CryptoKit
 
 // MARK: - Window Type
 
@@ -17,11 +18,11 @@ public enum WindowType: String, Sendable {
 // MARK: - STFT Result Matrix
 
 /// Flat memory layout for high-performance audio analysis.
-/// Matches Industry Standard's (n_freqs, n_frames) structure.
-public struct STFTMatrix: Sendable, Codable {
-    /// Contiguous data: magnitude[f * nFrames + t]
+/// Optimized for cache locality: Frame-major (Time-first).
+public struct STFTMatrix: Codable, Sendable {
+    /// Contiguous data: magnitude[t * nFreqs + f]
     public let magnitude: [Float]
-    /// Contiguous data: phase[f * nFrames + t]
+    /// Contiguous data: phase[t * nFreqs + f]
     public let phase: [Float]
     
     public let nFFT: Int
@@ -30,7 +31,7 @@ public struct STFTMatrix: Sendable, Codable {
     
     public var nFreqs: Int { nFFT / 2 + 1 }
     public var nFrames: Int { magnitude.count / nFreqs }
-
+    
     public init(magnitude: [Float], phase: [Float], nFFT: Int, hopLength: Int, sampleRate: Double) {
         self.magnitude = magnitude
         self.phase = phase
@@ -39,19 +40,19 @@ public struct STFTMatrix: Sendable, Codable {
         self.sampleRate = sampleRate
     }
 
-    /// Accessor for a specific frequency bin across all frames
-    public func magnitudeRow(forBin f: Int) -> ArraySlice<Float> {
-        let start = f * nFrames
-        return magnitude[start..<(start + nFrames)]
+    /// Accessor for a specific frequency bin across all frames (Gather operation)
+    public func magnitudeRow(forBin f: Int) -> [Float] {
+        var row = [Float](repeating: 0, count: nFrames)
+        for t in 0..<nFrames {
+            row[t] = magnitude[t * nFreqs + f]
+        }
+        return row
     }
     
-    /// Accessor for a specific frame across all frequencies
-    public func magnitudeFrame(forTimeline t: Int) -> [Float] {
-        var frame = [Float](repeating: 0, count: nFreqs)
-        for f in 0..<nFreqs {
-            frame[f] = magnitude[f * nFrames + t]
-        }
-        return frame
+    /// Accessor for a specific frame across all frequencies (Contiguous operation)
+    public func magnitudeFrame(forTimeline t: Int) -> ArraySlice<Float> {
+        let start = t * nFreqs
+        return magnitude[start..<(start + nFreqs)]
     }
 
     public func frequencies() -> [Float] {
@@ -92,9 +93,9 @@ public final class STFTEngine: @unchecked Sendable {
         // Use periodic window (Industry Standard default: sym=False)
         self.window = STFTEngine.createPeriodicWindow(type: windowType, length: nFFT)
 
-        // vDSP_DFT real-to-complex setup
-        self.dftSetup = vDSP_DFT_zop_CreateSetup(nil, vDSP_Length(nFFT), .FORWARD)!
-        self.idftSetup = vDSP_DFT_zop_CreateSetup(nil, vDSP_Length(nFFT), .INVERSE)!
+        // vDSP_DFT real-to-complex setup (Optimal for real audio data)
+        self.dftSetup = vDSP_DFT_zrop_CreateSetup(nil, vDSP_Length(nFFT), .FORWARD)!
+        self.idftSetup = vDSP_DFT_zrop_CreateSetup(nil, vDSP_Length(nFFT), .INVERSE)!
     }
 
     deinit {
@@ -129,8 +130,24 @@ public final class STFTEngine: @unchecked Sendable {
     /// Computes STFT with Industry Standard-exact behavior.
     /// - Parameter padMode: 'constant' (zeros) or 'reflect' (Industry Standard default: 'constant')
     public func analyze(_ samples: [Float], center: Bool = true, padMode: String = "constant") async -> STFTMatrix {
-        // Cache Check (Unique hash of samples for reliability)
-        let sampleHash = samples.prefix(1000).map { String($0) }.joined() + "\(samples.count)"
+        // Cache Check (Fast SHA256 hash of signal signature)
+        let sampleHash: String
+        if samples.count > 4000 {
+            var signature = Data()
+            samples.prefix(2000).withUnsafeBufferPointer { ptr in
+                signature.append(ptr)
+            }
+            samples.suffix(2000).withUnsafeBufferPointer { ptr in
+                signature.append(ptr)
+            }
+            let hash = SHA256.hash(data: signature)
+            sampleHash = hash.compactMap { String(format: "%02x", $0) }.joined() + "_\(samples.count)"
+        } else {
+            let signature = samples.withUnsafeBufferPointer { Data(buffer: $0) }
+            let hash = SHA256.hash(data: signature)
+            sampleHash = hash.compactMap { String(format: "%02x", $0) }.joined()
+        }
+        
         let cacheKey = await IntelligenceCache.shared.generateKey(for: URL(string: "stft://local")!, parameters: [
             "hash": sampleHash, "nFFT": nFFT, "hop": hopLength, "window": windowType.rawValue, "center": center, "pad": padMode
         ])
@@ -153,11 +170,10 @@ public final class STFTEngine: @unchecked Sendable {
         var magnitudes = [Float](repeating: 0, count: nFreqs * nFrames)
         var phases     = [Float](repeating: 0, count: nFreqs * nFrames)
 
-        // DFT working buffers
-        var realIn  = [Float](repeating: 0, count: nFFT)
-        var imagIn  = [Float](repeating: 0, count: nFFT)
-        var realOut = [Float](repeating: 0, count: nFFT)
-        var imagOut = [Float](repeating: 0, count: nFFT)
+        // DFT working buffers (Split-complex for Real-to-Complex efficiency)
+        var windowedInput = [Float](repeating: 0, count: nFFT)
+        var realOut = [Float](repeating: 0, count: nFFT / 2)
+        var imagOut = [Float](repeating: 0, count: nFFT / 2)
 
         for t in 0..<nFrames {
             let start = t * hopLength
@@ -165,26 +181,36 @@ public final class STFTEngine: @unchecked Sendable {
             // Apply window
             vDSP_vmul(Array(input[start..<(start + nFFT)]), 1,
                       window, 1,
-                      &realIn, 1,
+                      &windowedInput, 1,
                       vDSP_Length(nFFT))
+
+            // Efficient Real-to-Complex FFT
+            vDSP_DFT_Execute(dftSetup, windowedInput, [Float](repeating: 0, count: nFFT / 2), &realOut, &imagOut)
+
+            // Extract magnitude and phase
+            // vDSP_DFT_zrop special layout:
+            // realOut[0] = DC, imagOut[0] = Nyquist
             
-            imagIn.replaceSubrange(0..<nFFT, with: repeatElement(0, count: nFFT))
+            // DC Bins
+            let dcMag = abs(realOut[0])
+            magnitudes[t * nFreqs + 0] = dcMag
+            phases[t * nFreqs + 0] = (realOut[0] >= 0) ? 0.0 : .pi
+            
+            // Nyquist Bins
+            let nyMag = abs(imagOut[0])
+            magnitudes[t * nFreqs + (nFreqs - 1)] = nyMag
+            phases[t * nFreqs + (nFreqs - 1)] = (imagOut[0] >= 0) ? 0.0 : .pi
 
-            // FFT
-            vDSP_DFT_Execute(dftSetup, realIn, imagIn, &realOut, &imagOut)
-
-            // Extract magnitude and phase for only the positive frequencies [0...n_fft/2]
-            for f in 0..<nFreqs {
+            // In-between complex bins
+            for f in 1..<nFreqs - 1 {
                 let re = realOut[f]
                 let im = imagOut[f]
                 
-                // Industry Standard scaling: By default, FFT returns raw sums. 
-                // However, we remain consistent with the magnitude/phase structure.
                 let mag = sqrtf(re * re + im * im)
                 let phi = atan2f(im, re)
                 
-                magnitudes[f * nFrames + t] = mag
-                phases[f * nFrames + t]     = phi
+                magnitudes[t * nFreqs + f] = mag
+                phases[t * nFreqs + f]     = phi
             }
         }
         
@@ -207,36 +233,38 @@ public final class STFTEngine: @unchecked Sendable {
         var signal = [Float](repeating: 0, count: expectedLength)
         var windowSum = [Float](repeating: 0, count: expectedLength)
         
-        var realIn  = [Float](repeating: 0, count: nFFT)
-        var imagIn  = [Float](repeating: 0, count: nFFT)
-        var realOut = [Float](repeating: 0, count: nFFT)
-        var imagOut = [Float](repeating: 0, count: nFFT)
+        var realIn  = [Float](repeating: 0, count: nFFT / 2)
+        var imagIn  = [Float](repeating: 0, count: nFFT / 2)
+        var timeDomainOut = [Float](repeating: 0, count: nFFT)
         
         for t in 0..<nFrames {
-            // 1. Reconstruct full complex spectrum (Hermitian symmetry)
-            for f in 0..<nFreqs {
-                let mag = stft.magnitude[f * nFrames + t]
-                let phi = stft.phase[f * nFrames + t]
+            // 1. Map STFT Matrix to vDSP_DFT_zrop specialized complex layout
+            // DC -> realIn[0], Nyquist -> imagIn[0]
+            
+            let dcMag = stft.magnitude[t * nFreqs + 0]
+            let dcPhi = stft.phase[t * nFreqs + 0]
+            realIn[0] = dcMag * cosf(dcPhi)
+            
+            let nyMag = stft.magnitude[t * nFreqs + (nFreqs - 1)]
+            let nyPhi = stft.phase[t * nFreqs + (nFreqs - 1)]
+            imagIn[0] = nyMag * cosf(nyPhi)
+            
+            // Complex Bins
+            for f in 1..<nFreqs - 1 {
+                let mag = stft.magnitude[t * nFreqs + f]
+                let phi = stft.phase[t * nFreqs + f]
                 
-                let re = mag * cosf(phi)
-                let im = mag * sinf(phi)
-                
-                realIn[f] = re
-                imagIn[f] = im
-                
-                if f > 0 && f < nFreqs - 1 {
-                    // Conjugate symmetry for negative frequencies
-                    realIn[nFFT - f] = re
-                    imagIn[nFFT - f] = -im
-                }
+                realIn[f] = mag * cosf(phi)
+                imagIn[f] = mag * sinf(phi)
             }
             
-            // 2. Inverse FFT
-            vDSP_DFT_Execute(idftSetup, realIn, imagIn, &realOut, &imagOut)
+            // 2. Inverse Efficient Real FFT
+            var zeroBuffer = [Float](repeating: 0, count: nFFT)
+            vDSP_DFT_Execute(idftSetup, realIn, imagIn, &timeDomainOut, &zeroBuffer)
             
             // vDSP Scale for Inverse FFT: 1/N
             var scale = 1.0 / Float(nFFT)
-            vDSP_vsmul(realOut, 1, &scale, &realOut, 1, vDSP_Length(nFFT))
+            vDSP_vsmul(timeDomainOut, 1, &scale, &timeDomainOut, 1, vDSP_Length(nFFT))
             
             // 3. Apply window and Overlap-Add
             let start = t * hopLength
@@ -244,7 +272,7 @@ public final class STFTEngine: @unchecked Sendable {
                 let sIdx = start + i
                 if sIdx < expectedLength {
                     let win = window[i]
-                    signal[sIdx] += realOut[i] * win
+                    signal[sIdx] += timeDomainOut[i] * win
                     windowSum[sIdx] += win * win
                 }
             }

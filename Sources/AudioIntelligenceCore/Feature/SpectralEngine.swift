@@ -47,7 +47,9 @@ public final class SpectralEngine: Sendable {
             for t in 1..<nFrames {
                 var frameDiff: Float = 0
                 for f in 0..<nBins {
-                    let diff = mag[f * nFrames + t] - mag[f * nFrames + t - 1]
+                    let current = mag[t * nBins + f]
+                    let previous = mag[(t - 1) * nBins + f]
+                    let diff = current - previous
                     frameDiff += max(0, diff) 
                 }
                 totalFlux += frameDiff
@@ -79,11 +81,11 @@ public final class SpectralEngine: Sendable {
             var totalMag: Float = 0
             
             for f in 0..<nBins {
-                let m = mag[f * nFrames + t]
+                let m = mag[t * nBins + f]
                 let diff = freqs[f] - mu1
-                let d2 = diff * diff
-                m3 += d2 * diff * m
-                m4 += d2 * d2 * m
+                let diffSq = diff * diff
+                m3 += diffSq * diff * m
+                m4 += diffSq * diffSq * m
                 totalMag += m
             }
             
@@ -122,12 +124,14 @@ public final class SpectralEngine: Sendable {
 
         let dynamicRangeDb = (rmsMean > 1e-8) ? 20.0 * log10f(max(1e-8, rmsMax / rmsMean)) : 0.0
 
-        // Reconstruct matrix for visualization (decimated for UI performance)
+        // Reconstruct matrix for visualization (Frequency-major for UI mapping)
         var visualMatrix = [[Float]]()
-        for i in 0..<nBins {
-            let start = i * nFrames
-            let frameData = Array(mag[start..<start+nFrames])
-            visualMatrix.append(frameData)
+        for f in 0..<nBins {
+            var binData = [Float](repeating: 0, count: nFrames)
+            for t in 0..<nFrames {
+                binData[t] = mag[t * nBins + f]
+            }
+            visualMatrix.append(binData)
         }
         
         return SpectralResult(
@@ -154,7 +158,7 @@ public final class SpectralEngine: Sendable {
             var weightedSum: Float = 0
             var totalMag: Float = 0
             for f in 0..<nFreqs {
-                let m = magnitude[f * nFrames + t]
+                let m = magnitude[t * nFreqs + f]
                 weightedSum += frequencies[f] * m
                 totalMag += m
             }
@@ -169,7 +173,7 @@ public final class SpectralEngine: Sendable {
             var weightedSqDiff: Float = 0
             var totalMag: Float = 0
             for f in 0..<nFreqs {
-                let m = magnitude[f * nFrames + t]
+                let m = magnitude[t * nFreqs + f]
                 let diff = frequencies[f] - c
                 weightedSqDiff += diff * diff * m
                 totalMag += m
@@ -182,11 +186,11 @@ public final class SpectralEngine: Sendable {
         let nFreqs = frequencies.count
         return (0..<nFrames).map { t in
             var frameTotal: Float = 0
-            for f in 0..<nFreqs { frameTotal += magnitude[f * nFrames + t] }
+            for f in 0..<nFreqs { frameTotal += magnitude[t * nFreqs + f] }
             let threshold = rollPercent * frameTotal
             var cumsum: Float = 0
             for f in 0..<nFreqs {
-                cumsum += magnitude[f * nFrames + t]
+                cumsum += magnitude[t * nFreqs + f]
                 if cumsum >= threshold { return frequencies[f] }
             }
             return frequencies.last ?? 0
@@ -199,7 +203,7 @@ public final class SpectralEngine: Sendable {
             var logSum: Float = 0
             var linSum: Float = 0
             for f in 0..<nFreqs {
-                let m = magnitude[f * nFrames + t]
+                let m = magnitude[t * nFreqs + f]
                 logSum += logf(max(m, 1e-12))
                 linSum += m
             }
@@ -232,7 +236,7 @@ public final class SpectralEngine: Sendable {
         return (0..<nFrames).map { t in
             var sumSq: Float = 0
             for f in 0..<nFreqs {
-                let m = magnitude[f * nFrames + t]
+                let m = magnitude[t * nFreqs + f]
                 sumSq += m * m
             }
             return sqrtf(sumSq / Float(nFreqs))

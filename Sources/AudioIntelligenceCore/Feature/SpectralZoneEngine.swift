@@ -2,10 +2,11 @@ import Foundation
 import Accelerate
 
 /**
- * v55.1: Semantic Audio Intelligence Engine
- * Specialized in understanding the "Roles" and "Dominance" of audio components.
+ * SpectralZoneEngine
+ * Analyzes frequency zones to determine tonal distribution and energy balance.
+ * Scientific replacement for the former 'Semantic' engine.
  */
-public final class SemanticEngine: Sendable {
+public final class SpectralZoneEngine: Sendable {
     
     private let sampleRate: Double
     
@@ -13,18 +14,20 @@ public final class SemanticEngine: Sendable {
         self.sampleRate = sampleRate
     }
     
-    public struct SemanticResult: Sendable {
+    public struct SpectralZoneResult: Sendable {
         public let dominanceMap: [String: Float] // Category: Percentage
-        public let primaryRole: String          // Lead, Supporting, Foundational
-        public let textureType: String          // Harmonic, Percussive, Hybrid
-        public let presenceScore: Float         // 0.0 - 1.0 (Lead dominance)
+        public let primaryZone: String          // Bass, Body, Lead, Air
+        public let textureType: String          // Spectral balance description
+        public let presenceScore: Float         // 0.0 - 1.0 (Presence energy)
     }
     
-    public func analyze(magnitude: [Float], nFrames: Int, nFFT: Int) -> SemanticResult {
-        let nBins = nFFT / 2 + 1
-        let binFreq = Float(sampleRate) / Float(nFFT)
+    public func analyze(stft: STFTMatrix) -> SpectralZoneResult {
+        let nBins = stft.nFreqs
+        let nFrames = stft.nFrames
+        let magnitude = stft.magnitude // [t * nBins + f]
+        let binFreq = Float(sampleRate) / Float(stft.nFFT)
         
-        // Define Semantic Zones (Hz)
+        // Define Scientific Spectral Zones (Hz)
         let zones = [
             ("Sub/Bass", 0.0...250.0),
             ("Mid/Body", 250.0...2000.0),
@@ -41,14 +44,13 @@ public final class SemanticEngine: Sendable {
             
             var zoneEnergy: Float = 0
             for f in startBin...endBin {
-                var sumSq: Float = 0
-                // Calculate average power across all frames for this bin
-                let binIndices = stride(from: f * nFrames, to: (f + 1) * nFrames, by: 1)
-                for idx in binIndices {
-                    let m = magnitude[idx]
-                    sumSq += m * m
+                var binPower: Float = 0
+                // Calculate total power for this bin across all frames
+                for t in 0..<nFrames {
+                    let m = magnitude[t * nBins + f]
+                    binPower += m * m
                 }
-                zoneEnergy += sumSq
+                zoneEnergy += binPower
             }
             zoneEnergies[name] = zoneEnergy
             totalEnergy += zoneEnergy
@@ -60,30 +62,28 @@ public final class SemanticEngine: Sendable {
             dominanceMap[name] = totalEnergy > 1e-12 ? (energy / totalEnergy) * 100.0 : 0
         }
         
-        // Role Detection Logic
+        // Zone Dominance Logic
         let presenceEnergy = dominanceMap["Presence/Lead"] ?? 0
         let midEnergy = dominanceMap["Mid/Body"] ?? 0
         let bassEnergy = dominanceMap["Sub/Bass"] ?? 0
         
-        var role = "Supporting"
-        if presenceEnergy > 30.0 || (presenceEnergy > 20.0 && presenceEnergy > midEnergy) {
-            role = "Lead"
-        } else if bassEnergy > 40.0 {
-            role = "Foundational"
+        var primary = "Mid/Body"
+        if presenceEnergy > midEnergy && presenceEnergy > bassEnergy {
+            primary = "Presence/Lead"
+        } else if bassEnergy > midEnergy && bassEnergy > presenceEnergy {
+            primary = "Sub/Bass"
         }
         
-        // Texture Logic (Harmonic vs Percussive)
-        // Simplified: Using energy distribution
-        var texture = "Hybrid"
+        var texture = "Balanced"
         if presenceEnergy > 50.0 {
-            texture = "Harmonic (Solo)"
-        } else if dominanceMap["Sub/Bass"] ?? 0 > 60.0 {
-            texture = "Bass Heavy"
+            texture = "Brilliant / Crisp"
+        } else if bassEnergy > 60.0 {
+            texture = "Dark / Warm"
         }
         
-        return SemanticResult(
+        return SpectralZoneResult(
             dominanceMap: dominanceMap,
-            primaryRole: role,
+            primaryZone: primary,
             textureType: texture,
             presenceScore: presenceEnergy / 100.0
         )

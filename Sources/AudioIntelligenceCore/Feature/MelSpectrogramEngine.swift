@@ -43,26 +43,24 @@ public final class MelSpectrogramEngine: @unchecked Sendable {
         // 2. Power Spectrogram (S^2)
         let powerSpec = stftEngine.powerSpectrogram(from: stft)
         
-        // 3. Matrix Multiply (nMels x nFreqs) * (nFreqs x nFrames)
-        // Industry Standard: mel_spectrum[m, t] = sum_f mel_filterbank[m, f] * power_spectrum[f, t]
+        // vDSP Matrix Multiply: (nFrames x nFreqs) * (nFreqs x nMels)^T
+        // We need result in (nFrames x nMels).
+        // powerSpec: [nFrames x nFreqs]
+        // melFilterbank: [nMels x nFreqs] -> We treat as [nFreqs x nMels] by transposing in mmul or re-organizing.
+        // Actually, vDSP_mmul computes C = A * B.
+        // If A is (nFrames x nFreqs) and B is (nFreqs x nMels), we get (nFrames x nMels).
         
-        var melData = [Float](repeating: 0, count: nMels * nFrames)
+        // Since melFilterbank is stored as [nMels x nFreqs], we can pass it as B and swap dimensions.
+        // Or simpler: Result[t, m] = sum_f Power[t, f] * Filter[m, f]
         
-        // vDSP Matrix Multiply is Column-Major (Fortran-style). 
-        // Our matrices are Row-Major but structured. 
-        // melFilterbank[m, f] (nMels rows, nFreqs cols)
-        // powerSpec[f, t] (nFreqs rows, nFrames cols)
-        
-        // For efficiency in vDSP_mmul: 
-        // C = A * B -> (M x P) * (P x N)
-        // melData = melFilterbank * powerSpec
+        var melData = [Float](repeating: 0, count: nFrames * nMels)
         
         vDSP_mmul(
-            melFilterbank, 1,
             powerSpec, 1,
+            melFilterbank, 1,
             &melData, 1,
-            vDSP_Length(nMels),
             vDSP_Length(nFrames),
+            vDSP_Length(nMels),
             vDSP_Length(nFreqs)
         )
         

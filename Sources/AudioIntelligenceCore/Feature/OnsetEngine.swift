@@ -66,8 +66,9 @@ public final class OnsetEngine: @unchecked Sendable {
             if useMel {
                 magnitude = mel.apply(magnitude: stftResult.magnitude, nFrames: nFrames)
             } else {
+                // Return Frequency-major structure for flux calculation logic
                 magnitude = (0..<nFreqs).map { f in
-                    Array(stftResult.magnitude[(f * nFrames)..<((f + 1) * nFrames)])
+                    stftResult.magnitudeRow(forBin: f)
                 }
             }
             
@@ -81,23 +82,21 @@ public final class OnsetEngine: @unchecked Sendable {
             }
             
         case .energy:
-            // RMS energy per frame
+            // RMS energy per frame (Contiguous in Frame-major)
             for t in 0..<nFrames {
                 var sum: Float = 0
-                for f in 0..<nFreqs {
-                    let mag = stftResult.magnitude[f * nFrames + t]
-                    sum += mag * mag
-                }
+                let frame = stftResult.magnitudeFrame(forTimeline: t)
+                vDSP_svesq(Array(frame), 1, &sum, vDSP_Length(nFreqs))
                 envelope[t] = sqrtf(sum / Float(nFreqs))
             }
             
         case .spectralCentroid:
-            // Spectral centroid as novelty function
+            // Spectral centroid as novelty function (Optimized cache access)
             for t in 0..<nFrames {
                 var weightedSum: Float = 0
                 var totalMag: Float = 0
                 for f in 0..<nFreqs {
-                    let mag = stftResult.magnitude[f * nFrames + t]
+                    let mag = stftResult.magnitude[t * nFreqs + f]
                     weightedSum += mag * Float(f)
                     totalMag += mag
                 }
@@ -200,11 +199,11 @@ public final class OnsetEngine: @unchecked Sendable {
         for t in 2..<nFrames {
             var score: Float = 0
             for f in 0..<nFreqs {
-                let m1 = stft.magnitude[f * nFrames + t]
-                let m0 = stft.magnitude[f * nFrames + t - 1]
-                let p1 = stft.phase[f * nFrames + t]
-                let p0 = stft.phase[f * nFrames + t - 1]
-                let p_1 = stft.phase[f * nFrames + t - 2]
+                let m1 = stft.magnitude[t * nFreqs + f]
+                let m0 = stft.magnitude[(t - 1) * nFreqs + f]
+                let p1 = stft.phase[t * nFreqs + f]
+                let p0 = stft.phase[(t - 1) * nFreqs + f]
+                let p_1 = stft.phase[(t - 2) * nFreqs + f]
                 
                 // Phase prediction error
                 let phase_pred = 2 * p0 - p_1

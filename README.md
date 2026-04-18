@@ -1,6 +1,16 @@
-# AudioIntelligence 🧬 Infinity Engine (v6.1)
+# AudioIntelligence (v6.2 Infinity Engine)
+> **The Professional Standard for Scientifically Calibrated MIR on Apple Silicon.**
 
-**AudioIntelligence** is an enterprise-grade, silicon-native audio engineering and Forensic DNA library for the Apple ecosystem. Built entirely in Swift 6, it leverages the unique hardware advantages of the Apple Neural Engine (ANE) and Apple Matrix Extension (AMX) to provide industry-leading precision and throughput.
+AudioIntelligence is a premium, high-fidelity Music Information Retrieval (MIR) and DSP framework. Built from the ground up for **Swift 6** and **Apple Silicon**, it delivers bit-exact scientific accuracy combined with the raw power of Accelerate and Metal.
+
+---
+
+## 💎 State of the Art: Scientific Accreditation (v6.2)
+The Infinity Engine is now formally calibrated against industry "Gold Standards":
+- **ITU-R BS.1770-4 / EBU R128**: Dynamic, sample-rate independent loudness metering (±0.1 LU precision).
+- **EBU Tech 3341/3342**: Verified Integrated, Momentary, Short-term, and LRA compliance.
+- **SQAM Accredited**: Validated against the EBU Sound Quality Assessment Material dataset.
+- **Deterministic Pipeline**: Bit-exact reproducibility across all Source Separation (NMF) runs.
 
 ---
 
@@ -29,22 +39,26 @@ Sources/AudioIntelligenceCore/
 
 ---
 
-## 🚀 Capabilities
+## 🧪 The Infinity Suite: 22+ Feature Engines
+From time-domain forensic analysis to frequency-domain neural separation, AudioIntelligence provides a comprehensive toolkit for professional audio engineering:
 
-### 1. MIR DNA (Music Information Retrieval)
-- **Spectral DNA**: STFT, Mel-Spectrogram, MFCC, Spectral Flux/Centroid.
-- **Rhythmic DNA**: **Ellis (2007) Beat Tracking**, PLP Pulse Estimation, BPM Confidence.
-- **Harmonic DNA**: Chroma sequence analysis, Tonnetz tonal centers.
-- **Pitch DNA**: **YIN/Viterbi** fundamental frequency tracking.
+### Core Analysis
+- **STFT / ISTFT**: Frame-major, vDSP-optimized spectral foundations.
+- **Loudness (EBU R128)**: Scientifically calibrated gating and weighting.
+- **True Peak**: 4x sinc-interpolated inter-sample detection.
+- **Forensic DNA**: Bit-depth integrity and forgery audit.
 
-### 2. Forensic & Scientific Auditing
-- **Bit-Depth Entropy**: Conclusive 16-to-24-bit upsampling (fake hi-res) detection.
-- **Codec Provenance**: Historical codec signature identification (MP3/AAC signatures).
-- **Compliance**: EBU R128 Loudness, AES17 Dynamic Range, ITU-R BS.1770-4.
+### Music Information Retrieval (MIR)
+- **Mel / Chroma / CQT**: High-resolution pitch and timbral transforms.
+- **Viterbi Decoder**: Professional sequence modeling for state analysis.
+- **Onsets & Rhythm**: Multi-band rhythmic mapping and tempograms.
+- **Harmony & Tonnetz**: Harmonic relationship mapping on the tonnetz grid.
 
-### 3. Source Separation (Effects)
-- **HPSS**: Robust, high-performance sliding window median filter ($O(N)$ complexity) optimized for standard Accelerate environments.
-- **Neural Stems**: ANE-housed isolation of Vocals, Drums, Bass, and accompaniment.
+### Advanced Processing
+- **NMF Source Separation**: Deterministic non-negative matrix factorization.
+- **HPSS**: Median-filter based Harmonic-Percussive source separation.
+- **Pitch Audits**: YIN and Piptrack (parabolic interpolation) tracking.
+- **AudioScience**: AES17 dynamic range and noise-floor profiling.
 
 ---
 

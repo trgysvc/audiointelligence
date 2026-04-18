@@ -64,11 +64,11 @@ public final class HPSSEngine: Sendable {
         let magnitude = stft.magnitude
         
         // 1. Median Filtering (vDSP Hardware Acceleration)
-        // Harmonic: Horizontal median filter (across time frames for each frequency bin)
-        let harmonicMedian = vDSPMedianFilter(magnitude, nRows: nFreqs, nCols: nFrames, windowSize: winHarm, axis: .horizontal)
+        // Harmonic: Median filter across time frames for each frequency bin (Vertical in T x F layout)
+        let harmonicMedian = vDSPMedianFilter(magnitude, nRows: nFrames, nCols: nFreqs, windowSize: winHarm, axis: .vertical)
         
-        // Percussive: Vertical median filter (across frequency bins for each time frame)
-        let percussiveMedian = vDSPMedianFilter(magnitude, nRows: nFreqs, nCols: nFrames, windowSize: winPerc, axis: .vertical)
+        // Percussive: Median filter across frequency bins for each time frame (Horizontal in T x F layout)
+        let percussiveMedian = vDSPMedianFilter(magnitude, nRows: nFrames, nCols: nFreqs, windowSize: winPerc, axis: .horizontal)
         
         // 2. Softmasking (Wiener Filter)
         var maskHarmonic   = [Float](repeating: 0, count: magnitude.count)
