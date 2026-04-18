@@ -6,15 +6,16 @@ struct CLIExample {
     static func main() async {
         print("🎙️ AudioIntelligence: Initializing Analysis...")
         
-        let intelligence = AudioIntelligence(device: .current, mode: .balanced)
+        let intelligence = AudioIntelligence(device: .automatic, mode: .balanced)
         
         // Using a mock URL for the "Hello World"
         let mockURL = URL(fileURLWithPath: "/tmp/sample_song.wav")
         
         do {
+            let features: Set<AudioFeature> = [.rhythm, .forensic]
             let report = try await intelligence.analyze(
                 url: mockURL,
-                features: [.rhythm, .forensic]
+                features: features
             )
             
             print("\n✅ Analysis Complete:")

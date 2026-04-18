@@ -89,7 +89,7 @@ public enum AudioLoader {
             channels: 1,
             interleaved: false
         ) else {
-            throw AudioIntelligenceError.io(.formatNotSupported)
+            throw AudioIntelligenceError.io(.formatNotSupported("PCM Float32"))
         }
 
         let file = try AVAudioFile(forReading: url)
@@ -162,7 +162,7 @@ public enum AudioLoader {
             channels: 2,
             interleaved: false
         ) else {
-            throw AudioIntelligenceError.io(.formatNotSupported)
+            throw AudioIntelligenceError.io(.formatNotSupported("PCM Float32"))
         }
 
         let totalFrames = AVAudioFrameCount(file.length)
@@ -231,7 +231,7 @@ public enum AudioLoader {
             channels: 1,
             interleaved: false
         ) else {
-            throw AudioIntelligenceError.io(.formatNotSupported)
+            throw AudioIntelligenceError.io(.formatNotSupported("PCM Float32"))
         }
 
         let file = try AVAudioFile(forReading: url)

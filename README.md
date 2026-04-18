@@ -8,6 +8,7 @@
 
 - **"Glass Box" Engineering**: No black boxes. Every DSP engine is mathematically transparent and verified against EBU/AES standards.
 - **Apple Silicon Native**: Zero-copy vector processing using Accelerate (vDSP/vImage) and Metal.
+- **Swift 6 & SPM 6.0**: Built with strict concurrency and modern modularity. Requirement: macOS 14+ / iOS 17+.
 - **Forensic Integrity**: The only library with native Shannon Entropy auditing for bit-depth forgery detection.
 - **Enterprise Ready**: Designed for professional mastering, broadcast, and forensic laboratory environments.
 
@@ -42,7 +43,7 @@ Sources/AudioIntelligenceCore/
 - **Compliance**: EBU R128 Loudness, AES17 Dynamic Range, ITU-R BS.1770-4.
 
 ### 3. Source Separation (Effects)
-- **HPSS**: Optimized **vDSP_medfilt** ($O(N)$ complexity) for Harmonic-Percussive separation.
+- **HPSS**: Robust, high-performance sliding window median filter ($O(N)$ complexity) optimized for standard Accelerate environments.
 - **Neural Stems**: ANE-housed isolation of Vocals, Drums, Bass, and accompaniment.
 
 ---

@@ -102,7 +102,8 @@ public final class HPSSEngine: Sendable {
         case vertical
     }
     
-    /// Hardware-accelerated 2D median filter using vDSP_medfilt.
+    /// Hardware-accelerated 2D median filter using a sliding window approach with vDSP sorting.
+    /// This provides a robust, high-performance fallback for environments where vDSP_medfilt is unavailable.
     private static func vDSPMedianFilter(
         _ data: [Float], 
         nRows: Int, 
@@ -111,29 +112,49 @@ public final class HPSSEngine: Sendable {
         axis: Axis
     ) -> [Float] {
         var result = [Float](repeating: 0, count: data.count)
-        let window = vDSP_Length(windowSize)
+        let halfWin = windowSize / 2
         
         if axis == .horizontal {
             // Filter each row (frequency bin) independently
             for r in 0..<nRows {
-                let start = r * nCols
-                data.withUnsafeBufferPointer { dPtr in
-                    result.withUnsafeMutableBufferPointer { rPtr in
-                        vDSP_medfilt(dPtr.baseAddress! + start, 1, rPtr.baseAddress! + start, window, vDSP_Length(nCols))
+                let rowStart = r * nCols
+                var window = [Float](repeating: 0, count: windowSize)
+                
+                for c in 0..<nCols {
+                    // Extract window with zero-padding at boundaries
+                    for i in 0..<windowSize {
+                        let idx = c + i - halfWin
+                        if idx >= 0 && idx < nCols {
+                            window[i] = data[rowStart + idx]
+                        } else {
+                            window[i] = 0
+                        }
                     }
+                    
+                    // Sort and pick median
+                    vDSP_vsort(&window, vDSP_Length(windowSize), 1)
+                    result[rowStart + c] = window[halfWin]
                 }
             }
         } else {
             // Filter each column (time frame) independently
-            // Data is [row * nCols + col]
-            // We need to filter across rows for a fixed col. Stride is nCols.
             for c in 0..<nCols {
-                let start = c
-                data.withUnsafeBufferPointer { dPtr in
-                    result.withUnsafeMutableBufferPointer { rPtr in
-                        // vDSP_medfilt supports stride!
-                        vDSP_medfilt(dPtr.baseAddress! + start, vDSP_Stride(nCols), rPtr.baseAddress! + start, window, vDSP_Length(nRows))
+                var window = [Float](repeating: 0, count: windowSize)
+                
+                for r in 0..<nRows {
+                    // Extract window with zero-padding at boundaries
+                    for i in 0..<windowSize {
+                        let idx = r + i - halfWin
+                        if idx >= 0 && idx < nRows {
+                            window[i] = data[idx * nCols + c]
+                        } else {
+                            window[i] = 0
+                        }
                     }
+                    
+                    // Sort and pick median
+                    vDSP_vsort(&window, vDSP_Length(windowSize), 1)
+                    result[r * nCols + c] = window[halfWin]
                 }
             }
         }

@@ -4,8 +4,8 @@ import PackageDescription
 let package = Package(
     name: "AudioIntelligence",
     platforms: [
-        .macOS(.v13),
-        .iOS(.v16)
+        .macOS(.v14),
+        .iOS(.v17)
     ],
     products: [
         .library(
@@ -52,7 +52,7 @@ let package = Package(
                 .process("Resources")
             ],
             swiftSettings: [
-                .enableUpcomingFeature("StrictConcurrency")
+                .swiftLanguageMode(.v6)
             ]
         ),
         
@@ -67,7 +67,7 @@ let package = Package(
             ],
             path: "Sources/AudioIntelligenceCore",
             swiftSettings: [
-                .enableUpcomingFeature("StrictConcurrency")
+                .swiftLanguageMode(.v6)
             ]
         ),
 
@@ -78,7 +78,7 @@ let package = Package(
             name: "AudioIntelligenceMetal",
             path: "Sources/AudioIntelligenceMetal",
             swiftSettings: [
-                .enableUpcomingFeature("StrictConcurrency")
+                .swiftLanguageMode(.v6)
             ]
         ),
         
@@ -90,7 +90,7 @@ let package = Package(
             dependencies: ["AudioIntelligence"],
             path: "Sources/AudioIntelligenceUI",
             swiftSettings: [
-                .enableUpcomingFeature("StrictConcurrency")
+                .swiftLanguageMode(.v6)
             ]
         ),
 
@@ -102,7 +102,7 @@ let package = Package(
             dependencies: ["AudioIntelligenceUI"],
             path: "Sources/AudioIntelligenceApp",
             swiftSettings: [
-                .enableUpcomingFeature("StrictConcurrency")
+                .swiftLanguageMode(.v6)
             ]
         ),
 
