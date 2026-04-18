@@ -1,7 +1,7 @@
 // OnsetEngine.swift
 // Elite Music DNA Engine — Phase 2
 //
-// Librosa equivalent: onset.onset_strength_multi() + onset_detect()
+// Industry Standard equivalent: onset.onset_strength_multi() + onset_detect()
 //
 // Full algorithm (kaynak koddan):
 //   1. Mel spectrogram → power_to_db (log scale)
@@ -48,7 +48,7 @@ public final class OnsetEngine: @unchecked Sendable {
 
     // MARK: Onset Strength
 
-    /// Librosa-style onset strength detection with multiple modes.
+    /// Industry Standard-style onset strength detection with multiple modes.
     /// - Parameters:
     ///   - samples: Raw audio samples
     ///   - mode: Detection algorithm (default: .superflux)
@@ -168,7 +168,7 @@ public final class OnsetEngine: @unchecked Sendable {
     }
     
     /// Superflux: max-filtered spectral flux.
-    /// Librosa: onset.onset_strength(..., max_size=3)
+    /// Industry Standard: onset.onset_strength(..., max_size=3)
     private func computeSuperflux(_ logSpec: [[Float]]) -> [Float] {
         let nMels = logSpec.count
         let nFrames = logSpec[0].count

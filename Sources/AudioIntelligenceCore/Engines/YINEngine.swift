@@ -1,7 +1,7 @@
 // YINEngine.swift
 // Elite Music DNA Engine — Phase 2
 //
-// Librosa equivalent: core/pitch.py → yin()
+// Industry Standard equivalent: core/pitch.py → yin()
 //
 // Full algorithm (from source code):
 //   1. Frame decomposition
@@ -28,7 +28,7 @@ public struct PitchResult: Sendable {
 public final class YINEngine: @unchecked Sendable {
 
     public let sampleRate: Double
-    public let frameLength: Int       // Librosa default: 2048
+    public let frameLength: Int       // Industry Standard default: 2048
     public let hopLength: Int
     public let fMin: Float            // Minimum detectable F0 (Hz), default: 32.7 (C1)
     public let fMax: Float            // Maximum detectable F0 (Hz), default: 2093 (C7)

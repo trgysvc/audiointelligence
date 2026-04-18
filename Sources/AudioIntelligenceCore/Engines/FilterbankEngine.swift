@@ -1,7 +1,7 @@
 // FilterbankEngine.swift
 // Elite Music DNA Engine — Phase 1
 //
-// Mirroring librosa.filters.mel and librosa.filters.chroma.
+// Mirroring industry standard.filters.mel and industry standard.filters.chroma.
 // Provides linear transformation matrices for spectral analysis.
 
 import Foundation
@@ -11,7 +11,7 @@ public final class FilterbankEngine: Sendable {
     
     // MARK: - Mel Filterbank
     
-    /// Librosa: filters.mel()
+    /// Industry Standard: filters.mel()
     /// - Returns: A [n_mels × (1 + n_fft/2)] flat matrix (Row-Major)
     public static func createMelFilterbank(
         sr: Double,
@@ -72,7 +72,7 @@ public final class FilterbankEngine: Sendable {
     
     // MARK: - Chroma Filterbank
     
-    /// Librosa: filters.chroma()
+    /// Industry Standard: filters.chroma()
     /// Projects FFT bins onto chroma bins (pitch classes).
     public static func createChromaFilterbank(
         sr: Double,
@@ -91,7 +91,7 @@ public final class FilterbankEngine: Sendable {
         // Map Hz to octaves
         var frqbins = fftFreqs.map { UtilityEngine.hzToOcts($0, tuning: tuning, binsPerOctave: nChroma) }
         
-        // Bin 0 (0Hz) fix: Librosa uses 1.5 octaves below bin 1
+        // Bin 0 (0Hz) fix: Industry Standard uses 1.5 octaves below bin 1
         if frqbins.count > 1 {
             frqbins[0] = frqbins[1] - 1.5 * Float(nChroma)
         }
@@ -126,7 +126,7 @@ public final class FilterbankEngine: Sendable {
             }
         }
         
-        // Normalization (Librosa default: L2)
+        // Normalization (Industry Standard default: L2)
         for c in 0..<nChroma {
             let rowStart = c * nFreqs
             let rowEnd = rowStart + nFreqs
@@ -137,7 +137,7 @@ public final class FilterbankEngine: Sendable {
         
         // BaseC shift
         if baseC {
-            // Librosa shifts by 3 semitones to start at C if requested (A=0, A#=1, B=2, C=3)
+            // Industry Standard shifts by 3 semitones to start at C if requested (A=0, A#=1, B=2, C=3)
             let shift = 3 * (nChroma / 12)
             var shifted = [Float](repeating: 0, count: nChroma * nFreqs)
             for c in 0..<nChroma {

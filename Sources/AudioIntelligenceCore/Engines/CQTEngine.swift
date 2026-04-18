@@ -2,7 +2,7 @@
 // Elite Music DNA Engine — Phase 3
 //
 // Constant-Q Transform (CQT) for musical pitch analysis.
-// Mirroring librosa.cqt behavior.
+// Mirroring industry standard.cqt behavior.
 
 import Foundation
 import Accelerate

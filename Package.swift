@@ -112,7 +112,8 @@ let package = Package(
                 "AudioIntelligence",
                 .product(name: "ArgumentParser", package: "swift-argument-parser")
             ],
-            path: "Sources/AIBenchmark"
+            path: "Sources/AIBenchmark",
+            exclude: ["README.md"]
         ),
         
         // Scientific Validation Tests

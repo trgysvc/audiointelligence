@@ -2,7 +2,7 @@
 // Elite Music DNA Engine — Phase 2
 //
 // High-performance spectral feature extraction using Accelerate (vDSP).
-// Mirroring librosa.feature.spectral_centroid, spectral_rolloff, etc.
+// Mirroring industry standard.feature.spectral_centroid, spectral_rolloff, etc.
 
 import Foundation
 import Accelerate
@@ -11,7 +11,7 @@ public enum SpectralFeatureEngine {
     
     // MARK: - Spectral Centroid
     
-    /// Librosa: feature.spectral_centroid()
+    /// Industry Standard: feature.spectral_centroid()
     /// Calculates the "center of mass" of the spectrum.
     public static func spectralCentroid(from stft: STFTMatrix) -> [Float] {
         let nFreqs = stft.nFreqs
@@ -39,7 +39,7 @@ public enum SpectralFeatureEngine {
     
     // MARK: - Spectral Rolloff
     
-    /// Librosa: feature.spectral_rolloff()
+    /// Industry Standard: feature.spectral_rolloff()
     /// Frequency below which a certain percentage (rollPercent) of total energy lies.
     public static func spectralRolloff(
         from stft: STFTMatrix, 
@@ -75,7 +75,7 @@ public enum SpectralFeatureEngine {
     
     // MARK: - Spectral Flatness
     
-    /// Librosa: feature.spectral_flatness()
+    /// Industry Standard: feature.spectral_flatness()
     /// Measure of tonality vs. noise (0 to 1).
     public static func spectralFlatness(from stft: STFTMatrix) -> [Float] {
         let nFreqs = stft.nFreqs
@@ -103,7 +103,7 @@ public enum SpectralFeatureEngine {
     
     // MARK: - Spectral Contrast
     
-    /// Librosa: feature.spectral_contrast()
+    /// Industry Standard: feature.spectral_contrast()
     /// Computes the intensity difference between peaks and valleys in spectral bands.
     public static func spectralContrast(
         from stft: STFTMatrix, 

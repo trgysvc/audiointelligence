@@ -2,7 +2,7 @@
 // Elite Music DNA Engine — Phase 3
 //
 // Onset Detection and Tempo Tracking.
-// Mirroring librosa.onset.onset_detect and librosa.beat.beat_track.
+// Mirroring industry standard.onset.onset_detect and industry standard.beat.beat_track.
 
 import Foundation
 import Accelerate
@@ -58,7 +58,7 @@ public final class RhythmEngine: Sendable {
     
     // MARK: - Dynamic Programming Beat Tracking
     
-    /// Librosa: beat.beat_track() using Ellis (2007) DP approach.
+    /// Industry Standard: beat.beat_track() using Ellis (2007) DP approach.
     /// Finds the best sequence of beat events that align with onsets and maintain tempo.
     public static func beatTrack(
         onsetStrength: [Float],
@@ -127,7 +127,7 @@ public final class RhythmEngine: Sendable {
         return (beats.reversed(), maxScore)
     }
     
-    /// Librosa: beat.plp() - Predominant Local Pulse.
+    /// Industry Standard: beat.plp() - Predominant Local Pulse.
     /// Multi-band implementation for robust pulse tracking.
     public func computePLP(from stft: STFTMatrix) -> [Float] {
         let bands = splitIntoFrequencyBands(from: stft)
@@ -185,7 +185,7 @@ public final class RhythmEngine: Sendable {
     
     // MARK: - Onset Strength (Novelty Function)
     
-    /// Librosa: onset.onset_strength()
+    /// Industry Standard: onset.onset_strength()
     /// Computes the spectral flux (rectified difference) 
     /// which spikes at note onsets.
     public static func onsetStrength(from stft: STFTMatrix) -> [Float] {
@@ -212,7 +212,7 @@ public final class RhythmEngine: Sendable {
     
     // MARK: - Tempo Tracking
     
-    /// Librosa: beat.tempo()
+    /// Industry Standard: beat.tempo()
     /// Estimates BPM using autocorrelation of the onset strength.
     public static func estimateTempo(onsetStrength: [Float], sr: Double, hopLength: Int) -> (bpm: Float, confidence: Float) {
         let n = onsetStrength.count

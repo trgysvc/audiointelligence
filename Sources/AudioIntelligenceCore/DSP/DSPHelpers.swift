@@ -19,7 +19,7 @@ public enum DSPHelpers {
     /// Cosine similarity between two L2-normalized vectors.
     /// Used by StructureEngine SSM: vDSP_dotpr based, O(n) vectorized.
     ///
-    /// Librosa: cosine_similarity via sklearn, US: dot(a/|a|, b/|b|)
+    /// Industry Standard: cosine_similarity via sklearn, US: dot(a/|a|, b/|b|)
     public static func cosineSimilarity(_ a: [Float], _ b: [Float]) -> Float {
         guard a.count == b.count, !a.isEmpty else { return 0 }
         var dot: Float = 0
@@ -92,7 +92,7 @@ public enum DSPHelpers {
 
     /// 1D sliding window median. Hem HPSS for (2D component),
     /// hem onset max-filter for used.
-    /// Librosa: scipy.ndimage.maximum_filter1d(S, max_size, axis)
+    /// Industry Standard: scipy.ndimage.maximum_filter1d(S, max_size, axis)
     ///
     /// Note: 2D HPSS for HPSSEngine'de vImage used (bu fonksiyon 1D).
     public static func medianFilter1D(_ signal: [Float], windowSize: Int) -> [Float] {
@@ -111,7 +111,7 @@ public enum DSPHelpers {
         return result
     }
 
-    /// 1D Max filter. Librosa onset'in `maximum_filter1d` equivalent.
+    /// 1D Max filter. Industry Standard onset'in `maximum_filter1d` equivalent.
     public static func maxFilter1D(_ signal: [Float], windowSize: Int) -> [Float] {
         let halfW = windowSize / 2
         let n = signal.count
@@ -128,7 +128,7 @@ public enum DSPHelpers {
 
     // MARK: Normalization
 
-    /// L2-normalize a vector. Librosa: util.normalize(x, norm=2)
+    /// L2-normalize a vector. Industry Standard: util.normalize(x, norm=2)
     public static func normalizeL2(_ v: [Float]) -> [Float] {
         var norm: Float = 0
         vDSP_svesq(v, 1, &norm, vDSP_Length(v.count))
@@ -140,7 +140,7 @@ public enum DSPHelpers {
         return out
     }
 
-    /// Max-normalize: divide by max. Librosa: normalize(x, norm=inf)
+    /// Max-normalize: divide by max. Industry Standard: normalize(x, norm=inf)
     public static func normalizeMax(_ v: [Float]) -> [Float] {
         var maxVal: Float = 0
         vDSP_maxv(v, 1, &maxVal, vDSP_Length(v.count))
@@ -151,7 +151,7 @@ public enum DSPHelpers {
         return out
     }
 
-    /// L1-normalize: divide by sum of absolute values. Librosa: util.normalize(x, norm=1)
+    /// L1-normalize: divide by sum of absolute values. Industry Standard: util.normalize(x, norm=1)
     public static func normalizeL1(_ v: [Float]) -> [Float] {
         var absV = v
         vDSP_vabs(v, 1, &absV, 1, vDSP_Length(v.count))
@@ -180,7 +180,7 @@ public enum DSPHelpers {
 
     // MARK: Log + Tiny
 
-    /// log with tiny constant (Librosa: util.tiny) for numerical stability.
+    /// log with tiny constant (Industry Standard: util.tiny) for numerical stability.
     /// tiny(float32) ≈ 1.175e-38
     public static let tinyFloat: Float = 1.175494351e-38
 
@@ -190,7 +190,7 @@ public enum DSPHelpers {
 
     // MARK: Peak Picking
 
-    /// Finding local maxima. Librosa: util.localmax(x)
+    /// Finding local maxima. Industry Standard: util.localmax(x)
     public static func localMax(_ signal: [Float]) -> [Int] {
         var peaks: [Int] = []
         for i in 1..<(signal.count - 1) {
@@ -201,7 +201,7 @@ public enum DSPHelpers {
         return peaks
     }
 
-    /// Peak picking with threshold. Librosa: util.peak_pick parameters:
+    /// Peak picking with threshold. Industry Standard: util.peak_pick parameters:
     /// pre_max=30ms, post_max=0ms, pre_avg=100ms, post_avg=100ms, wait=30ms, delta=0.07
     public static func peakPick(
         _ signal: [Float],
@@ -280,7 +280,7 @@ public enum DSPHelpers {
 
     // MARK: DCT-II (MFCC for)
 
-    /// Type-II DCT. Librosa: scipy.fft.dct(log_mel_spec, type=2, norm='ortho')
+    /// Type-II DCT. Industry Standard: scipy.fft.dct(log_mel_spec, type=2, norm='ortho')
     /// returns first n coefficients
     public static func dct2(_ input: [Float], nCoeffs: Int) -> [Float] {
         let n = input.count
@@ -316,7 +316,7 @@ public enum DSPHelpers {
     }
 
     /// Hann window temporal smoothing.
-    /// Librosa's `chroma_cens` smoothing logic using vDSP convolution.
+    /// Industry Standard's `chroma_cens` smoothing logic using vDSP convolution.
     public static func applyHannSmoothing(_ signal: [Float], windowSize: Int) -> [Float] {
         guard signal.count >= windowSize else { return signal }
         
