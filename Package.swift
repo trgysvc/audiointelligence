@@ -38,7 +38,9 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.2.0"),
     ],
     targets: [
-        // Public API Layer
+        // ---------------------------------------------------------------------
+        // 1. PUBLIC SDK LAYER: The clean facade for developers.
+        // ---------------------------------------------------------------------
         .target(
             name: "AudioIntelligence",
             dependencies: [
@@ -54,7 +56,10 @@ let package = Package(
             ]
         ),
         
-        // Private Implementation Layer
+        // ---------------------------------------------------------------------
+        // 2. MODULAR CORE LAYER: The high-performance DSP engine (v6.1 Infinity).
+        // Includes: Core, Feature, Effects, Display, and Util sub-modules.
+        // ---------------------------------------------------------------------
         .target(
             name: "AudioIntelligenceCore",
             dependencies: [
@@ -66,7 +71,9 @@ let package = Package(
             ]
         ),
 
-        // Optional Metal Layer
+        // ---------------------------------------------------------------------
+        // 3. HARDWARE ACCELERATION: Optional Metal compute kernels.
+        // ---------------------------------------------------------------------
         .target(
             name: "AudioIntelligenceMetal",
             path: "Sources/AudioIntelligenceMetal",
@@ -75,7 +82,9 @@ let package = Package(
             ]
         ),
         
-        // Reusable UI Component Layer (SDK Friendly)
+        // ---------------------------------------------------------------------
+        // 4. UI COMPONENTS: Metal-accelerated visualization for SwiftUI.
+        // ---------------------------------------------------------------------
         .target(
             name: "AudioIntelligenceUI",
             dependencies: ["AudioIntelligence"],
@@ -85,7 +94,9 @@ let package = Package(
             ]
         ),
 
-        // Premium Standalone Application (macOS)
+        // ---------------------------------------------------------------------
+        // 5. APPLICATIONS & BENCHMARKS: Verification and tools.
+        // ---------------------------------------------------------------------
         .executableTarget(
             name: "AudioIntelligenceApp",
             dependencies: ["AudioIntelligenceUI"],
@@ -95,17 +106,18 @@ let package = Package(
             ]
         ),
 
-        // Hello World Example CLI
         .executableTarget(
             name: "CLIExample",
             dependencies: ["AudioIntelligence"],
             path: "Examples/CLIExample"
         ),
+        
         .executableTarget(
             name: "InfinityAudit",
             dependencies: ["AudioIntelligence"],
             path: "Examples/InfinityAudit"
         ),
+        
         .executableTarget(
             name: "AIBenchmark",
             dependencies: [
@@ -116,7 +128,9 @@ let package = Package(
             exclude: ["README.md"]
         ),
         
-        // Scientific Validation Tests
+        // ---------------------------------------------------------------------
+        // 6. SCIENTIFIC VALIDATION: EBU/AES test suites.
+        // ---------------------------------------------------------------------
         .testTarget(
             name: "AudioIntelligenceTests",
             dependencies: ["AudioIntelligence"],
