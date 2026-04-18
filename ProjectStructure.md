@@ -1,4 +1,4 @@
-# AudioIntelligence Project Structure (v6.1 Infinity)
+# AudioIntelligence Project Structure (v6.3 Infinity)
 
 The project follows a modular, silicon-native architecture designed for high-performance DSP on ARM processors, separating public Facade APIs from low-level Implementation engines.
 
@@ -29,7 +29,7 @@ AudioIntelligence/
 │
 ├── Examples/                   # Ready-to-use sample applications
 │   ├── CLIExample/             # Simple library usage example
-│   └── InfinityAudit/          # Professional forensic auditor tool
+│   └── InfinityAudit/          # Professional forensic auditor & DNA reporter
 │
 ├── Tests/                      # Unit and integration test suites
 │   └── ScientificValidationTests.swift # EBU/AES17 Validation
@@ -51,4 +51,4 @@ AudioIntelligence/
 2. **AudioIntelligenceCore (Internal)**: The DSP "Engine Room." High-precision implementation using vDSP and AMX.
 3. **AudioIntelligenceMetal (Hardware)**: Direct GPU/ANE acceleration for massive batch processing.
 4. **AudioIntelligenceUI (Interface)**: Premium visualization components (Spectrograms, Meters, DNA Maps).
-5. **AIBenchmark (Auditing)**: External CLI for mathematical integrity validation.
+5. **InfinityAudit (Auditing)**: External CLI for mathematical integrity validation and forensic reporting.

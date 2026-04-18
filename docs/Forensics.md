@@ -39,13 +39,23 @@ Every professional encoder (LAME, Fraunhofer, CoreAudio) leaves distinct "DNA" i
 ### Frame Offsets & Padding
 We detect non-musical padding at the start and end of files. Specific lossy-to-lossless transcode cycles leave unique zero-padding offsets and "alias" spectral artifacts that can be used to identify the historical encoding path of the file.
 
+### Forensic DNA Reports (.dna.md)
+The ultimate output of the forensic pipeline is the **DNA Report**. This document provides:
+- **Forensic Signature**: A non-lossy digital thumbprint of the audio file.
+- **Tonnetz DNA Grid**: High-resolution harmonic stability maps.
+- **Scientific Baseline**: Laboratory-grade metrics (AES17, IMD, 468).
+- **Infinity Data Dump**: A raw JSON payload containing the complete 26-engine telemetry.
+
 ---
 
-## 4. AES17 Professional Standards
+## 4. AES17 & Laboratory Standards
 
-For industrial mastering, we verify the **Dynamic Range (DR)** and **Signal-to-Noise Ratio (SNR)** using the AES17 protocol.
-- **Notch Auditing**: We apply a 6th-order digital notch filter to the stimulus (e.g., a 1kHz tone) and analyze the residual noise and distortion floor.
-- **IMD Detection**: Inter-modulation distortion analysis (SMPTE method) to detect non-linearities in the digital reproduction chain.
+For industrial mastering and forensic laboratories, we verify the **Digital Baseline** using standardized protocols:
+- **AES17 Dynamic Range**: Measured with stimulus isolation to detect effective bit-depth.
+- **SMPTE IMD (Inter-modulation Distortion)**: Analysis of 60Hz/7kHz interaction ratios to detect non-linear artifacts.
+- **ITU-R 468-4 Noise Weighting**: Perceptually-weighted noise floor analysis for professional broadcasting.
+- **Notch Auditing**: 6th-order digital notch filtering for harmonic distortion (THD+N) verification.
 
 ---
+
 *For a manifest of all calibrated standards tests, see [Calibration.md](Calibration.md).*

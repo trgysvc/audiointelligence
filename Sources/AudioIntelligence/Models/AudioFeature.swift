@@ -1,6 +1,7 @@
 import Foundation
 
 /// Represents the modular feature domains available in the AudioIntelligence Infinity Engine.
+/// For a granular list of all 26 analysis engines, see `InfinityEngine`.
 public enum AudioFeature: String, CaseIterable, Sendable {
     /// Spectral analysis including STFT, Mel-scale, and MFCC.
     case spectral

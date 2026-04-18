@@ -5,9 +5,11 @@ import Accelerate
  * v55.1: Stereo & Phase Analysis Engine
  * Laboratory-grade verification of mono compatibility and spatial integrity.
  */
+/// Stereo and Spatial Analysis Engine.
+/// Provides laboratory-grade verification of phase correlation, mono compatibility, and stereo width.
 public final class StereoEngine: Sendable {
     
-    public struct StereoResult: Sendable {
+    public struct StereoResult: Codable, Sendable {
         public let correlationIndex: Float   // -1.0 to +1.0
         public let monoCompatibility: String // Excellent, Good, Risky, Phase Issues
         public let sideEnergyPercent: Float  // 0-100%

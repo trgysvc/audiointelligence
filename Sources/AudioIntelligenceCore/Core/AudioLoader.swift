@@ -60,7 +60,6 @@ public enum AudioLoader {
         let file = try AVAudioFile(forReading: url)
         let format = file.processingFormat
         let frameCount = AVAudioFrameCount(file.length)
-        let _ = Double(frameCount) / format.sampleRate
 
         return AudioMetadata(
             url: url,
@@ -74,15 +73,7 @@ public enum AudioLoader {
     // MARK: Full Load (≤ ~5 dakika)
 
     /// Loads the entire file as mono Float32 samples.
-    /// Industry Standard: `y, sr = industry standard.load(path, sr=22050, mono=True)`
     public static func load(url: URL, targetSampleRate: Double = defaultSampleRate) async throws -> AudioBuffer {
-        // Cache Check
-        let cacheKey = await IntelligenceCache.shared.generateKey(for: url, parameters: ["sr": targetSampleRate, "mono": true])
-        if let cached: AudioBuffer = await IntelligenceCache.shared.get(forKey: cacheKey) {
-            return cached
-        }
-
-        // Output format: mono, Float32, target SR
         guard let outputFormat = AVAudioFormat(
             commonFormat: .pcmFormatFloat32,
             sampleRate: targetSampleRate,
@@ -95,7 +86,6 @@ public enum AudioLoader {
         let file = try AVAudioFile(forReading: url)
         let inputFormat = file.processingFormat
 
-        // Native format buffer
         let totalFrames = AVAudioFrameCount(file.length)
         guard let inputBuffer = AVAudioPCMBuffer(pcmFormat: inputFormat, frameCapacity: totalFrames) else {
             throw AudioIntelligenceError.io(.decodeFailed(url))
@@ -103,29 +93,19 @@ public enum AudioLoader {
         try file.read(into: inputBuffer)
         inputBuffer.frameLength = totalFrames
 
-        // Resample + mono downmix via AVAudioConverter
         let converter = AVAudioConverter(from: inputFormat, to: outputFormat)
-        let outputFrames = AVAudioFrameCount(
-            Double(totalFrames) * targetSampleRate / inputFormat.sampleRate
-        ) + 1
+        let outputFrames = AVAudioFrameCount(Double(totalFrames) * targetSampleRate / inputFormat.sampleRate) + 1
 
         guard let outputBuffer = AVAudioPCMBuffer(pcmFormat: outputFormat, frameCapacity: outputFrames) else {
             throw AudioIntelligenceError.io(.decodeFailed(url))
         }
 
         let state = ConversionState()
-        let status = converter?.convert(to: outputBuffer, error: nil) { _, outStatus in
-            if state.consumed {
-                outStatus.pointee = .noDataNow
-                return nil
-            }
+        converter?.convert(to: outputBuffer, error: nil) { _, outStatus in
+            if state.consumed { outStatus.pointee = .noDataNow; return nil }
             outStatus.pointee = .haveData
             state.consumed = true
             return inputBuffer
-        }
-
-        guard status == .haveData || status == .endOfStream || status == .inputRanDry else {
-            throw AudioIntelligenceError.io(.decodeFailed(url))
         }
 
         let frameLength = Int(outputBuffer.frameLength)
@@ -133,13 +113,9 @@ public enum AudioLoader {
             throw AudioIntelligenceError.io(.decodeFailed(url))
         }
 
-        // Keep peak normalization if present, otherwise leave as is (matching Industry Standard behavior)
         let samples = Array(UnsafeBufferPointer(start: channelData, count: frameLength))
         let duration = Double(frameLength) / targetSampleRate
-        let result = AudioBuffer(samples: samples, sampleRate: targetSampleRate, duration: duration)
-        
-        await IntelligenceCache.shared.set(result, forKey: cacheKey)
-        return result
+        return AudioBuffer(samples: samples, sampleRate: targetSampleRate, duration: duration)
     }
 
     /// Loads the file as Multi-channel Float32 samples.
@@ -198,19 +174,17 @@ public enum AudioLoader {
         return StereoAudioBuffer(left: left, right: right, sampleRate: targetSampleRate, duration: duration)
     }
 
-    // MARK: Sliding Window Iterator
-
-    /// Chunk-based processing iterator for large files.
-    /// Each chunk is ~30 seconds. Memory is explicitly released using `autoreleasepool`.
-    ///
-    /// Industry Standard streaming equivalent: `industry standard.stream(path, block_length=...)`
-    public static func chunks(
-        url: URL,
-        chunkDuration: Double = 30.0,
-        overlap: Double = 0.0,
-        targetSampleRate: Double = defaultSampleRate,
-        handler: @escaping (_ chunk: [Float], _ startSec: Double, _ isLast: Bool) throws -> Void
-    ) throws {
+    // MARK: - Sequential Manual Loader (Atomic Fix for Bus Error)
+    
+    /// Loads a specific slice of the audio file synchronously (Safe for Batch Mode).
+    public static func loadNextChunkManual(
+        file: AVAudioFile,
+        offset: AVAudioFramePosition,
+        frameCount: AVAudioFrameCount,
+        targetSampleRate: Double = defaultSampleRate
+    ) throws -> AudioBuffer {
+        let inputFormat = file.processingFormat
+        
         guard let outputFormat = AVAudioFormat(
             commonFormat: .pcmFormatFloat32,
             sampleRate: targetSampleRate,
@@ -220,59 +194,35 @@ public enum AudioLoader {
             throw AudioIntelligenceError.io(.formatNotSupported("PCM Float32"))
         }
 
-        let file = try AVAudioFile(forReading: url)
-        let inputFormat = file.processingFormat
-        let totalFrames = AVAudioFrameCount(file.length)
-        let _ = Double(totalFrames) / inputFormat.sampleRate
-
-        let chunkInputFrames = AVAudioFrameCount(chunkDuration * inputFormat.sampleRate)
-        let overlapInputFrames = AVAudioFrameCount(overlap * inputFormat.sampleRate)
-        let hopInputFrames = chunkInputFrames - overlapInputFrames
-
-        var readOffset: AVAudioFramePosition = 0
-        var currentStartSec = 0.0
-
-        while readOffset < AVAudioFramePosition(totalFrames) {
-            try autoreleasepool {
-                let remaining = AVAudioFrameCount(totalFrames) - AVAudioFrameCount(readOffset)
-                let readCount = min(chunkInputFrames, remaining)
-
-                guard let chunkBuffer = AVAudioPCMBuffer(pcmFormat: inputFormat, frameCapacity: readCount) else {
-                    throw AudioIntelligenceError.io(.decodeFailed(url))
-                }
-
-                file.framePosition = readOffset
-                try file.read(into: chunkBuffer, frameCount: readCount)
-                chunkBuffer.frameLength = AVAudioFrameCount(file.framePosition) - AVAudioFrameCount(readOffset)
-
-                // Convert chunk
-                let converter = AVAudioConverter(from: inputFormat, to: outputFormat)
-                let outFrames = AVAudioFrameCount(Double(chunkBuffer.frameLength) * targetSampleRate / inputFormat.sampleRate) + 1
-
-                guard let outBuffer = AVAudioPCMBuffer(pcmFormat: outputFormat, frameCapacity: outFrames) else {
-                    throw AudioIntelligenceError.io(.decodeFailed(url))
-                }
-
-                let state = ConversionState()
-                converter?.convert(to: outBuffer, error: nil) { _, outStatus in
-                    if state.consumed { outStatus.pointee = .noDataNow; return nil }
-                    outStatus.pointee = .haveData
-                    state.consumed = true
-                    return chunkBuffer
-                }
-
-                let frameLen = Int(outBuffer.frameLength)
-                if let ptr = outBuffer.floatChannelData?[0], frameLen > 0 {
-                    let chunk = Array(UnsafeBufferPointer(start: ptr, count: frameLen))
-                    let isLast = (readOffset + AVAudioFramePosition(readCount)) >= AVAudioFramePosition(totalFrames)
-                    try handler(chunk, currentStartSec, isLast)
-                }
-
-                readOffset += AVAudioFramePosition(hopInputFrames)
-                currentStartSec += Double(hopInputFrames) / inputFormat.sampleRate
-            }
+        guard let chunkBuffer = AVAudioPCMBuffer(pcmFormat: inputFormat, frameCapacity: frameCount) else {
+             throw AudioIntelligenceError.io(.decodeFailed(file.url))
         }
+        file.framePosition = offset
+        try file.read(into: chunkBuffer, frameCount: frameCount)
+        
+        let converter = AVAudioConverter(from: inputFormat, to: outputFormat)
+        let outFrames = AVAudioFrameCount(Double(chunkBuffer.frameLength) * targetSampleRate / inputFormat.sampleRate) + 1
+        
+        guard let outBuffer = AVAudioPCMBuffer(pcmFormat: outputFormat, frameCapacity: outFrames) else {
+            throw AudioIntelligenceError.io(.decodeFailed(file.url))
+        }
+        
+        let state = ConversionState()
+        converter?.convert(to: outBuffer, error: nil) { _, outStatus in
+            if state.consumed { outStatus.pointee = .noDataNow; return nil }
+            outStatus.pointee = .haveData
+            state.consumed = true
+            return chunkBuffer
+        }
+        
+        guard let ptr = outBuffer.floatChannelData?[0] else {
+            throw AudioIntelligenceError.io(.decodeFailed(file.url))
+        }
+        
+        let frameLen = Int(outBuffer.frameLength)
+        let samples = Array(UnsafeBufferPointer(start: ptr, count: frameLen))
+        let duration = Double(frameLen) / targetSampleRate
+        
+        return AudioBuffer(samples: samples, sampleRate: targetSampleRate, duration: duration)
     }
 }
-
-// Removed AudioLoadError in favor of AudioIntelligenceError

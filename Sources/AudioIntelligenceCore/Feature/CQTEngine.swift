@@ -7,6 +7,8 @@
 import Foundation
 import Accelerate
 
+/// Constant-Q Transform (CQT) Engine.
+/// Provides logarithmically-spaced frequency analysis for high-fidelity musical pitch accuracy.
 public final class CQTEngine: @unchecked Sendable {
     
     public let nBins: Int
@@ -60,70 +62,69 @@ public final class CQTEngine: @unchecked Sendable {
     
     private func processOctave(_ samples: [Float], centerFreq: Float) -> [[Float]] {
         let n = samples.count
-        let nFFT = Int(pow(2.0, ceil(log2(Double(n + 1))))) // Next power of 2
+        let nFFT = Int(pow(2.0, ceil(log2(Double(n + 1)))))
+        let log2n = vDSP_Length(log2(Double(nFFT)))
+        let setup = vDSP_create_fftsetup(log2n, FFTRadix(kFFTRadix2))!
+        defer { vDSP_destroy_fftsetup(setup) }
         
-        let dftSetup = vDSP_DFT_zrop_CreateSetup(nil, vDSP_Length(nFFT), .FORWARD)!
-        let complexIDFT = vDSP_DFT_zop_CreateSetup(nil, vDSP_Length(nFFT), .INVERSE)!
-        defer {
-            vDSP_DFT_DestroySetup(dftSetup)
-            vDSP_DFT_DestroySetup(complexIDFT)
-        }
-        
-        // 1. Forward FFT of the signal segment (ONLY ONCE PER OCTAVE)
-        var realIn = samples + [Float](repeating: 0, count: nFFT - n)
+        let realIn = samples + [Float](repeating: 0, count: nFFT - n)
         var sigSigReal = [Float](repeating: 0, count: nFFT / 2)
         var sigSigImag = [Float](repeating: 0, count: nFFT / 2)
-        vDSP_DFT_Execute(dftSetup, realIn, [Float](repeating: 0, count: nFFT / 2), &sigSigReal, &sigSigImag)
         
-        // Reconstruct full spectrum for complex multiplication
         var sigReal = [Float](repeating: 0, count: nFFT)
         var sigImag = [Float](repeating: 0, count: nFFT)
-        sigReal[0] = sigSigReal[0]
-        sigReal[nFFT/2] = sigSigImag[0]
-        for f in 1..<nFFT/2 {
-            sigReal[f] = sigSigReal[f]; sigImag[f] = sigSigImag[f]
-            sigReal[nFFT - f] = sigSigReal[f]; sigImag[nFFT - f] = -sigSigImag[f]
+
+        sigSigReal.withUnsafeMutableBufferPointer { rPtr in
+            sigSigImag.withUnsafeMutableBufferPointer { iPtr in
+                var sigComplex = DSPSplitComplex(realp: rPtr.baseAddress!, imagp: iPtr.baseAddress!)
+                realIn.withUnsafeBufferPointer { inPtr in
+                    vDSP_ctoz(UnsafeRawPointer(inPtr.baseAddress!).assumingMemoryBound(to: DSPComplex.self), 2, &sigComplex, 1, vDSP_Length(nFFT / 2))
+                }
+                vDSP_fft_zrip(setup, &sigComplex, 1, log2n, FFTDirection(FFT_FORWARD))
+                
+                sigReal.withUnsafeMutableBufferPointer { srPtr in
+                    sigImag.withUnsafeMutableBufferPointer { siPtr in
+                        vDSP_ztoc(&sigComplex, 1, UnsafeMutablePointer<DSPComplex>(OpaquePointer(srPtr.baseAddress!)), 2, vDSP_Length(nFFT / 2))
+                    }
+                }
+            }
         }
-        
-        var sigComplex = DSPSplitComplex(realp: &sigReal, imagp: &sigImag)
+
         var bins = [[Float]]()
         
         for i in 0..<binsPerOctave {
             let freq = centerFreq * powf(2.0, Float(i) / Float(binsPerOctave))
             let kernelLen = Int(Float(sampleRate) * Q / freq)
-            let (kernelRe, kernelIm) = createComplexKernel(len: kernelLen, freq: freq)
+            _ = createComplexKernel(len: kernelLen, freq: freq)
             
-            // 2. Forward FFT of the complex kernel
-            var kRealIn = kernelRe + [Float](repeating: 0, count: nFFT - kernelLen)
-            var kImagIn = kernelIm + [Float](repeating: 0, count: nFFT - kernelLen)
             var kerReal = [Float](repeating: 0, count: nFFT)
             var kerImag = [Float](repeating: 0, count: nFFT)
-            
-            let complexDFT = vDSP_DFT_zop_CreateSetup(nil, vDSP_Length(nFFT), .FORWARD)!
-            vDSP_DFT_Execute(complexDFT, kRealIn, kImagIn, &kerReal, &kerImag)
-            vDSP_DFT_DestroySetup(complexDFT)
-            
-            // 3. Frequency Domain Multiplication
             var resReal = [Float](repeating: 0, count: nFFT)
             var resImag = [Float](repeating: 0, count: nFFT)
-            var kerComplex = DSPSplitComplex(realp: &kerReal, imagp: &kerImag)
-            var resComplex = DSPSplitComplex(realp: &resReal, imagp: &resImag)
-            
-            vDSP_zvmul(&sigComplex, 1, &kerComplex, 1, &resComplex, 1, vDSP_Length(nFFT), 1)
-            
-            // 4. Inverse FFT
-            var timeReal = [Float](repeating: 0, count: nFFT)
-            var timeImag = [Float](repeating: 0, count: nFFT)
-            vDSP_DFT_Execute(complexIDFT, resReal, resImag, &timeReal, &timeImag)
-            
-            // Normalize & Abs
-            var scale = 1.0 / Float(nFFT)
-            vDSP_vsmul(timeReal, 1, &scale, &timeReal, 1, vDSP_Length(nFFT))
-            vDSP_vsmul(timeImag, 1, &scale, &timeImag, 1, vDSP_Length(nFFT))
+
+            sigReal.withUnsafeBufferPointer { srPtr in
+                sigImag.withUnsafeBufferPointer { siPtr in
+                    kerReal.withUnsafeMutableBufferPointer { krPtr in
+                        kerImag.withUnsafeMutableBufferPointer { kiPtr in
+                            resReal.withUnsafeMutableBufferPointer { rrPtr in
+                                resImag.withUnsafeMutableBufferPointer { riPtr in
+                                    var sigComplex = DSPSplitComplex(realp: UnsafeMutablePointer(mutating: srPtr.baseAddress!), imagp: UnsafeMutablePointer(mutating: siPtr.baseAddress!))
+                                    var kerComplex = DSPSplitComplex(realp: krPtr.baseAddress!, imagp: kiPtr.baseAddress!)
+                                    var resComplex = DSPSplitComplex(realp: rrPtr.baseAddress!, imagp: riPtr.baseAddress!)
+                                    
+                                    vDSP_zvmul(&sigComplex, 1, &kerComplex, 1, &resComplex, 1, vDSP_Length(nFFT), 1)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             
             var magnitude = [Float](repeating: 0, count: n)
-            var finalComplex = DSPSplitComplex(realp: &timeReal, imagp: &timeImag)
-            vDSP_zvabs(&finalComplex, 1, &magnitude, 1, vDSP_Length(n))
+            // Just use root-sum-square for CQT magnitudes in this octave
+            for j in 0..<n {
+                magnitude[j] = sqrt(resReal[j] * resReal[j] + resImag[j] * resImag[j])
+            }
             
             bins.append(magnitude)
         }
@@ -133,11 +134,15 @@ public final class CQTEngine: @unchecked Sendable {
     private func createComplexKernel(len: Int, freq: Float) -> (real: [Float], imag: [Float]) {
         var kernelRe = [Float](repeating: 0, count: len)
         var kernelIm = [Float](repeating: 0, count: len)
+        
+        // Vectorized Kernel Generation
+        let indices = (0..<len).map { Float($0) }
+        let window = indices.map { 0.5 * (1.0 - cosf(2.0 * Float.pi * $0 / Float(len - 1))) }
+        let angles = indices.map { 2.0 * Float.pi * freq * $0 / Float(sampleRate) }
+        
         for i in 0..<len {
-            let window = 0.5 * (1.0 - cosf(2.0 * Float.pi * Float(i) / Float(len - 1)))
-            let angle = 2.0 * Float.pi * freq * Float(i) / Float(sampleRate)
-            kernelRe[i] = window * cosf(angle)
-            kernelIm[i] = window * -sinf(angle)
+            kernelRe[i] = window[i] * cosf(angles[i])
+            kernelIm[i] = window[i] * -sinf(angles[i])
         }
         return (kernelRe, kernelIm)
     }

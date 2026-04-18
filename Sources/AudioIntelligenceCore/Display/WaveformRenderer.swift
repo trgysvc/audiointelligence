@@ -3,6 +3,7 @@
 // Live console ASCII waveform + progress reporting
 
 import Foundation
+import Accelerate
 
 public enum WaveformRenderer {
 
@@ -156,5 +157,22 @@ public enum WaveformRenderer {
         let m = Int(sec) / 60
         let s = Int(sec) % 60
         return String(format: "%d:%02d", m, s)
+    }
+
+    /// Extract floating-point peaks for the data model
+    public static func getPeaks(samples: [Float], count: Int = 128) -> [Float] {
+        let n = samples.count
+        let stride = max(1, n / count)
+        var peaks: [Float] = []
+        for i in 0..<count {
+            let lo = i * stride
+            let hi = min(lo + stride, n)
+            guard lo < n else { break }
+            let chunk = samples[lo..<hi]
+            var maxVal: Float = 0
+            vDSP_maxv(Array(chunk), 1, &maxVal, vDSP_Length(chunk.count))
+            peaks.append(maxVal)
+        }
+        return peaks
     }
 }

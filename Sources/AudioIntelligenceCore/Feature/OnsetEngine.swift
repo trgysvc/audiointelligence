@@ -31,6 +31,8 @@ public struct OnsetResult: Sendable {
     public let mode: OnsetMode        // Used mode
 }
 
+/// Multi-band Onset Detection Engine.
+/// Identifies rhythmic transients and percussive energy peaks across the frequency spectrum.
 public final class OnsetEngine: @unchecked Sendable {
 
     private let stft: STFTEngine

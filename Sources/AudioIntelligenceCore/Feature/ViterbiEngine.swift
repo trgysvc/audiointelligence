@@ -3,6 +3,8 @@ import Accelerate
 
 /// Professional-grade Viterbi Decoder for sequence modeling (HMM).
 /// Uses log-space math and Accelerate-optimized emission calculations.
+/// Hidden Markov Model (HMM) Viterbi Decoder.
+/// Optimized for sequence modeling and pitch path stabilization using dynamic programming.
 public final class ViterbiEngine: Sendable {
     
     public init() {}

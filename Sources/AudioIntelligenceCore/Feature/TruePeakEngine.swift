@@ -4,6 +4,8 @@ import Accelerate
 /// v51.0: Professional Engineering Standard — True Peak Analysis
 /// Detects inter-sample peaks using 8x oversampling with a high-precision 511-tap Kaiser-windowed sinc filter.
 /// This implementation is designed to meet the most rigorous scientific validation standards (BT.1770-4).
+/// High-Precision True Peak Detection Engine.
+/// Detects inter-sample peaks using a 511-tap polyphase Sinc-interpolated filter (ITU-R BS.1770-4).
 public final class TruePeakEngine: Sendable {
     
     public init() {}

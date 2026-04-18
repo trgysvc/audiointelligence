@@ -3,16 +3,22 @@
 //
 // Non-negative Matrix Factorization (NMF).
 // Mirroring industry standard.decompose.nmf.
-// Used for blind source separation and component analysis.
+// High-Performance vDSP accelerated implementation.
+//
+// Industry Standard Notation: V ≈ W * H
+// Here, we use Frame-Major layout for V [Frames x Freqs]
+// V ≈ H * W where H is [Frames x Components] and W is [Components x Freqs]
 
 import Foundation
 import Accelerate
 
-public struct NMFResult: Sendable {
-    public let W: [[Float]] // [nFreqs × nComponents] — Spectral basis
-    public let H: [[Float]] // [nComponents × nFrames] — Temporal activations
+public struct NMFResult: Codable, Sendable {
+    public let W: [[Float]] // [nComponents × nFreqs] — Spectral basis
+    public let H: [[Float]] // [nFrames × nComponents] — Temporal activations
 }
 
+/// Non-negative Matrix Factorization (NMF) Engine.
+/// Decomposes spectral data into basis components and activations for blind source identification.
 public final class NMFEngine: Sendable {
     
     private let nComponents: Int
@@ -24,127 +30,111 @@ public final class NMFEngine: Sendable {
     }
     
     /// Computes NMF using Multiplicative Update (MU) rules with KL divergence.
-    /// V ≈ WH
-    /// Computes NMF using Multiplicative Update (MU) rules with KL divergence.
-    /// V ≈ H * W (V is [nFrames × nFreqs], H is [nFrames × nComponents], W is [nComponents × nFreqs])
+    /// Mathematically Optimized using Apple Accelerate (vDSP).
     public func decompose(stft: STFTMatrix, seed: UInt64 = 42) -> NMFResult {
-        let V = stft.magnitude // [nFrames × nFreqs]
         let nFreqs = stft.nFreqs
         let nFrames = stft.nFrames
+        let totalElements = nFrames * nFreqs
         
-        // 1. Initialize W and H with deterministic positive values.
+        // 1. Initialize H and W with deterministic positive values (Flat Buffers)
         var rng = LCG(seed: seed)
-        var W = (0..<nFreqs).map { _ in (0..<nComponents).map { _ in rng.next() } }
-        var H = (0..<nComponents).map { _ in (0..<nFrames).map { _ in rng.next() } }
+        var H_flat = [Float](repeating: 0, count: nFrames * nComponents)
+        var W_flat = [Float](repeating: 0, count: nComponents * nFreqs)
         
-        // 2. Iterative updates (KL divergence MU rules adapted for [Frames x Freqs])
+        for i in 0..<H_flat.count { H_flat[i] = rng.next() }
+        for i in 0..<W_flat.count { W_flat[i] = rng.next() }
+        
+        let V = stft.magnitude // [nFrames × nFreqs]
+        
+        var HW = [Float](repeating: 0, count: totalElements)
+        var V_over_HW = [Float](repeating: 0, count: totalElements)
+        
+        // 2. Iterative updates (KL divergence MU rules)
         for _ in 0..<maxIter {
-            // Update W: W ← W * (H^T * (V / (HW))) / (H^T * 1)
-            let HW = computeHW(H: H, W: W, frames: nFrames, freqs: nFreqs, comps: nComponents)
+            // A. Update W: W ← W * (H^T * (V / (HW))) / (H^T * 1)
+            DSPHelpers.safeMatrixMultiply(H_flat, rowsA: nFrames, colsA: nComponents, W_flat, rowsB: nComponents, colsB: nFreqs, C: &HW)
             
-            var V_over_HW = [Float](repeating: 0, count: V.count)
-            for i in 0..<V.count {
-                V_over_HW[i] = V[i] / (HW[i] + 1e-10)
-            }
+            // V_over_HW = V / (HW + epsilon)
+            vDSP_vadd(HW, 1, [1e-10], 0, &HW, 1, vDSP_Length(totalElements))
+            vDSP_vdiv(HW, 1, V, 1, &V_over_HW, 1, vDSP_Length(totalElements))
             
-            // W update factor: HT * (V/HW)
-            let wFactor = computeHT_V(H: H, V: V_over_HW, frames: nFrames, freqs: nFreqs, comps: nComponents)
-            
-            // H column sums for normalization
-            var hSums = [Float](repeating: 0, count: nComponents)
-            for c in 0..<nComponents {
-                var sum: Float = 0
-                for t in 0..<nFrames { sum += H[t][c] }
-                hSums[c] = max(1e-10, sum)
-            }
-            
-            for c in 0..<nComponents {
-                for f in 0..<nFreqs {
-                    W[c][f] *= wFactor[c][f] / hSums[c]
+            H_flat.withUnsafeBufferPointer { hBuff in
+                W_flat.withUnsafeMutableBufferPointer { wBuff in
+                    guard let hBase = hBuff.baseAddress, let wBase = wBuff.baseAddress else { return }
+                    
+                    for c in 0..<nComponents {
+                        var numerator_W = [Float](repeating: 0, count: nFreqs)
+                        
+                        // Vectorized cross-correlation for W update
+                        for f in 0..<nFreqs {
+                            var dot: Float = 0
+                            // Manual stride check for M4 safety
+                            vDSP_dotpr(hBase.advanced(by: c), nComponents, 
+                                       V_over_HW.withUnsafeBufferPointer { $0.baseAddress!.advanced(by: f) }, nFreqs, 
+                                       &dot, vDSP_Length(nFrames))
+                            numerator_W[f] = dot
+                        }
+                        
+                        var h_sum: Float = 0
+                        vDSP_sve(hBase.advanced(by: c), nComponents, &h_sum, vDSP_Length(nFrames))
+                        h_sum = max(1e-10, h_sum)
+                        
+                        var invSum = 1.0 / h_sum
+                        vDSP_vsmul(numerator_W, 1, &invSum, &numerator_W, 1, vDSP_Length(nFreqs))
+                        
+                        let offsetW = c * nFreqs
+                        vDSP_vmul(wBase.advanced(by: offsetW), 1, numerator_W, 1, wBase.advanced(by: offsetW), 1, vDSP_Length(nFreqs))
+                    }
                 }
             }
             
-            // Update H: H ← H * ((V / (HW)) * W^T) / (1 * W^T)
-            let NewHW = computeHW(H: H, W: W, frames: nFrames, freqs: nFreqs, comps: nComponents)
-            var V_over_NewHW = [Float](repeating: 0, count: V.count)
-            for i in 0..<V.count {
-                V_over_NewHW[i] = V[i] / (NewHW[i] + 1e-10)
-            }
+            // B. Update H: H ← H * ((V / (HW)) * W^T) / (1 * W^T)
+            DSPHelpers.safeMatrixMultiply(H_flat, rowsA: nFrames, colsA: nComponents, W_flat, rowsB: nComponents, colsB: nFreqs, C: &HW)
+            vDSP_vadd(HW, 1, [1e-10], 0, &HW, 1, vDSP_Length(totalElements))
+            vDSP_vdiv(HW, 1, V, 1, &V_over_HW, 1, vDSP_Length(totalElements))
             
-            let hFactor = computeV_WT(V: V_over_NewHW, W: W, frames: nFrames, freqs: nFreqs, comps: nComponents)
-            
-            // W row sums for normalization
-            var wSums = [Float](repeating: 0, count: nComponents)
-            for c in 0..<nComponents {
-                var sum: Float = 0
-                vDSP_sve(W[c], 1, &sum, vDSP_Length(nFreqs))
-                wSums[c] = max(1e-10, sum)
-            }
-            
-            for t in 0..<nFrames {
-                for c in 0..<nComponents {
-                    H[t][c] *= hFactor[t][c] / wSums[c]
+            W_flat.withUnsafeBufferPointer { wBuff in
+                H_flat.withUnsafeMutableBufferPointer { hBuff in
+                    guard let wBase = wBuff.baseAddress, let hBase = hBuff.baseAddress else { return }
+                    
+                    for t in 0..<nFrames {
+                        let offsetV = t * nFreqs
+                        let offsetH = t * nComponents
+                        
+                        for c in 0..<nComponents {
+                            let offsetW = c * nFreqs
+                            var dot: Float = 0
+                            vDSP_dotpr(V_over_HW.withUnsafeBufferPointer { $0.baseAddress!.advanced(by: offsetV) }, 1, 
+                                       wBase.advanced(by: offsetW), 1, 
+                                       &dot, vDSP_Length(nFreqs))
+                            
+                            var w_sum: Float = 0
+                            vDSP_sve(wBase.advanced(by: offsetW), 1, &w_sum, vDSP_Length(nFreqs))
+                            w_sum = max(1e-10, w_sum)
+                            
+                            let idx = offsetH + c
+                            hBase[idx] *= dot / w_sum
+                            if hBase[idx].isNaN || hBase[idx].isInfinite {
+                                hBase[idx] = 1e-10
+                            }
+                        }
+                    }
                 }
             }
         }
         
-        // Return results: W as basis [nFreqs x nComponents], H as activations [nComponents x nFrames]
-        // This maintains the original Result structure but uses internal Frame-major efficiency.
-        var outW = [[Float]](repeating: [Float](repeating: 0, count: nComponents), count: nFreqs)
-        var outH = [[Float]](repeating: [Float](repeating: 0, count: nFrames), count: nComponents)
-        
-        for f in 0..<nFreqs {
-            for c in 0..<nComponents { outW[f][c] = W[c][f] }
-        }
+        // 3. Return results in stratified nested format for compatibility
+        var outW = [[Float]](repeating: [], count: nComponents)
         for c in 0..<nComponents {
-            for t in 0..<nFrames { outH[c][t] = H[t][c] }
+            outW[c] = Array(W_flat[(c * nFreqs)..<((c + 1) * nFreqs)])
+        }
+        
+        var outH = [[Float]](repeating: [], count: nFrames)
+        for t in 0..<nFrames {
+            outH[t] = Array(H_flat[(t * nComponents)..<((t + 1) * nComponents)])
         }
         
         return NMFResult(W: outW, H: outH)
-    }
-    
-    // MARK: - Optimized Matrix Ops (Frame-major [Frames x Freqs])
-    
-    private func computeHW(H: [[Float]], W: [[Float]], frames: Int, freqs: Int, comps: Int) -> [Float] {
-        var result = [Float](repeating: 0, count: frames * freqs)
-        for t in 0..<frames {
-            for f in 0..<freqs {
-                var sum: Float = 0
-                for c in 0..<comps {
-                    sum += H[t][c] * W[c][f]
-                }
-                result[t * freqs + f] = sum
-            }
-        }
-        return result
-    }
-    
-    private func computeHT_V(H: [[Float]], V: [Float], frames: Int, freqs: Int, comps: Int) -> [[Float]] {
-        var result = [[Float]](repeating: [Float](repeating: 0, count: freqs), count: comps)
-        for c in 0..<comps {
-            for f in 0..<freqs {
-                var sum: Float = 0
-                for t in 0..<frames {
-                    sum += H[t][c] * V[t * freqs + f]
-                }
-                result[c][f] = sum
-            }
-        }
-        return result
-    }
-    
-    private func computeV_WT(V: [Float], W: [[Float]], frames: Int, freqs: Int, comps: Int) -> [[Float]] {
-        var result = [[Float]](repeating: [Float](repeating: 0, count: comps), count: frames)
-        for t in 0..<frames {
-            for c in 0..<comps {
-                var sum: Float = 0
-                for f in 0..<freqs {
-                    sum += V[t * freqs + f] * W[c][f]
-                }
-                result[t][c] = sum
-            }
-        }
-        return result
     }
     
     // MARK: - Deterministic RNG (LCG)

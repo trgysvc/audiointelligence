@@ -9,14 +9,14 @@
 import Accelerate
 import Foundation
 
-public struct StructureResult: Sendable {
+public struct StructureResult: Codable, Sendable {
     public let segments: [AudioSegment]
     public let boundaryTimes: [Double]
     public let boundaryFrames: [Int]
     public let segmentCount: Int
 }
 
-public struct AudioSegment: Sendable {
+public struct AudioSegment: Codable, Sendable {
     public let id: Int
     public let startSec: Double
     public let endSec: Double
@@ -24,6 +24,8 @@ public struct AudioSegment: Sendable {
     public let label: String   // "Intro", "Verse", "Chorus", "Bridge", "Outro"
 }
 
+/// Structural Segmentation Engine.
+/// Identifies song sections (Verse, Chorus, Outro) using Foote Novelty analysis and Self-Similarity Matrices.
 public final class StructureEngine: @unchecked Sendable {
 
     public let hopLength: Int
@@ -44,22 +46,45 @@ public final class StructureEngine: @unchecked Sendable {
             return StructureResult(segments: [], boundaryTimes: [], boundaryFrames: [], segmentCount: 0)
         }
 
-        // 1. Compute Recurrence Matrix (Cross-affinity between frames)
-        // Combine Chroma and MFCC for a comprehensive similarity matrix
-        let ssmChroma = DSPHelpers.selfSimilarityMatrix(chromagram)
-        let ssmMFCC = DSPHelpers.selfSimilarityMatrix(mfccs)
+        // 1. Prepare normalized features (Memory Optimized & Safety Guards)
+        let chromaDim = chromagram.count
+        let mfccDim = mfccs.count
         
-        var combinedSSM = [[Float]](repeating: [Float](repeating: 0, count: nFrames), count: nFrames)
-        for i in 0..<nFrames {
-            for j in 0..<nFrames {
-                // Harmonic vs Timbral weight (0.5 balance)
-                combinedSSM[i][j] = (ssmChroma[i][j] + ssmMFCC[i][j]) * 0.5
+        var flatChroma = [Float](repeating: 0, count: nFrames * chromaDim)
+        var flatMFCC   = [Float](repeating: 0, count: nFrames * mfccDim)
+        
+        flatChroma.withUnsafeMutableBufferPointer { chromaBuff in
+            flatMFCC.withUnsafeMutableBufferPointer { mfccBuff in
+                guard let cBase = chromaBuff.baseAddress, let mBase = mfccBuff.baseAddress else { return }
+                
+                for t in 0..<nFrames {
+                    let offsetC = t * chromaDim
+                    let offsetM = t * mfccDim
+                    
+                    // SAFE COPY: Ensure indices exist before pointer write
+                    for f in 0..<chromaDim {
+                        if f < chromagram.count && t < chromagram[f].count {
+                            cBase[offsetC + f] = chromagram[f][t]
+                        }
+                    }
+                    for f in 0..<mfccDim {
+                        if f < mfccs.count && t < mfccs[f].count {
+                            mBase[offsetM + f] = mfccs[f][t]
+                        }
+                    }
+                }
             }
         }
 
-        // 2. Foote novelty score on the combined SSM
+        // 2. Foote novelty using streaming dot-products (Memory Optimized)
         let kernelSize = min(64, nFrames / 4)
-        let novelty = DSPHelpers.footeNovelty(ssm: combinedSSM, kernelSize: max(8, kernelSize))
+        let noveltyChroma = DSPHelpers.streamingFooteNovelty(flatFeatures: flatChroma, featureDim: chromaDim, nFrames: nFrames, kernelSize: max(8, kernelSize))
+        let noveltyMFCC = DSPHelpers.streamingFooteNovelty(flatFeatures: flatMFCC, featureDim: mfccDim, nFrames: nFrames, kernelSize: max(8, kernelSize))
+        
+        var novelty = [Float](repeating: 0, count: nFrames)
+        for i in 0..<nFrames {
+            novelty[i] = (noveltyChroma[i] + noveltyMFCC[i]) * 0.5
+        }
 
         // 3. Robust peak picking
         let frameRate = sampleRate / Double(hopLength)
@@ -81,14 +106,14 @@ public final class StructureEngine: @unchecked Sendable {
         if !boundaryFrames.contains(lastFrame) { boundaryFrames.append(lastFrame) }
         boundaryFrames.sort()
 
-        // 5. Cluster segments to assign structural labels
+        // 5. Cluster segments using streaming recurrence strength
         let boundaryTimes = boundaryFrames.map { Double($0 * hopLength) / sampleRate }
         var segments: [AudioSegment] = []
 
         for i in 0..<(boundaryFrames.count - 1) {
             let start = boundaryFrames[i]
             let end = boundaryFrames[i + 1]
-            let label = identifySection(combinedSSM: combinedSSM, start: start, end: end, totalFrames: nFrames)
+            let label = identifySectionStreaming(flatChroma: flatChroma, chromaDim: chromaDim, start: start, end: end, nFrames: nFrames)
             
             segments.append(AudioSegment(
                 id: i + 1,
@@ -107,28 +132,17 @@ public final class StructureEngine: @unchecked Sendable {
         )
     }
 
-    // MARK: - Section Identification
+    // MARK: - Section Identification (Streaming)
 
-    /// Identifies the section type based on recurrence and global position.
-    private func identifySection(combinedSSM: [[Float]], start: Int, end: Int, totalFrames: Int) -> String {
+    private func identifySectionStreaming(flatChroma: [Float], chromaDim: Int, start: Int, end: Int, nFrames: Int) -> String {
         let mid = (start + end) / 2
-        let ratio = Double(mid) / Double(totalFrames)
+        let ratio = Double(mid) / Double(nFrames)
         
-        // 1. Basic location-based heuristics
         if ratio < 0.1 { return "Intro" }
         if ratio > 0.9 { return "Outro" }
         
-        // 2. Recurrence-based logic: Does this section repeat elsewhere?
-        // Sections with high recurrence in the "chorus zone" (0.3 - 0.7) are likely Chorus.
-        var recurrenceStrength: Float = 0
-        for i in start..<end {
-            for j in 0..<totalFrames {
-                if j < start || j > end {
-                    recurrenceStrength += combinedSSM[i][j]
-                }
-            }
-        }
-        let normalizedRecurrence = recurrenceStrength / Float((end - start) * (totalFrames - (end - start)))
+        let strength = DSPHelpers.streamingRecurrenceStrength(flatFeatures: flatChroma, featureDim: chromaDim, start: start, end: end)
+        let normalizedRecurrence = strength / Float((end - start) * (nFrames - (end - start)))
         
         if normalizedRecurrence > 0.6 {
             return "Chorus"

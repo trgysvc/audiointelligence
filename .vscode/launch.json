@@ -79,6 +79,26 @@
             "target": "AIBenchmark",
             "configuration": "release",
             "preLaunchTask": "swift: Build Release AIBenchmark"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:audiointelligence}",
+            "name": "Debug DownloadsAudit",
+            "target": "DownloadsAudit",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug DownloadsAudit"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:audiointelligence}",
+            "name": "Release DownloadsAudit",
+            "target": "DownloadsAudit",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release DownloadsAudit"
         }
     ]
 }

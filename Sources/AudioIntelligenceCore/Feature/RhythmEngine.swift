@@ -17,6 +17,8 @@ public struct RhythmResult: Sendable {
     public let onsetPeak: Float
 }
 
+/// Global Tempo and Rhythm Analysis Engine.
+/// Provides BPM and beat consistency estimation using Dynamic Programming and Ellis-style tracking.
 public final class RhythmEngine: Sendable {
     
     private let sampleRate: Double
@@ -220,15 +222,10 @@ public final class RhythmEngine: Sendable {
         let n = onsetStrength.count
         guard n > 0 else { return (120.0, 0.0) }
         
-        // 1. Autocorrelation
-        var acorr = [Float](repeating: 0, count: n)
-        // vDSP_conv requires reversed window for cross-correlation logic
-        let reversed = Array(onsetStrength.reversed())
-        vDSP_conv(onsetStrength, 1, reversed, 1, &acorr, 1, vDSP_Length(n), vDSP_Length(n))
+        // 1. Centralized Autocorrelation (Correct Offset Handling)
+        let acorr = DSPHelpers.autocorrelate(onsetStrength, maxSize: n)
         
         // 2. Identify peak in the tempo range (40...240 BPM)
-        // Convert lag to BPM: bpm = 60 * sr / (hop_length * lag)
-        
         let minLag = Int(60.0 * Float(sr) / (Float(hopLength) * 240.0))
         let maxLag = Int(60.0 * Float(sr) / (Float(hopLength) * 40.0))
         

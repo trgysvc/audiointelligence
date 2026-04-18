@@ -127,6 +127,13 @@ let package = Package(
             path: "Sources/AIBenchmark",
             exclude: ["README.md"]
         ),
+        // Scripts are standalone and should not be part of the main build target
+//        .executableTarget(
+//            name: "DownloadsAudit",
+//            dependencies: ["AudioIntelligenceCore"],
+//            path: "scripts",
+//            sources: ["downloads_audit.swift"]
+//        ),
         // ---------------------------------------------------------------------
         // 6. SCIENTIFIC VALIDATION: EBU/AES test suites.
         // ---------------------------------------------------------------------

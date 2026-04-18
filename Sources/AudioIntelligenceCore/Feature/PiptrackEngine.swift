@@ -7,11 +7,13 @@
 import Foundation
 import Accelerate
 
-public struct PiptrackResult: Sendable {
+public struct PiptrackResult: Codable, Sendable {
     public let pitches: [Float]    // Refined frequency per frame
     public let magnitudes: [Float] // Magnitude of the primary pitch per frame
 }
 
+/// Sub-bin Pitch Tracking Engine.
+/// Uses parabolic interpolation on STFT magnitude peaks to achieve refined frequency estimation.
 public final class PiptrackEngine: Sendable {
     
     private let fMin: Float

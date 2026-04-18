@@ -3,6 +3,8 @@ import Accelerate
 
 /// v28.0: The Infinity Engine — Professional Spectral Analysis
 /// Provides 100% depth MIR features including Centroid, Bandwidth, Rolloff, Flatness, ZCR, and Flux.
+/// Core Spectral Descriptors Engine.
+/// Calculates high-level frequency domain metrics such as Centroid, Flux, Flatness, and Bandwidth.
 public final class SpectralEngine: Sendable {
     
     private let sampleRate: Double

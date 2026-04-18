@@ -6,34 +6,39 @@
 
 import Foundation
 import Accelerate
+import AudioIntelligenceMetal
 
-public struct MFCCResult: Sendable {
+public struct MFCCResult: Codable, Sendable {
     public let mfcc: [Float]      // Mean MFCC across frames or representative frame
     public let fullData: [Float]  // nMFCC × nFrames
 }
 
+/// Mel-Frequency Cepstral Coefficients (MFCC) Engine.
+/// Provides timbral fingerprinting using DCT-II orthoganal transforms on Mel-scale spectra.
 public final class MFCCEngine: @unchecked Sendable {
     
     private let melEngine: MelSpectrogramEngine
     private let nMFCC: Int
     private let nMels: Int
+    private let metalEngine: MetalEngine?
     
     // vDSP DCT setup using DFT type for pointer compatibility
     private let dctSetup: vDSP_DFT_Setup
     
-    public init(melEngine: MelSpectrogramEngine, nMFCC: Int = 20) {
+    public init(melEngine: MelSpectrogramEngine, nMFCC: Int = 20, metalEngine: MetalEngine? = nil) {
         self.melEngine = melEngine
         self.nMFCC = nMFCC
         self.nMels = melEngine.nMels
+        self.metalEngine = metalEngine
         
         // vDSP_DCT_CreateSetup returns vDSP_DFT_Setup (they share the same pool in C)
         self.dctSetup = vDSP_DCT_CreateSetup(nil, vDSP_Length(nMels), .II)!
     }
     
-    public convenience init(nMFCC: Int = 20, nMels: Int = 128, sampleRate: Double = 22050) {
+    public convenience init(nMFCC: Int = 20, nMels: Int = 128, sampleRate: Double = 22050, metalEngine: MetalEngine? = nil) {
         let stft = STFTEngine(nFFT: 2048, hopLength: 512, sampleRate: sampleRate)
         let mel = MelSpectrogramEngine(stftEngine: stft, nMels: nMels)
-        self.init(melEngine: mel, nMFCC: nMFCC)
+        self.init(melEngine: mel, nMFCC: nMFCC, metalEngine: metalEngine)
     }
     
     deinit {
@@ -54,25 +59,31 @@ public final class MFCCEngine: @unchecked Sendable {
             logMel[i] = 10.0 * log10f(max(melSpectrogram[i], 1e-10))
         }
         
-        var mfccs = [Float](repeating: 0, count: nMFCC * nFrames)
-        var inputFrame  = [Float](repeating: 0, count: nMels)
-        var outputFrame = [Float](repeating: 0, count: nMels)
+        var mfccs: [Float]
         
-        for t in 0..<nFrames {
-            for m in 0..<nMels {
-                inputFrame[m] = logMel[t * nMels + m]
-            }
+        // v6.6: High-Throughput GPU DCT
+        if let metal = metalEngine, nFrames > 1 {
+            mfccs = metal.executeBatchDct(melSpectrogram: logMel, nMfcc: nMFCC, nMels: nMels)
+        } else {
+            mfccs = [Float](repeating: 0, count: nMFCC * nFrames)
+            var inputFrame  = [Float](repeating: 0, count: nMels)
+            var outputFrame = [Float](repeating: 0, count: nMels)
             
-            vDSP_DCT_Execute(dctSetup, inputFrame, &outputFrame)
-            
-            // Librosa DCT-II Ortho Normalization for vDSP (which lacks the factor of 2)
-            // orthoScale = sqrt(2/N), dcScale = sqrt(1/N)
-            let orthoScale = sqrtf(2.0 / Float(nMels))
-            let dcScale    = sqrtf(1.0 / Float(nMels))
-            
-            for i in 0..<nMFCC {
-                let scale = (i == 0) ? dcScale : orthoScale
-                mfccs[t * nMFCC + i] = outputFrame[i] * scale
+            for t in 0..<nFrames {
+                for m in 0..<nMels {
+                    inputFrame[m] = logMel[t * nMels + m]
+                }
+                
+                vDSP_DCT_Execute(dctSetup, inputFrame, &outputFrame)
+                
+                // Normalization constants (Librosa DCT-II Ortho)
+                let orthoScale = sqrtf(2.0 / Float(nMels))
+                let dcScale    = sqrtf(1.0 / Float(nMels))
+                
+                for i in 0..<nMFCC {
+                    let scale = (i == 0) ? dcScale : orthoScale
+                    mfccs[t * nMFCC + i] = outputFrame[i] * scale
+                }
             }
         }
         

@@ -9,6 +9,8 @@ public struct HPSSResult: Sendable {
     public let characterization: String
 }
 
+/// Harmonic-Percussive Source Separation (HPSS) Engine.
+/// Decomposes audio into harmonic (tonal) and percussive (transient) components.
 public final class HPSSEngine: Sendable {
     
     private let winHarm: Int

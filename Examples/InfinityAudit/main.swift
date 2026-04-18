@@ -11,18 +11,35 @@ struct InfinityAudit {
             return
         }
         
-        let filePath = args[1]
+        var filePath = args[1]
+        var selectedFeatures = Set(AudioFeature.allCases)
+        
+        if args.contains("--features") {
+            if let index = args.firstIndex(of: "--features"), index + 1 < args.count {
+                let featureNames = args[index + 1].lowercased().split(separator: ",")
+                selectedFeatures = []
+                for name in featureNames {
+                    if let feat = AudioFeature(rawValue: String(name)) {
+                        selectedFeatures.insert(feat)
+                    }
+                }
+                // File path is usually the last or first non-flag arg
+                if index == 1 { filePath = args[args.count - 1] }
+            }
+        }
+        
         let url = URL(fileURLWithPath: filePath)
         
-        print("🚀 Infinity Audit Başlatılıyor...")
+        print("🚀 Infinity Audit \(selectedFeatures.count == AudioFeature.allCases.count ? "Full" : "Modular") Audit Başlatılıyor...")
         print("📂 Dosya: \(url.lastPathComponent)")
         print("⚙️ Motor: Titan Native (v4.1)")
+        print("🎯 Kapsam: \(selectedFeatures.map { $0.rawValue }.joined(separator: ", "))")
         print("------------------------------------------")
         
         let intelligence = AudioIntelligence(device: .automatic, mode: .performance)
         
         do {
-            let result = try await intelligence.analyze(url: url) { percent, message, _ in
+            let result = try await intelligence.analyze(url: url, features: selectedFeatures) { percent, message, _ in
                 let barWidth = 30
                 let filled = max(0, min(barWidth, Int((percent / 100.0) * Double(barWidth))))
                 let empty = max(0, barWidth - filled)

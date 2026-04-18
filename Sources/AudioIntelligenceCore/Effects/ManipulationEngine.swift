@@ -7,6 +7,8 @@
 import Foundation
 import Accelerate
 
+/// Audio Manipulation Engine.
+/// Provides high-fidelity time-stretching and pitch-shifting capabilities using phase vocoding.
 public final class ManipulationEngine: Sendable {
     
     private let stftEngine: STFTEngine

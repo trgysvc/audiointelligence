@@ -7,6 +7,8 @@
 import Foundation
 import Accelerate
 
+/// Advanced Spectral Feature Engine.
+/// Provides specialized MIR features such as Spectral Contrast and Band Mapping.
 public enum SpectralFeatureEngine {
     
     // MARK: - Spectral Centroid
