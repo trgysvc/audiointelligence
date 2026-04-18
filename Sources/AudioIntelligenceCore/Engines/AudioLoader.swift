@@ -24,7 +24,7 @@ public struct AudioMetadata: Sendable {
 
 // MARK: - Loaded Audio Buffer
 
-public struct AudioBuffer: Sendable {
+public struct AudioBuffer: Sendable, Codable {
     public let samples: [Float]        // mono, [-1.0, 1.0]
     public let sampleRate: Double
     public let duration: Double
@@ -32,7 +32,7 @@ public struct AudioBuffer: Sendable {
     public var frameCount: Int { samples.count }
 }
 
-public struct StereoAudioBuffer: Sendable {
+public struct StereoAudioBuffer: Sendable, Codable {
     public let left: [Float]
     public let right: [Float]
     public let sampleRate: Double
@@ -75,7 +75,13 @@ public enum AudioLoader {
 
     /// Loads the entire file as mono Float32 samples.
     /// Librosa: `y, sr = librosa.load(path, sr=22050, mono=True)`
-    public static func load(url: URL, targetSampleRate: Double = defaultSampleRate) throws -> AudioBuffer {
+    public static func load(url: URL, targetSampleRate: Double = defaultSampleRate) async throws -> AudioBuffer {
+        // Cache Check
+        let cacheKey = await IntelligenceCache.shared.generateKey(for: url, parameters: ["sr": targetSampleRate, "mono": true])
+        if let cached: AudioBuffer = await IntelligenceCache.shared.get(forKey: cacheKey) {
+            return cached
+        }
+
         // Output format: mono, Float32, target SR
         guard let outputFormat = AVAudioFormat(
             commonFormat: .pcmFormatFloat32,
@@ -83,7 +89,7 @@ public enum AudioLoader {
             channels: 1,
             interleaved: false
         ) else {
-            throw AudioLoadError.formatCreationFailed
+            throw AudioIntelligenceError.io(.formatNotSupported)
         }
 
         let file = try AVAudioFile(forReading: url)
@@ -92,7 +98,7 @@ public enum AudioLoader {
         // Native format buffer
         let totalFrames = AVAudioFrameCount(file.length)
         guard let inputBuffer = AVAudioPCMBuffer(pcmFormat: inputFormat, frameCapacity: totalFrames) else {
-            throw AudioLoadError.bufferAllocationFailed
+            throw AudioIntelligenceError.io(.decodeFailed(url))
         }
         try file.read(into: inputBuffer)
         inputBuffer.frameLength = totalFrames
@@ -104,7 +110,7 @@ public enum AudioLoader {
         ) + 1
 
         guard let outputBuffer = AVAudioPCMBuffer(pcmFormat: outputFormat, frameCapacity: outputFrames) else {
-            throw AudioLoadError.bufferAllocationFailed
+            throw AudioIntelligenceError.io(.decodeFailed(url))
         }
 
         let state = ConversionState()
@@ -119,24 +125,32 @@ public enum AudioLoader {
         }
 
         guard status == .haveData || status == .endOfStream || status == .inputRanDry else {
-            throw AudioLoadError.conversionFailed
+            throw AudioIntelligenceError.io(.decodeFailed(url))
         }
 
         let frameLength = Int(outputBuffer.frameLength)
         guard let channelData = outputBuffer.floatChannelData?[0] else {
-            throw AudioLoadError.noChannelData
+            throw AudioIntelligenceError.io(.decodeFailed(url))
         }
 
         // Keep peak normalization if present, otherwise leave as is (matching Librosa behavior)
         let samples = Array(UnsafeBufferPointer(start: channelData, count: frameLength))
         let duration = Double(frameLength) / targetSampleRate
-
-        return AudioBuffer(samples: samples, sampleRate: targetSampleRate, duration: duration)
+        let result = AudioBuffer(samples: samples, sampleRate: targetSampleRate, duration: duration)
+        
+        await IntelligenceCache.shared.set(result, forKey: cacheKey)
+        return result
     }
 
     /// Loads the file as stereo Float32 samples.
     /// Returns separate buffers for left and right channels.
-    public static func loadStereo(url: URL, targetSampleRate: Double = defaultSampleRate) throws -> StereoAudioBuffer {
+    public static func loadStereo(url: URL, targetSampleRate: Double = defaultSampleRate) async throws -> StereoAudioBuffer {
+        // Cache Check
+        let cacheKey = await IntelligenceCache.shared.generateKey(for: url, parameters: ["sr": targetSampleRate, "mono": false])
+        if let cached: StereoAudioBuffer = await IntelligenceCache.shared.get(forKey: cacheKey) {
+            return cached
+        }
+
         let file = try AVAudioFile(forReading: url)
         let inputFormat = file.processingFormat
         let channelCount = Int(inputFormat.channelCount)
@@ -148,12 +162,12 @@ public enum AudioLoader {
             channels: 2,
             interleaved: false
         ) else {
-            throw AudioLoadError.formatCreationFailed
+            throw AudioIntelligenceError.io(.formatNotSupported)
         }
 
         let totalFrames = AVAudioFrameCount(file.length)
         guard let inputBuffer = AVAudioPCMBuffer(pcmFormat: inputFormat, frameCapacity: totalFrames) else {
-            throw AudioLoadError.bufferAllocationFailed
+            throw AudioIntelligenceError.io(.decodeFailed(url))
         }
         try file.read(into: inputBuffer)
         inputBuffer.frameLength = totalFrames
@@ -164,7 +178,7 @@ public enum AudioLoader {
         ) + 1
 
         guard let outputBuffer = AVAudioPCMBuffer(pcmFormat: outputFormat, frameCapacity: outputFrames) else {
-            throw AudioLoadError.bufferAllocationFailed
+            throw AudioIntelligenceError.io(.decodeFailed(url))
         }
 
         let state = ConversionState()
@@ -179,21 +193,23 @@ public enum AudioLoader {
         }
 
         guard status == .haveData || status == .endOfStream || status == .inputRanDry else {
-            throw AudioLoadError.conversionFailed
+            throw AudioIntelligenceError.io(.decodeFailed(url))
         }
 
         let frameLength = Int(outputBuffer.frameLength)
         
         guard let leftData = outputBuffer.floatChannelData?[0],
               let rightData = channelCount > 1 ? outputBuffer.floatChannelData?[1] : outputBuffer.floatChannelData?[0] else {
-            throw AudioLoadError.noChannelData
+            throw AudioIntelligenceError.io(.decodeFailed(url))
         }
 
         let leftSamples = Array(UnsafeBufferPointer(start: leftData, count: frameLength))
         let rightSamples = Array(UnsafeBufferPointer(start: rightData, count: frameLength))
         let duration = Double(frameLength) / targetSampleRate
-
-        return StereoAudioBuffer(left: leftSamples, right: rightSamples, sampleRate: targetSampleRate, duration: duration)
+        let result = StereoAudioBuffer(left: leftSamples, right: rightSamples, sampleRate: targetSampleRate, duration: duration)
+        
+        await IntelligenceCache.shared.set(result, forKey: cacheKey)
+        return result
     }
 
     // MARK: Sliding Window Iterator
@@ -215,7 +231,7 @@ public enum AudioLoader {
             channels: 1,
             interleaved: false
         ) else {
-            throw AudioLoadError.formatCreationFailed
+            throw AudioIntelligenceError.io(.formatNotSupported)
         }
 
         let file = try AVAudioFile(forReading: url)
@@ -236,7 +252,7 @@ public enum AudioLoader {
                 let readCount = min(chunkInputFrames, remaining)
 
                 guard let chunkBuffer = AVAudioPCMBuffer(pcmFormat: inputFormat, frameCapacity: readCount) else {
-                    throw AudioLoadError.bufferAllocationFailed
+                    throw AudioIntelligenceError.io(.decodeFailed(url))
                 }
 
                 file.framePosition = readOffset
@@ -248,7 +264,7 @@ public enum AudioLoader {
                 let outFrames = AVAudioFrameCount(Double(chunkBuffer.frameLength) * targetSampleRate / inputFormat.sampleRate) + 1
 
                 guard let outBuffer = AVAudioPCMBuffer(pcmFormat: outputFormat, frameCapacity: outFrames) else {
-                    throw AudioLoadError.bufferAllocationFailed
+                    throw AudioIntelligenceError.io(.decodeFailed(url))
                 }
 
                 let state = ConversionState()
@@ -273,22 +289,4 @@ public enum AudioLoader {
     }
 }
 
-// MARK: - Errors
-
-public enum AudioLoadError: Error, LocalizedError {
-    case formatCreationFailed
-    case bufferAllocationFailed
-    case conversionFailed
-    case noChannelData
-    case fileNotFound(URL)
-
-    public var errorDescription: String? {
-        switch self {
-        case .formatCreationFailed: return "Could not create AVAudioFormat"
-        case .bufferAllocationFailed: return "Could not allocate PCM buffer"
-        case .conversionFailed: return "Audio conversion failed"
-        case .noChannelData: return "Could not retrieve channel data"
-        case .fileNotFound(let url): return "File not found at path: \(url.path)"
-        }
-    }
-}
+// Removed AudioLoadError in favor of AudioIntelligenceError

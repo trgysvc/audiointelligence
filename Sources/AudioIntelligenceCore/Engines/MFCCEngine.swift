@@ -41,8 +41,8 @@ public final class MFCCEngine: @unchecked Sendable {
     }
     
     /// Librosa: feature.mfcc()
-    public func createMFCC(from samples: [Float]) -> MFCCResult {
-        let mel = melEngine.createMelSpectrogram(from: samples)
+    public func createMFCC(from samples: [Float]) async -> MFCCResult {
+        let mel = await melEngine.createMelSpectrogram(from: samples)
         return compute(melSpectrogram: mel.melData, stftEngine: STFTEngine(nFFT: 2048, hopLength: 512, sampleRate: 22050))
     }
     

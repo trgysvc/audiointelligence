@@ -35,9 +35,9 @@ public final class MelSpectrogramEngine: @unchecked Sendable {
     }
     
     /// Librosa: feature.melspectrogram()
-    public func createMelSpectrogram(from samples: [Float]) -> MelSpectrogramResult {
+    public func createMelSpectrogram(from samples: [Float]) async -> MelSpectrogramResult {
         // 1. STFT
-        let stft = stftEngine.analyze(samples)
+        let stft = await stftEngine.analyze(samples)
         let nFrames = stft.nFrames
         
         // 2. Power Spectrogram (S^2)

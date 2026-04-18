@@ -1,9 +1,3 @@
-// HPSSEngine.swift
-// Elite Music DNA Engine — Phase 3
-//
-// Harmonic-Percussive Source Separation (HPSS) using 2D Median Filtering.
-// Mirroring librosa.decompose.hpss.
-
 import Foundation
 import Accelerate
 
@@ -57,11 +51,6 @@ public final class HPSSEngine: Sendable {
     }
     
     /// Librosa: decompose.hpss()
-    /// - Parameters:
-    ///   - stft: Full STFT result (magnitude + phase)
-    ///   - kernelSize: Default 31 (Librosa default)
-    ///   - power: Weiner filter power (Default 2.0)
-    /// - Returns: (Harmonic STFT, Percussive STFT)
     public static func separate(
         from stft: STFTMatrix, 
         kernelSize: Int = 31, 
@@ -73,10 +62,7 @@ public final class HPSSEngine: Sendable {
         let magnitude = stft.magnitude
         
         // 1. Median Filtering
-        // Harmonic: Horizontal (time axis)
         let harmonicMedian = medianFilter(magnitude, nFreqs: nFreqs, nFrames: nFrames, size: kernelSize, axis: .horizontal)
-        
-        // Percussive: Vertical (frequency axis)
         let percussiveMedian = medianFilter(magnitude, nFreqs: nFreqs, nFrames: nFrames, size: kernelSize, axis: .vertical)
         
         // 2. Softmasking (Wiener Filter)
@@ -92,38 +78,22 @@ public final class HPSSEngine: Sendable {
             maskPercussive[i] = p / total
         }
         
-        // 3. Apply masks to retrieve complex components
+        // 3. Apply masks
         var magH = [Float](repeating: 0, count: magnitude.count)
         var magP = [Float](repeating: 0, count: magnitude.count)
         
-        // Vector multiply for performance
         vDSP_vmul(magnitude, 1, maskHarmonic, 1, &magH, 1, vDSP_Length(magnitude.count))
         vDSP_vmul(magnitude, 1, maskPercussive, 1, &magP, 1, vDSP_Length(magnitude.count))
         
-        let outH = STFTMatrix(
-            magnitude: magH, 
-            phase: stft.phase, // Reuse phase
-            nFFT: stft.nFFT, 
-            hopLength: stft.hopLength, 
-            sampleRate: stft.sampleRate
-        )
-        
-        let outP = STFTMatrix(
-            magnitude: magP, 
-            phase: stft.phase, 
-            nFFT: stft.nFFT, 
-            hopLength: stft.hopLength, 
-            sampleRate: stft.sampleRate
-        )
+        let outH = STFTMatrix(magnitude: magH, phase: stft.phase, nFFT: stft.nFFT, hopLength: stft.hopLength, sampleRate: stft.sampleRate)
+        let outP = STFTMatrix(magnitude: magP, phase: stft.phase, nFFT: stft.nFFT, hopLength: stft.hopLength, sampleRate: stft.sampleRate)
         
         return (outH, outP)
     }
     
-    // MARK: - Median Filter Logic
-    
     private enum Axis {
-        case horizontal // Time
-        case vertical   // Frequency
+        case horizontal
+        case vertical
     }
     
     private static func medianFilter(_ data: [Float], nFreqs: Int, nFrames: Int, size: Int, axis: Axis) -> [Float] {
@@ -133,45 +103,30 @@ public final class HPSSEngine: Sendable {
         if axis == .horizontal {
             for f in 0..<nFreqs {
                 let rowStart = f * nFrames
-                var window = [Float](repeating: 0, count: size)
                 for t in 0..<nFrames {
                     let rStart = max(0, t - half)
                     let rEnd = min(nFrames - 1, t + half)
                     let count = rEnd - rStart + 1
-                    
-                    // Direct copy to window buffer
-                    data.withUnsafeBufferPointer { ptr in
-                        window.withUnsafeMutableBufferPointer { wPtr in
-                            memcpy(wPtr.baseAddress!, ptr.baseAddress! + (rowStart + rStart), count * MemoryLayout<Float>.size)
-                        }
-                    }
-                    
-                    // Sort only the active portion (Quickselect would be even faster, but sort is O(K log K))
-                    var subWindow = Array(window[0..<count])
-                    subWindow.sort()
-                    result[rowStart + t] = subWindow[count / 2]
+                    var window = Array(data[rowStart + rStart...rowStart + rEnd])
+                    window.sort()
+                    result[rowStart + t] = window[count / 2]
                 }
             }
         } else {
             for t in 0..<nFrames {
-                var window = [Float](repeating: 0, count: size)
                 for f in 0..<nFreqs {
                     let rStart = max(0, f - half)
                     let rEnd = min(nFreqs - 1, f + half)
                     let count = rEnd - rStart + 1
-                    
-                    // Vertical is strided, copy one by one
+                    var window = [Float](repeating: 0, count: count)
                     for i in 0..<count {
                         window[i] = data[(rStart + i) * nFrames + t]
                     }
-                    
-                    var subWindow = Array(window[0..<count])
-                    subWindow.sort()
-                    result[f * nFrames + t] = subWindow[count / 2]
+                    window.sort()
+                    result[f * nFrames + t] = window[count / 2]
                 }
             }
         }
-        
         return result
     }
 }

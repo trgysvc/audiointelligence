@@ -113,7 +113,7 @@ final class ChromaFilterBank: @unchecked Sendable {
         }
 
         // L2 normalize each frame's chroma vector
-        return normalizeChroma(chroma)
+        return ChromaEngine.normalizeChroma(chroma)
     }
 
     func apply(magnitude: [Float], nFrames: Int) -> [[Float]] {
@@ -136,20 +136,7 @@ final class ChromaFilterBank: @unchecked Sendable {
             }
         }
 
-        return normalizeChroma(chroma)
-    }
-    
-    private func normalizeChroma(_ chroma: [[Float]]) -> [[Float]] {
-        var result = chroma
-        let nFrames = chroma[0].count
-        for t in 0..<nFrames {
-            var vec = (0..<12).map { result[$0][t] }
-            vec = DSPHelpers.normalizeL2(vec)
-            for c in 0..<12 {
-                result[c][t] = vec[c]
-            }
-        }
-        return result
+        return ChromaEngine.normalizeChroma(chroma)
     }
 }
 
@@ -169,6 +156,26 @@ public final class ChromaEngine: @unchecked Sendable {
 
     public func chromagram(stft: STFTMatrix) -> [[Float]] {
         filterBank.apply(magnitude: stft.magnitude, nFrames: stft.nFrames)
+    }
+
+    /// Librosa: feature.chroma_cqt()
+    /// Computes a chromagram from a Constant-Q transform.
+    /// This is often more musically accurate than STFT-based chroma.
+    public func chromaCQT(cqtMagnitude: [[Float]], binsPerOctave: Int = 12) -> [[Float]] {
+        guard !cqtMagnitude.isEmpty else { return [] }
+        let nBins = cqtMagnitude.count
+        let nFrames = cqtMagnitude[0].count
+        
+        var chroma = [[Float]](repeating: [Float](repeating: 0, count: nFrames), count: 12)
+        
+        for b in 0..<nBins {
+            let chromaBin = b % 12
+            let magRow = cqtMagnitude[b]
+            vDSP_vadd(chroma[chromaBin], 1, magRow, 1, &chroma[chromaBin], 1, vDSP_Length(nFrames))
+        }
+        
+        // Normalize
+        return ChromaEngine.normalizeChroma(chroma)
     }
 
     /// Librosa: feature.chroma_cens()
@@ -285,5 +292,18 @@ public final class ChromaEngine: @unchecked Sendable {
         let count = v.count
         let shift = ((count - n) % count + count) % count
         return Array(v[shift...]) + Array(v[..<shift])
+    }
+    
+    internal static func normalizeChroma(_ chroma: [[Float]]) -> [[Float]] {
+        var result = chroma
+        let nFrames = chroma[0].count
+        for t in 0..<nFrames {
+            var vec = (0..<12).map { result[$0][t] }
+            vec = DSPHelpers.normalizeL2(vec)
+            for c in 0..<12 {
+                result[c][t] = vec[c]
+            }
+        }
+        return result
     }
 }
