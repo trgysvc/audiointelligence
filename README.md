@@ -84,7 +84,7 @@ Accelerate your integration with our comprehensive engineering guides:
 ## 📦 Installation (SPM)
 
 ```swift
-.package(url: "https://hub.com/trgysvc/AudioIntelligence.git", from: "6.1.0")
+.package(url: "https://github.com/trgysvc/audiointelligence.git", from: "6.3.0")
 ```
 
 ---
