@@ -58,19 +58,21 @@ public final class MelFilterBank: @unchecked Sendable {
 
     public func apply(magnitude: [Float], nFrames: Int) -> [[Float]] {
         let nFreqs = magnitude.count / nFrames
+        var melSpec = [[Float]](repeating: [Float](repeating: 0, count: nFrames), count: nMels)
         
-        // Power spectrogram: S^2 (flat)
-        var power = [Float](repeating: 0, count: magnitude.count)
-        vDSP_vsq(magnitude, 1, &power, 1, vDSP_Length(magnitude.count))
-        
-        // Structure into [[Float]] for current weight logic
-        var nestedPower = [[Float]](repeating: [Float](repeating: 0, count: nFrames), count: nFreqs)
-        for f in 0..<nFreqs {
-            let start = f * nFrames
-            nestedPower[f] = Array(power[start..<(start + nFrames)])
+        // Performance: Process each frame once to minimize cache misses
+        for t in 0..<nFrames {
+            for m in 0..<nMels {
+                var dotProduct: Float = 0
+                for f in 0..<min(nFreqs, weights[m].count) {
+                    let mag = magnitude[t * nFreqs + f]
+                    dotProduct += (mag * mag) * weights[m][f]
+                }
+                melSpec[m][t] = dotProduct
+            }
         }
         
-        return applyMelWeights(to: nestedPower)
+        return melSpec
     }
     
     private func applyMelWeights(to power: [[Float]]) -> [[Float]] {

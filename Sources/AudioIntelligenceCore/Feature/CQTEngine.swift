@@ -29,15 +29,12 @@ public final class CQTEngine: @unchecked Sendable {
         self.Q = 1.0 / (powf(2.0, 1.0 / Float(binsPerOctave)) - 1.0)
     }
     
-    /// Computes the Constant-Q Transform using recursive decimation.
-    /// This is a real implementation mirroring the Schörkhuber & Klapuri (2010) approach.
+    /// Computes the Constant-Q Transform using recursive decimation and fast frequency-domain kernels.
+    /// Implementation based on Brown (1991) and Schörkhuber & Klapuri (2010).
     public func transform(_ samples: [Float]) -> [[Float]] {
         guard !samples.isEmpty else { return [] }
         
-        // Limit to first 1,000,000 samples (~45s at 22k) to prevent timeouts
-        // in v50.0 Elite Audit while providing real CQT results.
-        let analysisLimit = 1_000_000
-        let effectiveSamples = samples.count > analysisLimit ? Array(samples[0..<analysisLimit]) : samples
+        let effectiveSamples = samples
         
         let nOctaves = Int(ceil(Float(nBins) / Float(binsPerOctave)))
         var currentSamples = effectiveSamples
@@ -62,22 +59,71 @@ public final class CQTEngine: @unchecked Sendable {
     // MARK: - Internal Processing
     
     private func processOctave(_ samples: [Float], centerFreq: Float) -> [[Float]] {
+        let n = samples.count
+        let nFFT = Int(pow(2.0, ceil(log2(Double(n + 1))))) // Next power of 2
+        
+        let dftSetup = vDSP_DFT_zrop_CreateSetup(nil, vDSP_Length(nFFT), .FORWARD)!
+        let complexIDFT = vDSP_DFT_zop_CreateSetup(nil, vDSP_Length(nFFT), .INVERSE)!
+        defer {
+            vDSP_DFT_DestroySetup(dftSetup)
+            vDSP_DFT_DestroySetup(complexIDFT)
+        }
+        
+        // 1. Forward FFT of the signal segment (ONLY ONCE PER OCTAVE)
+        var realIn = samples + [Float](repeating: 0, count: nFFT - n)
+        var sigSigReal = [Float](repeating: 0, count: nFFT / 2)
+        var sigSigImag = [Float](repeating: 0, count: nFFT / 2)
+        vDSP_DFT_Execute(dftSetup, realIn, [Float](repeating: 0, count: nFFT / 2), &sigSigReal, &sigSigImag)
+        
+        // Reconstruct full spectrum for complex multiplication
+        var sigReal = [Float](repeating: 0, count: nFFT)
+        var sigImag = [Float](repeating: 0, count: nFFT)
+        sigReal[0] = sigSigReal[0]
+        sigReal[nFFT/2] = sigSigImag[0]
+        for f in 1..<nFFT/2 {
+            sigReal[f] = sigSigReal[f]; sigImag[f] = sigSigImag[f]
+            sigReal[nFFT - f] = sigSigReal[f]; sigImag[nFFT - f] = -sigSigImag[f]
+        }
+        
+        var sigComplex = DSPSplitComplex(realp: &sigReal, imagp: &sigImag)
         var bins = [[Float]]()
+        
         for i in 0..<binsPerOctave {
             let freq = centerFreq * powf(2.0, Float(i) / Float(binsPerOctave))
             let kernelLen = Int(Float(sampleRate) * Q / freq)
             let (kernelRe, kernelIm) = createComplexKernel(len: kernelLen, freq: freq)
             
-            var respRe = [Float](repeating: 0, count: samples.count)
-            var respIm = [Float](repeating: 0, count: samples.count)
+            // 2. Forward FFT of the complex kernel
+            var kRealIn = kernelRe + [Float](repeating: 0, count: nFFT - kernelLen)
+            var kImagIn = kernelIm + [Float](repeating: 0, count: nFFT - kernelLen)
+            var kerReal = [Float](repeating: 0, count: nFFT)
+            var kerImag = [Float](repeating: 0, count: nFFT)
             
-            // Perform complex convolution via vDSP
-            vDSP_conv(samples, 1, kernelRe, 1, &respRe, 1, vDSP_Length(samples.count), vDSP_Length(kernelLen))
-            vDSP_conv(samples, 1, kernelIm, 1, &respIm, 1, vDSP_Length(samples.count), vDSP_Length(kernelLen))
+            let complexDFT = vDSP_DFT_zop_CreateSetup(nil, vDSP_Length(nFFT), .FORWARD)!
+            vDSP_DFT_Execute(complexDFT, kRealIn, kImagIn, &kerReal, &kerImag)
+            vDSP_DFT_DestroySetup(complexDFT)
             
-            var magnitude = [Float](repeating: 0, count: samples.count)
-            var respComplex = DSPSplitComplex(realp: &respRe, imagp: &respIm)
-            vDSP_zvabs(&respComplex, 1, &magnitude, 1, vDSP_Length(samples.count))
+            // 3. Frequency Domain Multiplication
+            var resReal = [Float](repeating: 0, count: nFFT)
+            var resImag = [Float](repeating: 0, count: nFFT)
+            var kerComplex = DSPSplitComplex(realp: &kerReal, imagp: &kerImag)
+            var resComplex = DSPSplitComplex(realp: &resReal, imagp: &resImag)
+            
+            vDSP_zvmul(&sigComplex, 1, &kerComplex, 1, &resComplex, 1, vDSP_Length(nFFT), 1)
+            
+            // 4. Inverse FFT
+            var timeReal = [Float](repeating: 0, count: nFFT)
+            var timeImag = [Float](repeating: 0, count: nFFT)
+            vDSP_DFT_Execute(complexIDFT, resReal, resImag, &timeReal, &timeImag)
+            
+            // Normalize & Abs
+            var scale = 1.0 / Float(nFFT)
+            vDSP_vsmul(timeReal, 1, &scale, &timeReal, 1, vDSP_Length(nFFT))
+            vDSP_vsmul(timeImag, 1, &scale, &timeImag, 1, vDSP_Length(nFFT))
+            
+            var magnitude = [Float](repeating: 0, count: n)
+            var finalComplex = DSPSplitComplex(realp: &timeReal, imagp: &timeImag)
+            vDSP_zvabs(&finalComplex, 1, &magnitude, 1, vDSP_Length(n))
             
             bins.append(magnitude)
         }

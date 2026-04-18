@@ -26,10 +26,12 @@ public actor IntelligenceCache {
     
     public func generateKey(for url: URL, parameters: [String: Any]) -> String {
         var input = url.absoluteString
-        // Sort parameters to ensure deterministic key
+        // Sort keys to ensure deterministic key naming
         let sortedKeys = parameters.keys.sorted()
         for key in sortedKeys {
-            input += "|\(key):\(parameters[key] ?? "")"
+            let value = parameters[key]
+            // Use String presentation for hashing to handle non-codable 'Any' safely
+            input += "|\(key):\(String(describing: value))"
         }
         
         let hash = SHA256.hash(data: Data(input.utf8))
@@ -42,14 +44,16 @@ public actor IntelligenceCache {
         // 1. Memory Store
         memoryCache.setObject(value as AnyObject, forKey: key as NSString)
         
-        // 2. Disk Store (Background)
-        let directory = self.cacheDirectory
         do {
             let data = try JSONEncoder().encode(value)
+            
+            // Capture necessary values to avoid actor isolation issues in detached task
+            let fileURL = self.cacheDirectory.appendingPathComponent(key)
+            
             Task.detached(priority: .background) {
                 do {
-                    let fileURL = directory.appendingPathComponent(key)
                     try data.write(to: fileURL)
+                    // Trigger asynchronous cleanup without blocking
                     await IntelligenceCache.shared.enforceDiskLimit()
                 } catch {
                     print("Cache write failed: \(error.localizedDescription)")

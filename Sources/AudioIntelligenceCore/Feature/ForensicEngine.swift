@@ -66,8 +66,12 @@ public final class ForensicEngine: @unchecked Sendable {
         
         for f in stride(from: nBins - 1, through: 0, by: -1) {
             var binMax: Float = 0
-            let start = f * nFrames
-            vDSP_maxv(Array(magnitude[start..<(start + nFrames)]), 1, &binMax, vDSP_Length(nFrames))
+            
+            // Gather bin across all frames (Strided access in Frame-major)
+            for t in 0..<nFrames {
+                let mag = magnitude[t * nBins + f]
+                if mag > binMax { binMax = mag }
+            }
             
             if binMax > threshold {
                 cutoffBin = f

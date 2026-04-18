@@ -1,0 +1,9 @@
+# SQAM Scientific Reference Table (EBU R128 via ffmpeg/ebur128)
+# Generated: Sat Apr 18 19:39:30 +03 2026
+# Format: Filename | Integrated (LUFS) | True Peak (dBTP) | LRA (LU)
+gspi35_1.wav                   |    -21.7 |     -5.3 |     14.4
+harp40_1.wav                   |    -32.0 |    -12.5 |     16.0
+horn23_2.wav                   |    -20.5 |     -6.9 |     11.8
+quar48_1.wav                   |    -22.6 |     -6.6 |      9.4
+spfe49_1.wav                   |    -22.5 |     -4.7 |      5.9
+trpt21_2.wav                   |    -22.6 |     -7.6 |     18.0

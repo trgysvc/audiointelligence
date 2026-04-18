@@ -56,7 +56,7 @@ public actor DNAReportBuilder {
         
         async let stereo = StereoEngine().analyze(left: stereoBuffer.left, right: stereoBuffer.right)
         
-        async let semantic = SemanticEngine(sampleRate: buffer.sampleRate).analyze(magnitude: stft.magnitude, nFrames: stft.nFrames, nFFT: 2048)
+        async let spectralZone = SpectralZoneEngine(sampleRate: buffer.sampleRate).analyze(stft: stft)
         
         async let pitchResult = YINEngine(sampleRate: buffer.sampleRate).analyze(samples: buffer.samples)
         
@@ -106,11 +106,18 @@ public actor DNAReportBuilder {
         async let piptrackResult = PiptrackEngine().track(stft: stft)
         async let nmfResult = NMFEngine(nComponents: 2).decompose(stft: stft)
         
+        // Viterbi Sequence Decoding (Simulated state decoding for demo)
+        let nFramesC = finalChroma[0].count
+        let observations = (0..<nFramesC).map { t in (0..<12).map { finalChroma[$0][t] } }
+        let transM: [[Float]] = (0..<12).map { _ in (0..<12).map { _ in Float(1.0/12.0) } }
+        let startP = [Float](repeating: 1.0/12.0, count: 12)
+        async let viterbiPath = ViterbiEngine().decode(observations: observations, transitionMatrix: transM, startProbs: startP)
+        
         progress(85, "Waiting for engine completion...", nil)
         
         // Wait for all results
-        let (vRhythm, vChromaResult, vStructure, vHpss, vForensic, vLoudness, vStereo, vSemantic, vPitchResult, vScienceResult, vSContrast, vCqt, vTonnetz, vTempogram, vPiptrack, vNmf) = await (
-            rhythm, chromaResult, structure, hpss, forensic, loudness, stereo, semantic, pitchResult, scienceResult, sContrast, cqtResult, tonnetzResult, tempogramResult, piptrackResult, nmfResult
+        let (vRhythm, vChromaResult, vStructure, vHpss, vForensic, vLoudness, vStereo, vSpectralZone, vPitchResult, vScienceResult, vSContrast, vCqt, vTonnetz, vTempogram, vPiptrack, vNmf, vViterbi) = await (
+            rhythm, chromaResult, structure, hpss, forensic, loudness, stereo, spectralZone, pitchResult, scienceResult, sContrast, cqtResult, tonnetzResult, tempogramResult, piptrackResult, nmfResult, viterbiPath
         )
 
         let melSpecEngine = MelSpectrogramEngine(stftEngine: stftEngine, nMels: 128)
@@ -218,10 +225,10 @@ public actor DNAReportBuilder {
                 lraLU: vLoudness.loudnessRange
             ),
             semantic: SemanticMetrics(
-                dominanceMap: vSemantic.dominanceMap,
-                primaryRole: vSemantic.primaryRole,
-                textureType: vSemantic.textureType,
-                presenceScore: vSemantic.presenceScore
+                dominanceMap: vSpectralZone.dominanceMap,
+                primaryRole: vSpectralZone.primaryZone,
+                textureType: vSpectralZone.textureType,
+                presenceScore: vSpectralZone.presenceScore
             ),
             forensic: ForensicMetrics(
                 sourceURL: nil,
@@ -262,8 +269,11 @@ public actor DNAReportBuilder {
             ),
             tempogram: TempogramMetrics(
                 cyclicTempoMap: (0..<vTempogram.winLength).map { i in
-                    let binFrames = vTempogram.tempogram.map { $0[i] }
-                    return binFrames.reduce(0, +) / Float(max(1, binFrames.count))
+                    let frames = vTempogram.tempogram
+                    let binFrames: [Float] = frames.map { frame in frame[i] }
+                    let sum: Float = binFrames.reduce(0, +)
+                    let count: Int = Swift.max(1, binFrames.count)
+                    return sum / Float(count)
                 },
                 dominantPeriod: 60 // Placeholder
             ),
@@ -276,6 +286,10 @@ public actor DNAReportBuilder {
             piptrack: PiptrackMetrics(
                 refinedMeanF0: vPiptrack.pitches.reduce(0, +) / Float(max(1, vPiptrack.pitches.count)),
                 trackingConfidence: vPiptrack.magnitudes.reduce(0, +) / Float(max(1, vPiptrack.magnitudes.count))
+            ),
+            viterbi: ViterbiMetrics(
+                path: vViterbi,
+                confidence: 1.0 // Heuristic baseline
             )
         )
 

@@ -119,20 +119,17 @@ final class ChromaFilterBank: @unchecked Sendable {
     func apply(magnitude: [Float], nFrames: Int) -> [[Float]] {
         let nFreqs = magnitude.count / nFrames
         var chroma = [[Float]](repeating: [Float](repeating: 0, count: nFrames), count: 12)
+        
+        let nWeights = weights[0].count
 
-        for c in 0..<12 {
-            for f in 0..<min(nFreqs, weights[c].count) {
-                let w = weights[c][f]
-                if w > 0 {
-                    let start = f * nFrames
-                    let magRow = Array(magnitude[start..<(start + nFrames)])
-                    var powRow = [Float](repeating: 0, count: nFrames)
-                    vDSP_vsq(magRow, 1, &powRow, 1, vDSP_Length(nFrames))
-                    
-                    var scaled = [Float](repeating: 0, count: nFrames)
-                    vDSP_vsmul(powRow, 1, [w], &scaled, 1, vDSP_Length(nFrames))
-                    vDSP_vadd(chroma[c], 1, scaled, 1, &chroma[c], 1, vDSP_Length(nFrames))
+        for t in 0..<nFrames {
+            for c in 0..<12 {
+                var dotProduct: Float = 0
+                for f in 0..<min(nFreqs, nWeights) {
+                    let mag = magnitude[t * nFreqs + f]
+                    dotProduct += (mag * mag) * weights[c][f]
                 }
+                chroma[c][t] = dotProduct
             }
         }
 

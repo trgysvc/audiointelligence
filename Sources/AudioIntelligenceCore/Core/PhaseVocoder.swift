@@ -36,7 +36,7 @@ public final class PhaseVocoder: Sendable {
         // Phase accumulator
         var phaseAcc = [Float](repeating: 0, count: nFreqs)
         for f in 0..<nFreqs {
-            phaseAcc[f] = stft.phase[f * nFramesIn]
+            phaseAcc[f] = stft.phase[0 * nFreqs + f]
         }
         
         for t in 0..<nFramesOut {
@@ -47,13 +47,13 @@ public final class PhaseVocoder: Sendable {
             
             for f in 0..<nFreqs {
                 // 1. Interpolate Magnitude
-                let m0 = stft.magnitude[f * nFramesIn + left]
-                let m1 = stft.magnitude[f * nFramesIn + right]
-                newMag[f * nFramesOut + t] = m0 + alpha * (m1 - m0)
+                let m0 = stft.magnitude[left * nFreqs + f]
+                let m1 = stft.magnitude[right * nFreqs + f]
+                newMag[t * nFreqs + f] = m0 + alpha * (m1 - m0)
                 
                 // 2. Interpolate Phase (Phase Locking approximation)
                 if t > 0 {
-                    let dPhi = stft.phase[f * nFramesIn + right] - stft.phase[f * nFramesIn + left]
+                    let dPhi = stft.phase[right * nFreqs + f] - stft.phase[left * nFreqs + f]
                     // Wrap difference
                     let wrappedDPhi = dPhi - phiAdvance[f]
                     let principleDPhi = wrappedDPhi - 2.0 * .pi * round(wrappedDPhi / (2.0 * .pi))
@@ -61,7 +61,7 @@ public final class PhaseVocoder: Sendable {
                     phaseAcc[f] += phiAdvance[f] + principleDPhi
                 }
                 
-                newPhase[f * nFramesOut + t] = phaseAcc[f]
+                newPhase[t * nFreqs + f] = phaseAcc[f]
             }
         }
         

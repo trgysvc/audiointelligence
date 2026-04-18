@@ -43,11 +43,11 @@ public final class PiptrackEngine: Sendable {
             var framePitches: [Float] = []
             var frameMags: [Float] = []
             
-            // 1. Find local maxima in the frequency range
+            // 1. Find local maxima in the frequency range (Contiguous in Frame-major)
             for f in max(1, binMin)...binMax {
-                let current = stft.magnitude[f * nFrames + t]
-                let prev = stft.magnitude[(f - 1) * nFrames + t]
-                let next = stft.magnitude[(f + 1) * nFrames + t]
+                let current = stft.magnitude[t * nFreqs + f]
+                let prev = stft.magnitude[t * nFreqs + (f - 1)]
+                let next = stft.magnitude[t * nFreqs + (f + 1)]
                 
                 if current > prev && current > next && current > threshold {
                     // 2. Parabolic Interpolation

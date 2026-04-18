@@ -60,15 +60,19 @@ public final class MFCCEngine: @unchecked Sendable {
         
         for t in 0..<nFrames {
             for m in 0..<nMels {
-                inputFrame[m] = logMel[m * nFrames + t]
+                inputFrame[m] = logMel[t * nMels + m]
             }
             
             vDSP_DCT_Execute(dctSetup, inputFrame, &outputFrame)
             
+            // Librosa DCT-II Ortho Normalization for vDSP (which lacks the factor of 2)
+            // orthoScale = sqrt(2/N), dcScale = sqrt(1/N)
             let orthoScale = sqrtf(2.0 / Float(nMels))
+            let dcScale    = sqrtf(1.0 / Float(nMels))
+            
             for i in 0..<nMFCC {
-                let scale = (i == 0) ? (sqrtf(1.0 / Float(nMels))) : orthoScale
-                mfccs[i * nFrames + t] = outputFrame[i] * scale
+                let scale = (i == 0) ? dcScale : orthoScale
+                mfccs[t * nMFCC + i] = outputFrame[i] * scale
             }
         }
         
@@ -77,7 +81,7 @@ public final class MFCCEngine: @unchecked Sendable {
         for i in 0..<nMFCC {
             var sum: Float = 0
             for t in 0..<nFrames {
-                sum += mfccs[i * nFrames + t]
+                sum += mfccs[t * nMFCC + i]
             }
             meanMFCC[i] = sum / Float(nFrames)
         }

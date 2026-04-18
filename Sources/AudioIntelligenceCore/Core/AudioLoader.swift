@@ -142,24 +142,16 @@ public enum AudioLoader {
         return result
     }
 
-    /// Loads the file as stereo Float32 samples.
-    /// Returns separate buffers for left and right channels.
-    public static func loadStereo(url: URL, targetSampleRate: Double = defaultSampleRate) async throws -> StereoAudioBuffer {
-        // Cache Check
-        let cacheKey = await IntelligenceCache.shared.generateKey(for: url, parameters: ["sr": targetSampleRate, "mono": false])
-        if let cached: StereoAudioBuffer = await IntelligenceCache.shared.get(forKey: cacheKey) {
-            return cached
-        }
-
+    /// Loads the file as Multi-channel Float32 samples.
+    public static func loadMulti(url: URL, targetSampleRate: Double = defaultSampleRate) async throws -> [[Float]] {
         let file = try AVAudioFile(forReading: url)
         let inputFormat = file.processingFormat
         let channelCount = Int(inputFormat.channelCount)
         
-        // Output format: stereo, Float32, target SR
         guard let outputFormat = AVAudioFormat(
             commonFormat: .pcmFormatFloat32,
             sampleRate: targetSampleRate,
-            channels: 2,
+            channels: AVAudioChannelCount(channelCount),
             interleaved: false
         ) else {
             throw AudioIntelligenceError.io(.formatNotSupported("PCM Float32"))
@@ -173,43 +165,37 @@ public enum AudioLoader {
         inputBuffer.frameLength = totalFrames
 
         let converter = AVAudioConverter(from: inputFormat, to: outputFormat)
-        let outputFrames = AVAudioFrameCount(
-            Double(totalFrames) * targetSampleRate / inputFormat.sampleRate
-        ) + 1
+        let outputFrames = AVAudioFrameCount(Double(totalFrames) * targetSampleRate / inputFormat.sampleRate) + 1
 
         guard let outputBuffer = AVAudioPCMBuffer(pcmFormat: outputFormat, frameCapacity: outputFrames) else {
             throw AudioIntelligenceError.io(.decodeFailed(url))
         }
 
         let state = ConversionState()
-        let status = converter?.convert(to: outputBuffer, error: nil) { _, outStatus in
-            if state.consumed {
-                outStatus.pointee = .noDataNow
-                return nil
-            }
+        converter?.convert(to: outputBuffer, error: nil) { _, outStatus in
+            if state.consumed { outStatus.pointee = .noDataNow; return nil }
             outStatus.pointee = .haveData
             state.consumed = true
             return inputBuffer
         }
 
-        guard status == .haveData || status == .endOfStream || status == .inputRanDry else {
-            throw AudioIntelligenceError.io(.decodeFailed(url))
-        }
-
         let frameLength = Int(outputBuffer.frameLength)
-        
-        guard let leftData = outputBuffer.floatChannelData?[0],
-              let rightData = channelCount > 1 ? outputBuffer.floatChannelData?[1] : outputBuffer.floatChannelData?[0] else {
-            throw AudioIntelligenceError.io(.decodeFailed(url))
+        var result = [[Float]]()
+        for c in 0..<channelCount {
+            if let ptr = outputBuffer.floatChannelData?[c] {
+                result.append(Array(UnsafeBufferPointer(start: ptr, count: frameLength)))
+            }
         }
-
-        let leftSamples = Array(UnsafeBufferPointer(start: leftData, count: frameLength))
-        let rightSamples = Array(UnsafeBufferPointer(start: rightData, count: frameLength))
-        let duration = Double(frameLength) / targetSampleRate
-        let result = StereoAudioBuffer(left: leftSamples, right: rightSamples, sampleRate: targetSampleRate, duration: duration)
-        
-        await IntelligenceCache.shared.set(result, forKey: cacheKey)
         return result
+    }
+    
+    /// Loads the file as stereo Float32 samples.
+    public static func loadStereo(url: URL, targetSampleRate: Double = defaultSampleRate) async throws -> StereoAudioBuffer {
+        let channels = try await loadMulti(url: url, targetSampleRate: targetSampleRate)
+        let left = channels[0]
+        let right = channels.count > 1 ? channels[1] : channels[0]
+        let duration = Double(left.count) / targetSampleRate
+        return StereoAudioBuffer(left: left, right: right, sampleRate: targetSampleRate, duration: duration)
     }
 
     // MARK: Sliding Window Iterator

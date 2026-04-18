@@ -35,6 +35,7 @@ public struct MusicDNAAnalysis: Codable, Sendable, Identifiable {
     public let tempogram: TempogramMetrics
     public let nmf: NMFMetrics
     public let piptrack: PiptrackMetrics
+    public let viterbi: ViterbiMetrics // v6.3 Addition: Refined Pitch Sequence
     
     // Metadata / Paths
     public var reportPath: String?
@@ -60,7 +61,8 @@ public struct MusicDNAAnalysis: Codable, Sendable, Identifiable {
                  tonnetz: TonnetzMetrics,
                  tempogram: TempogramMetrics,
                  nmf: NMFMetrics,
-                 piptrack: PiptrackMetrics) {
+                 piptrack: PiptrackMetrics,
+                 viterbi: ViterbiMetrics) {
         self.id = id
         self.timestamp = timestamp
         self.fileName = fileName
@@ -83,6 +85,7 @@ public struct MusicDNAAnalysis: Codable, Sendable, Identifiable {
         self.tempogram = tempogram
         self.nmf = nmf
         self.piptrack = piptrack
+        self.viterbi = viterbi
     }
 }
 
@@ -228,4 +231,9 @@ public struct NMFMetrics: Codable, Sendable {
 public struct PiptrackMetrics: Codable, Sendable {
     public let refinedMeanF0: Float
     public let trackingConfidence: Float
+}
+
+public struct ViterbiMetrics: Codable, Sendable {
+    public let path: [Int]
+    public let confidence: Float
 }

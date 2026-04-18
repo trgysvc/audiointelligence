@@ -25,110 +25,136 @@ public final class NMFEngine: Sendable {
     
     /// Computes NMF using Multiplicative Update (MU) rules with KL divergence.
     /// V ≈ WH
-    public func decompose(stft: STFTMatrix) -> NMFResult {
-        let V = stft.magnitude // [nFreqs × nFrames]
+    /// Computes NMF using Multiplicative Update (MU) rules with KL divergence.
+    /// V ≈ H * W (V is [nFrames × nFreqs], H is [nFrames × nComponents], W is [nComponents × nFreqs])
+    public func decompose(stft: STFTMatrix, seed: UInt64 = 42) -> NMFResult {
+        let V = stft.magnitude // [nFrames × nFreqs]
         let nFreqs = stft.nFreqs
         let nFrames = stft.nFrames
         
-        // 1. Initialize W and H with random positive values
-        var W = (0..<nFreqs).map { _ in (0..<nComponents).map { _ in Float.random(in: 0.1...1.0) } }
-        var H = (0..<nComponents).map { _ in (0..<nFrames).map { _ in Float.random(in: 0.1...1.0) } }
+        // 1. Initialize W and H with deterministic positive values.
+        var rng = LCG(seed: seed)
+        var W = (0..<nFreqs).map { _ in (0..<nComponents).map { _ in rng.next() } }
+        var H = (0..<nComponents).map { _ in (0..<nFrames).map { _ in rng.next() } }
         
-        // 2. Iterative updates (KL divergence MU rules)
+        // 2. Iterative updates (KL divergence MU rules adapted for [Frames x Freqs])
         for _ in 0..<maxIter {
-            // Update H: H ← H * (W^T * (V / (WH))) / (W^T * 1)
-            let WH = computeWH(W: W, H: H, rows: nFreqs, cols: nFrames, comps: nComponents)
+            // Update W: W ← W * (H^T * (V / (HW))) / (H^T * 1)
+            let HW = computeHW(H: H, W: W, frames: nFrames, freqs: nFreqs, comps: nComponents)
             
-            var V_over_WH = [Float](repeating: 0, count: V.count)
+            var V_over_HW = [Float](repeating: 0, count: V.count)
             for i in 0..<V.count {
-                V_over_WH[i] = V[i] / (WH[i] + 1e-10)
+                V_over_HW[i] = V[i] / (HW[i] + 1e-10)
             }
             
-            // H update factor: WT * (V/WH)
-            let hFactor = computeWT_V(W: W, V: V_over_WH, rows: nFreqs, cols: nFrames, comps: nComponents)
+            // W update factor: HT * (V/HW)
+            let wFactor = computeHT_V(H: H, V: V_over_HW, frames: nFrames, freqs: nFreqs, comps: nComponents)
             
-            // W column sums for normalization
-            var wSums = [Float](repeating: 0, count: nComponents)
-            for c in 0..<nComponents {
-                var sum: Float = 0
-                for f in 0..<nFreqs { sum += W[f][c] }
-                wSums[c] = max(1e-10, sum)
-            }
-            
-            for c in 0..<nComponents {
-                for t in 0..<nFrames {
-                    H[c][t] *= hFactor[c][t] / wSums[c]
-                }
-            }
-            
-            // Update W: W ← W * ((V / (WH)) * H^T) / (1 * H^T)
-            let NewWH = computeWH(W: W, H: H, rows: nFreqs, cols: nFrames, comps: nComponents)
-            var V_over_NewWH = [Float](repeating: 0, count: V.count)
-            for i in 0..<V.count {
-                V_over_NewWH[i] = V[i] / (NewWH[i] + 1e-10)
-            }
-            
-            let wFactor = computeV_HT(V: V_over_NewWH, H: H, rows: nFreqs, cols: nFrames, comps: nComponents)
-            
-            // H row sums for normalization
+            // H column sums for normalization
             var hSums = [Float](repeating: 0, count: nComponents)
             for c in 0..<nComponents {
                 var sum: Float = 0
-                vDSP_sve(H[c], 1, &sum, vDSP_Length(nFrames))
+                for t in 0..<nFrames { sum += H[t][c] }
                 hSums[c] = max(1e-10, sum)
             }
             
-            for f in 0..<nFreqs {
+            for c in 0..<nComponents {
+                for f in 0..<nFreqs {
+                    W[c][f] *= wFactor[c][f] / hSums[c]
+                }
+            }
+            
+            // Update H: H ← H * ((V / (HW)) * W^T) / (1 * W^T)
+            let NewHW = computeHW(H: H, W: W, frames: nFrames, freqs: nFreqs, comps: nComponents)
+            var V_over_NewHW = [Float](repeating: 0, count: V.count)
+            for i in 0..<V.count {
+                V_over_NewHW[i] = V[i] / (NewHW[i] + 1e-10)
+            }
+            
+            let hFactor = computeV_WT(V: V_over_NewHW, W: W, frames: nFrames, freqs: nFreqs, comps: nComponents)
+            
+            // W row sums for normalization
+            var wSums = [Float](repeating: 0, count: nComponents)
+            for c in 0..<nComponents {
+                var sum: Float = 0
+                vDSP_sve(W[c], 1, &sum, vDSP_Length(nFreqs))
+                wSums[c] = max(1e-10, sum)
+            }
+            
+            for t in 0..<nFrames {
                 for c in 0..<nComponents {
-                    W[f][c] *= wFactor[f][c] / hSums[c]
+                    H[t][c] *= hFactor[t][c] / wSums[c]
                 }
             }
         }
         
-        return NMFResult(W: W, H: H)
+        // Return results: W as basis [nFreqs x nComponents], H as activations [nComponents x nFrames]
+        // This maintains the original Result structure but uses internal Frame-major efficiency.
+        var outW = [[Float]](repeating: [Float](repeating: 0, count: nComponents), count: nFreqs)
+        var outH = [[Float]](repeating: [Float](repeating: 0, count: nFrames), count: nComponents)
+        
+        for f in 0..<nFreqs {
+            for c in 0..<nComponents { outW[f][c] = W[c][f] }
+        }
+        for c in 0..<nComponents {
+            for t in 0..<nFrames { outH[c][t] = H[t][c] }
+        }
+        
+        return NMFResult(W: outW, H: outH)
     }
     
-    // MARK: - Optimized Matrix Ops
+    // MARK: - Optimized Matrix Ops (Frame-major [Frames x Freqs])
     
-    private func computeWH(W: [[Float]], H: [[Float]], rows: Int, cols: Int, comps: Int) -> [Float] {
-        var result = [Float](repeating: 0, count: rows * cols)
-        for i in 0..<rows {
-            for j in 0..<cols {
+    private func computeHW(H: [[Float]], W: [[Float]], frames: Int, freqs: Int, comps: Int) -> [Float] {
+        var result = [Float](repeating: 0, count: frames * freqs)
+        for t in 0..<frames {
+            for f in 0..<freqs {
                 var sum: Float = 0
-                for k in 0..<comps {
-                    sum += W[i][k] * H[k][j]
+                for c in 0..<comps {
+                    sum += H[t][c] * W[c][f]
                 }
-                result[i * cols + j] = sum
+                result[t * freqs + f] = sum
             }
         }
         return result
     }
     
-    private func computeWT_V(W: [[Float]], V: [Float], rows: Int, cols: Int, comps: Int) -> [[Float]] {
-        var result = [[Float]](repeating: [Float](repeating: 0, count: cols), count: comps)
+    private func computeHT_V(H: [[Float]], V: [Float], frames: Int, freqs: Int, comps: Int) -> [[Float]] {
+        var result = [[Float]](repeating: [Float](repeating: 0, count: freqs), count: comps)
         for c in 0..<comps {
-            for t in 0..<cols {
+            for f in 0..<freqs {
                 var sum: Float = 0
-                for f in 0..<rows {
-                    sum += W[f][c] * V[f * cols + t]
+                for t in 0..<frames {
+                    sum += H[t][c] * V[t * freqs + f]
                 }
-                result[c][t] = sum
+                result[c][f] = sum
             }
         }
         return result
     }
     
-    private func computeV_HT(V: [Float], H: [[Float]], rows: Int, cols: Int, comps: Int) -> [[Float]] {
-        var result = [[Float]](repeating: [Float](repeating: 0, count: comps), count: rows)
-        for f in 0..<rows {
+    private func computeV_WT(V: [Float], W: [[Float]], frames: Int, freqs: Int, comps: Int) -> [[Float]] {
+        var result = [[Float]](repeating: [Float](repeating: 0, count: comps), count: frames)
+        for t in 0..<frames {
             for c in 0..<comps {
                 var sum: Float = 0
-                for t in 0..<cols {
-                    sum += V[f * cols + t] * H[c][t]
+                for f in 0..<freqs {
+                    sum += V[t * freqs + f] * W[c][f]
                 }
-                result[f][c] = sum
+                result[t][c] = sum
             }
         }
         return result
+    }
+    
+    // MARK: - Deterministic RNG (LCG)
+    
+    private struct LCG {
+        var state: UInt64
+        init(seed: UInt64) { self.state = seed }
+        mutating func next() -> Float {
+            state = (state &* 6364136223846793005) &+ 1442695040888963407
+            return Float(state >> 40) / Float(1 << 24) * 0.9 + 0.1
+        }
     }
 }

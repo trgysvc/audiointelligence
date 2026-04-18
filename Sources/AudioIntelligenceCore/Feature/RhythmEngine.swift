@@ -172,7 +172,9 @@ public final class RhythmEngine: Sendable {
             for t in 1..<nFrames {
                 var sum: Float = 0
                 for f in start..<end {
-                    let diff = stft.magnitude[f * nFrames + t] - stft.magnitude[f * nFrames + (t - 1)]
+                    let current = stft.magnitude[t * nFreqs + f]
+                    let previous = stft.magnitude[(t - 1) * nFreqs + f]
+                    let diff = current - previous
                     sum += max(0, diff)
                 }
                 flux[t] = sum
@@ -197,8 +199,8 @@ public final class RhythmEngine: Sendable {
         for t in 1..<nFrames {
             var flux: Float = 0
             for f in 0..<nFreqs {
-                let current = stft.magnitude[f * nFrames + t]
-                let previous = stft.magnitude[f * nFrames + (t - 1)]
+                let current = stft.magnitude[t * nFreqs + f]
+                let previous = stft.magnitude[(t - 1) * nFreqs + f]
                 
                 // Rectified difference: max(0, curr - prev)
                 flux += max(0, current - previous)

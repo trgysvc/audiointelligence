@@ -89,17 +89,18 @@ public final class AudioScienceEngine: Sendable {
     }
     
     private func applyITU468Weighting(samples: [Float]) -> [Float] {
-        // 6th Order Digital Approximation for ITU-R 468 at 48kHz
-        // Coefficients derived using Bilinear Transform + Frequency Warping correction
-        let biquad1: [Double] = [1.543, -2.812, 1.282, -1.865, 0.871]
-        let biquad2: [Double] = [1.0, -1.98, 1.0, -1.97, 0.98]
+        // Dynamic Digital Approximation for ITU-R 468 based on Sample Rate
+        let coeffsChain = ScientificFilterBuilder.itu468WeightingCoefficients(sampleRate: sampleRate)
         
-        var input = samples
         var output = [Float](repeating: 0, count: samples.count)
+        var currentInput = samples
         
-        applyBiquad(input: &input, output: &output, coeffs: biquad1)
-        var input2 = output
-        applyBiquad(input: &input2, output: &output, coeffs: biquad2)
+        for coeffs in coeffsChain {
+            var tempOutput = [Float](repeating: 0, count: samples.count)
+            applyBiquad(input: &currentInput, output: &tempOutput, coeffs: coeffs.asArray)
+            currentInput = tempOutput
+            output = tempOutput
+        }
         
         return output
     }

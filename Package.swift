@@ -134,7 +134,10 @@ let package = Package(
         .testTarget(
             name: "AudioIntelligenceTests",
             dependencies: ["AudioIntelligence"],
-            path: "Tests"
+            path: "Tests",
+            resources: [
+                .copy("Resources")
+            ]
         )
     ]
 )
