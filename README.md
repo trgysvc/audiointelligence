@@ -5,7 +5,7 @@
 [![EBU R128](https://img.shields.io/badge/EBU-R128-green.svg)](https://tech.ebu.ch)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-AudioIntelligence is a premium, high-fidelity Music Information Retrieval (MIR) and DSP framework. Built from the ground up for **Swift 6** and **Apple Silicon**, it delivers bit-exact scientific accuracy combined with the raw power of Accelerate and Metal.
+AudioIntelligence is a premium, high-fidelity Music Information Retrieval (MIR) and DSP framework. Built from the ground up for **Swift 6** and **Apple Silicon (M4 optimized)**, it delivers bit-exact scientific accuracy combined with the raw power of Accelerate and Metal.
 
 ---
 
@@ -24,10 +24,11 @@ The Infinity Engine is formally validated against industry "Gold Standards":
 ## 🌟 Key Pillars
 
 - **"Glass Box" Engineering**: No black boxes. Every DSP engine is mathematically transparent and verified against EBU/AES standards.
-- **Apple Silicon Native**: Zero-copy vector processing using Accelerate (vDSP/vImage) and Metal.
-- **Swift 6 & SPM 6.0**: Built with strict concurrency and modern modularity. Requirement: macOS 14+ / iOS 17+.
-- **Forensic Integrity**: The only library with native Shannon Entropy auditing for bit-depth forgery detection.
+- **M4 Silicon Unified Pipeline**: Zero-copy vector processing using Accelerate (vDSP/vImage) and Metal.
+- **Swift 6 & SPM 6.0**: Built with strict concurrency and modern modularity. Requirement: macOS 15+ / iOS 18+.
+- **Forensic Integrity**: The only library with native Shannon Entropy auditing and **DNA Reporting**.
 - **Enterprise Ready**: Designed for professional mastering, broadcast, and forensic laboratory environments.
+- **InfinityAudit CLI**: Professional-grade forensic auditor for rapid signal characterization.
 
 ---
 
@@ -46,7 +47,7 @@ Sources/AudioIntelligenceCore/
 
 ---
 
-## 🧪 The Infinity Suite: 22+ Feature Engines
+## 🧪 The Infinity Suite: 26 Forensic Engines
 From time-domain forensic analysis to frequency-domain neural separation, AudioIntelligence provides a comprehensive toolkit for professional audio engineering:
 
 ### Core Analysis
@@ -59,13 +60,14 @@ From time-domain forensic analysis to frequency-domain neural separation, AudioI
 - **Mel / Chroma / CQT**: High-resolution pitch and timbral transforms.
 - **Viterbi Decoder**: Professional sequence modeling for state analysis.
 - **Onsets & Rhythm**: Multi-band rhythmic mapping and tempograms.
-- **Harmony & Tonnetz**: Harmonic relationship mapping on the tonnetz grid.
+- **Harmony & Tonnetz**: 6D Harmonic relationship mapping on the tonnetz grid.
 
-### Advanced Processing
+### Advanced Processing & Science
 - **NMF Source Separation**: Deterministic non-negative matrix factorization.
 - **HPSS**: Median-filter based Harmonic-Percussive source separation.
 - **Pitch Audits**: YIN and Piptrack (parabolic interpolation) tracking.
-- **AudioScience**: AES17 dynamic range and noise-floor profiling.
+- **AudioScience**: AES17 dynamic range, SMPTE IMD, and ITU-R 468-4 weighting.
+- **Instrument DNA**: Neural-assisted instrument fingerprinting and predictions.
 
 ---
 
@@ -93,7 +95,7 @@ Accelerate your integration with our comprehensive engineering guides:
 
 - **[Project Structure](ProjectStructure.md)**: Global module map.
 - **[Risk Management](RiskManagement.md)**: Strategic migration and industrial risk guide.
-- **[Engine Manual](docs/Engines.md)**: Technical specs for all 36+ analysis engines.
+- **[Engine Manual](docs/Engines.md)**: Technical specs for the complete 26-engine suite.
 - **[Integration Guide](docs/Integration.md)**: Swift 6 Actor-model and concurrency patterns.
 - **[Calibration Manifest](docs/Calibration.md)**: Verified parity vs EBU/AES reference vectors.
 

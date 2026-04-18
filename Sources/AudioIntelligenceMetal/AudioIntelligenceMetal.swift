@@ -1,18 +1,15 @@
 import Foundation
 import Metal
+import Accelerate
 
 /**
- * v53.4: High-Performance Metal Engine (Runtime-Compiled)
- * Specifically optimized for Apple M-series Unified Memory Architecture.
- * This version uses runtime compilation to avoid SPM resource/bundle issues.
+ * AudioIntelligenceMetal - High Throughput Apple Silicon Acceleration
+ * This version uses runtime compilation and specialized kernels for Streaming MIR.
  */
 public final class MetalEngine: @unchecked Sendable {
     
     private let device: MTLDevice?
     private let commandQueue: MTLCommandQueue?
-    
-    private var squareState: MTLComputePipelineState?
-    private var reductionState: MTLComputePipelineState?
     
     private let shaderSource = """
     #include <metal_stdlib>
@@ -27,29 +24,58 @@ public final class MetalEngine: @unchecked Sendable {
         out[id] = sample * sample;
     }
 
-    kernel void parallel_reduction(
+    kernel void stress_test(
         const device float* in [[ buffer(0) ]],
         device float* out [[ buffer(1) ]],
-        constant uint& count [[ buffer(2) ]],
-        threadgroup float* shared_data [[ threadgroup(0) ]],
-        uint tid [[ thread_index_in_threadgroup ]],
-        uint bid [[ threadgroup_position_in_grid ]],
-        uint bdim [[ threads_per_threadgroup ]]
+        uint id [[ thread_position_in_grid ]]
     ) {
-        uint gid = bid * bdim + tid;
-        shared_data[tid] = (gid < count) ? in[gid] : 0.0f;
-        threadgroup_barrier(mem_flags::mem_threadgroup);
-        for (uint s = bdim / 2; s > 0; s >>= 1) {
-            if (tid < s) {
-                shared_data[tid] += shared_data[tid + s];
-            }
-            threadgroup_barrier(mem_flags::mem_threadgroup);
+        float x = in[id];
+        // Optimized for M4 Stability: Reduced iterations to prevent TDR timeout
+        for(int i=0; i<32; i++) {
+            x = sin(x) + cos(x);
         }
-        if (tid == 0) {
-            out[bid] = shared_data[0];
+        out[id] = x;
+    }
+
+    kernel void batch_dct(
+        const device float* in [[ buffer(0) ]],
+        device float* out [[ buffer(1) ]],
+        constant uint& n_mfcc [[ buffer(2) ]],
+        constant uint& n_mels [[ buffer(3) ]],
+        uint id [[ thread_position_in_grid ]]
+    ) {
+        uint frame_idx = id / n_mfcc;
+        uint mfcc_idx = id % n_mfcc;
+        
+        float sum = 0.0;
+        for (uint i = 0; i < n_mels; i++) {
+            float val = in[frame_idx * n_mels + i];
+            sum += val * cos(M_PI_F / (float)n_mels * (i + 0.5f) * (float)mfcc_idx);
         }
+        // Scale for numerical stability
+        out[id] = sum * sqrt(2.0f / (float)n_mels);
+    }
+
+    kernel void unified_forensic_kernel(
+        const device float* magnitude [[ buffer(0) ]],
+        device float* intensity [[ buffer(1) ]],
+        uint id [[ thread_position_in_grid ]]
+    ) {
+        float mag = magnitude[id];
+        
+        // Stabilized Forensic Transform: prevent GPU hang
+        float x = mag;
+        for(int j=0; j<8; j++) {
+            x = log(x + 1.0f) * sin(x);
+        }
+        intensity[id] = x;
     }
     """
+    
+    private var squareState: MTLComputePipelineState?
+    private var stressState: MTLComputePipelineState?
+    private var dctState: MTLComputePipelineState?
+    private var forensicState: MTLComputePipelineState?
     
     public init() {
         self.device = MTLCreateSystemDefaultDevice()
@@ -61,86 +87,172 @@ public final class MetalEngine: @unchecked Sendable {
     private func setupPipelines() {
         guard let device = device else { return }
         
-        // v53.4 Runtime Compilation: Bypassing SPM metallib issues
         do {
             let library = try device.makeLibrary(source: shaderSource, options: nil)
             
-            if let squareFunc = library.makeFunction(name: "calculate_squares"),
-               let reductionFunc = library.makeFunction(name: "parallel_reduction") {
+            if let squareFunc = library.makeFunction(name: "calculate_squares") {
                 self.squareState = try device.makeComputePipelineState(function: squareFunc)
-                self.reductionState = try device.makeComputePipelineState(function: reductionFunc)
+            }
+            if let stressFunc = library.makeFunction(name: "stress_test") {
+                self.stressState = try device.makeComputePipelineState(function: stressFunc)
+            }
+            if let dctFunc = library.makeFunction(name: "batch_dct") {
+                self.dctState = try device.makeComputePipelineState(function: dctFunc)
+            }
+            if let forensicFunc = library.makeFunction(name: "unified_forensic_kernel") {
+                self.forensicState = try device.makeComputePipelineState(function: forensicFunc)
             }
         } catch {
             print("⚠️ Metal Engine: Runtime compilation failed - \(error.localizedDescription)")
         }
     }
     
-    /// Verifies if Metal hardware is active and accessible.
-    public func getHardwareStatus() -> String {
-        guard let device = device else { return "None (Metal No Supported)" }
-        let engineStatus = (squareState != nil) ? "Turbo (Kernels Active)" : "Basic (Buffer Only)"
-        return "\(device.name) | \(engineStatus)"
+    public func executeUnifiedForensicTransform(magnitude: [Float]) -> [Float] {
+        guard let device = device, let commandQueue = commandQueue, let forensicState = forensicState, !magnitude.isEmpty else {
+            return []
+        }
+        
+        let count = magnitude.count
+        let size = count * MemoryLayout<Float>.stride
+        
+        // Memory Protection: Limit max buffer size to prevent allocation failures
+        guard size < device.maxBufferLength else { return [] }
+        
+        guard let magBuffer = device.makeBuffer(bytes: magnitude, length: size, options: .storageModeShared),
+              let intBuffer = device.makeBuffer(length: size, options: .storageModeShared) else {
+            return []
+        }
+        
+        guard let commandBuffer = commandQueue.makeCommandBuffer(),
+              let encoder = commandBuffer.makeComputeCommandEncoder() else {
+            return []
+        }
+        
+        encoder.setComputePipelineState(forensicState)
+        encoder.setBuffer(magBuffer, offset: 0, index: 0)
+        encoder.setBuffer(intBuffer, offset: 0, index: 1)
+        
+        let threadsPerGrid = MTLSize(width: count, height: 1, depth: 1)
+        let w = forensicState.threadExecutionWidth
+        let threadsPerGroup = MTLSize(width: w, height: 1, depth: 1)
+        
+        encoder.dispatchThreads(threadsPerGrid, threadsPerThreadgroup: threadsPerGroup)
+        encoder.endEncoding()
+        commandBuffer.commit()
+        commandBuffer.waitUntilCompleted()
+        
+        let intPtr = intBuffer.contents().bindMemory(to: Float.self, capacity: count)
+        return Array(UnsafeBufferPointer(start: intPtr, count: count))
     }
     
-    public func executeParallelPower(samples: [Float]) -> Float {
-        guard let device = device, 
-              let commandQueue = commandQueue,
-              let squareState = squareState,
-              let reductionState = reductionState,
-              !samples.isEmpty else {
-            return 0.0
+    public func runDiagnosticStressTest() async {
+        guard let device = device, let commandQueue = commandQueue, let stressState = stressState else { return }
+        
+        let count = 1_000_000 // Safer count
+        let inBuffer = device.makeBuffer(length: count * 4, options: .storageModeShared)
+        let outBuffer = device.makeBuffer(length: count * 4, options: .storageModeShared)
+        
+        if inBuffer == nil || outBuffer == nil { return }
+        
+        for _ in 0..<3 { 
+            guard let commandBuffer = commandQueue.makeCommandBuffer(),
+                  let encoder = commandBuffer.makeComputeCommandEncoder() else { continue }
+            
+            encoder.setComputePipelineState(stressState)
+            encoder.setBuffer(inBuffer, offset: 0, index: 0)
+            encoder.setBuffer(outBuffer, offset: 0, index: 1)
+            
+            let threadsPerGrid = MTLSize(width: count, height: 1, depth: 1)
+            let w = stressState.threadExecutionWidth
+            let threadsPerGroup = MTLSize(width: w, height: 1, depth: 1)
+            
+            encoder.dispatchThreads(threadsPerGrid, threadsPerThreadgroup: threadsPerGroup)
+            encoder.endEncoding()
+            
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                commandBuffer.addCompletedHandler { _ in
+                    continuation.resume()
+                }
+                commandBuffer.commit()
+            }
+        }
+    }
+    
+    public func executeParallelSquaring(samples: [Float]) -> [Float] {
+        guard let device = device, let commandQueue = commandQueue, let squareState = squareState, !samples.isEmpty else {
+            return samples.map { $0 * $0 }
         }
         
         let count = samples.count
         let size = count * MemoryLayout<Float>.stride
         
         guard let inBuffer = device.makeBuffer(bytes: samples, length: size, options: .storageModeShared),
-              let squareBuffer = device.makeBuffer(length: size, options: .storageModeShared) else {
-            return 0.0
+              let outBuffer = device.makeBuffer(length: size, options: .storageModeShared) else {
+            return samples.map { $0 * $0 }
         }
-        
-        let threadGroupSize = squareState.maxTotalThreadsPerThreadgroup
-        let threadsPerGroup = MTLSize(width: threadGroupSize, height: 1, depth: 1)
-        let groupsPerGrid = MTLSize(width: (count + threadGroupSize - 1) / threadGroupSize, height: 1, depth: 1)
         
         guard let commandBuffer = commandQueue.makeCommandBuffer(),
               let encoder = commandBuffer.makeComputeCommandEncoder() else {
-            return 0.0
+            return samples.map { $0 * $0 }
         }
         
         encoder.setComputePipelineState(squareState)
         encoder.setBuffer(inBuffer, offset: 0, index: 0)
-        encoder.setBuffer(squareBuffer, offset: 0, index: 1)
-        encoder.dispatchThreadgroups(groupsPerGrid, threadsPerThreadgroup: threadsPerGroup)
-        encoder.endEncoding()
+        encoder.setBuffer(outBuffer, offset: 0, index: 1)
         
-        let numThreadgroups = groupsPerGrid.width
-        let partialSumSize = numThreadgroups * MemoryLayout<Float>.stride
-        guard let outBuffer = device.makeBuffer(length: partialSumSize, options: .storageModeShared),
-              let redEncoder = commandBuffer.makeComputeCommandEncoder() else {
-            commandBuffer.commit()
-            return 0.0
+        let threadsPerGrid = MTLSize(width: count, height: 1, depth: 1)
+        let w = squareState.threadExecutionWidth
+        let threadsPerGroup = MTLSize(width: w, height: 1, depth: 1)
+        
+        encoder.dispatchThreads(threadsPerGrid, threadsPerThreadgroup: threadsPerGroup)
+        encoder.endEncoding()
+        commandBuffer.commit()
+        commandBuffer.waitUntilCompleted() // Synchronous path for non-async calls
+        
+        let pointer = outBuffer.contents().bindMemory(to: Float.self, capacity: count)
+        return Array(UnsafeBufferPointer(start: pointer, count: count))
+    }
+    
+    public func executeBatchDct(melSpectrogram: [Float], nMfcc: Int, nMels: Int) -> [Float] {
+        guard let device = device, let commandQueue = commandQueue, let dctState = dctState, !melSpectrogram.isEmpty else {
+            return []
         }
         
-        redEncoder.setComputePipelineState(reductionState)
-        redEncoder.setBuffer(squareBuffer, offset: 0, index: 0)
-        redEncoder.setBuffer(outBuffer, offset: 0, index: 1)
-        var uintCount = UInt32(count)
-        redEncoder.setBytes(&uintCount, length: MemoryLayout<UInt32>.size, index: 2)
-        redEncoder.setThreadgroupMemoryLength(threadGroupSize * MemoryLayout<Float>.stride, index: 0)
+        let nFrames = melSpectrogram.count / nMels
+        let count = nFrames * nMfcc
         
-        redEncoder.dispatchThreadgroups(groupsPerGrid, threadsPerThreadgroup: threadsPerGroup)
-        redEncoder.endEncoding()
+        guard let inBuffer = device.makeBuffer(bytes: melSpectrogram, length: melSpectrogram.count * 4, options: .storageModeShared),
+              let outBuffer = device.makeBuffer(length: count * 4, options: .storageModeShared) else {
+            return []
+        }
         
+        guard let commandBuffer = commandQueue.makeCommandBuffer(),
+              let encoder = commandBuffer.makeComputeCommandEncoder() else {
+            return []
+        }
+        
+        encoder.setComputePipelineState(dctState)
+        encoder.setBuffer(inBuffer, offset: 0, index: 0)
+        encoder.setBuffer(outBuffer, offset: 0, index: 1)
+        var uintMfcc = UInt32(nMfcc); var uintMels = UInt32(nMels)
+        encoder.setBytes(&uintMfcc, length: 4, index: 2)
+        encoder.setBytes(&uintMels, length: 4, index: 3)
+        
+        let threadsPerGrid = MTLSize(width: count, height: 1, depth: 1)
+        let w = dctState.threadExecutionWidth
+        let threadsPerGroup = MTLSize(width: w, height: 1, depth: 1)
+        
+        encoder.dispatchThreads(threadsPerGrid, threadsPerThreadgroup: threadsPerGroup)
+        encoder.endEncoding()
         commandBuffer.commit()
         commandBuffer.waitUntilCompleted()
         
-        let pointer = outBuffer.contents().bindMemory(to: Float.self, capacity: numThreadgroups)
-        var totalPower: Float = 0
-        for i in 0..<numThreadgroups {
-            totalPower += pointer[i]
-        }
-        
-        return totalPower
+        let pointer = outBuffer.contents().bindMemory(to: Float.self, capacity: count)
+        return Array(UnsafeBufferPointer(start: pointer, count: count))
+    }
+    
+    public func getHardwareStatus() -> String {
+        guard let device = device else { return "None (Metal No Supported)" }
+        return device.name
     }
 }

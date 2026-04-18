@@ -123,8 +123,8 @@ public enum MusicDNAReporter {
         }
         lines.append("")
         
-        // --- 4. RHYTHM ---
-        lines.append("## 🥁 4. Rhythm & Micro-Timing DNA")
+        // --- 5. RHYTHM ---
+        lines.append("## 🥁 5. Rhythm & Micro-Timing DNA")
         let rhythmBPM: Float = analysis.rhythm.bpm
         let bpmStr: String = Double(rhythmBPM).formatted(.number.precision(.fractionLength(2)))
         let bpmConf: String = (Double(analysis.rhythm.bpmConfidence) * 100.0).formatted(.number.precision(.fractionLength(1)))
@@ -141,8 +141,8 @@ public enum MusicDNAReporter {
         lines.append("- **Transient Profile**: Mean: \(oMean) | Peak: \(oPeak)")
         lines.append("")
         
-        // --- 5. TONALITY ---
-        lines.append("## 🎹 5. Tonality & Chroma Profile")
+        // --- 6. TONALITY ---
+        lines.append("## 🎹 6. Tonality & Chroma Profile")
         let keyConf: String = (Double(analysis.tonality.keyConfidence) * 100.0).formatted(.number.precision(.fractionLength(1)))
         lines.append("**Key Detection**: \(analysis.tonality.key) (Reliability: **\(keyConf)%**)")
         lines.append("- Tendency: \(analysis.tonality.tendency)")
@@ -254,6 +254,13 @@ public enum MusicDNAReporter {
         let tConf = (Double(analysis.piptrack.trackingConfidence) * 100.0).formatted(.number.precision(.fractionLength(1)))
         lines.append("- **Refined Mean F0**: \(refinedF0) Hz")
         lines.append("- **Tracking Confidence**: \(tConf)% (Partial coherence)")
+        lines.append("")
+        
+        lines.append("### 🗺️ Viterbi Sequence DNA (Tonal States)")
+        let vPath = analysis.viterbi.path
+        let pathStr = vPath.prefix(20).map { noteNames[$0 % 12] }.joined(separator: " -> ")
+        lines.append("- **Initial Sequence**: \(pathStr) ...")
+        lines.append("- **Sequence Length**: \(vPath.count) states decoded")
         lines.append("")
         
         // --- 10. LABORATORY SCIENCE ---

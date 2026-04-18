@@ -66,6 +66,8 @@ public struct STFTMatrix: Codable, Sendable {
 
 // MARK: - STFTEngine
 
+/// Short-Time Fourier Transform (STFT) Engine.
+/// The foundational spectral analysis engine for all frequency-domain DSP tasks.
 public final class STFTEngine: @unchecked Sendable {
     public static let defaultNFFT = 2048
     public static let defaultHopLength = 512
@@ -179,12 +181,16 @@ public final class STFTEngine: @unchecked Sendable {
             let start = t * hopLength
             
             // Apply window
-            vDSP_vmul(Array(input[start..<(start + nFFT)]), 1,
-                      window, 1,
-                      &windowedInput, 1,
-                      vDSP_Length(nFFT))
+            input.withUnsafeBufferPointer { iBuff in
+                guard let iBase = iBuff.baseAddress else { return }
+                vDSP_vmul(iBase.advanced(by: start), 1,
+                          window, 1,
+                          &windowedInput, 1,
+                          vDSP_Length(nFFT))
+            }
 
-            // Efficient Real-to-Complex FFT
+            // Efficient Real-to-Complex FFT (vDSP_DFT_zrop uses specific layout)
+            // Output length is N/2 (NFFT bins packed into complex pairs)
             vDSP_DFT_Execute(dftSetup, windowedInput, [Float](repeating: 0, count: nFFT / 2), &realOut, &imagOut)
 
             // Extract magnitude and phase

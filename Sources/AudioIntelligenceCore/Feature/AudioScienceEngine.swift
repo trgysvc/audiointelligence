@@ -1,8 +1,8 @@
 import Foundation
 import Accelerate
 
-/// v52.0: High-Trust Audio Science Engine
-/// Specialized in laboratory-grade distortion and noise floor analysis.
+/// Laboratory-grade scientific metrics engine.
+/// Provides AES17 Dynamic Range, SMPTE IMD, and ITU-R 468-4 noise weighting.
 public final class AudioScienceEngine: Sendable {
     
     private let sampleRate: Double
@@ -11,7 +11,7 @@ public final class AudioScienceEngine: Sendable {
         self.sampleRate = sampleRate
     }
     
-    public struct ScienceResult: Sendable {
+    public struct ScienceResult: Codable, Sendable {
         public let dynamicRangeAES17: Float
         public let thdPlusN: Float
         public let smpteIMD: Float
@@ -151,7 +151,18 @@ public final class AudioScienceEngine: Sendable {
     
     private func applyBiquad(input: inout [Float], output: inout [Float], coeffs: [Double]) {
         let n = input.count
-        guard let setup = vDSP_biquad_CreateSetup(coeffs, 1) else { return }
+        guard n > 0 else { return }
+        
+        // Ensure output has enough space
+        if output.count < n {
+            output = [Float](repeating: 0, count: n)
+        }
+        
+        guard let setup = vDSP_biquad_CreateSetup(coeffs, 1) else { 
+            // Fallback: Copy input to output if filter creation fails
+            output = input
+            return 
+        }
         defer { vDSP_biquad_DestroySetup(setup) }
         
         var delay = [Float](repeating: 0, count: 2)

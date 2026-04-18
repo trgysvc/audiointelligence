@@ -50,16 +50,26 @@ public actor AudioIntelligence {
         progress: @Sendable @escaping (Double, String, String?) -> Void = { _, _, _ in }
     ) async throws -> AudioReport {
         
-        // Modular internal routing based on features
-        // In v6.1+, we use the DNAReportBuilder as the primary orchestrator.
-        let builder = DNAReportBuilder()
-        let result = try await builder.analyze(url: url, progress: progress)
+        // Map public AudioFeature to internal AnalysisLane
+        var lanes: Set<AnalysisLane> = []
+        for feat in features {
+            switch feat {
+            case .spectral:   lanes.insert(.spectral); lanes.insert(.timbre)
+            case .rhythm:     lanes.insert(.rhythm)
+            case .harmonic:   lanes.insert(.tonal); lanes.insert(.advanced)
+            case .pitch:      lanes.insert(.semantic)
+            case .separation: lanes.insert(.advanced)
+            case .semantic:   lanes.insert(.semantic)
+            case .forensic:   lanes.insert(.forensic)
+            case .mastering:  lanes.insert(.mastering)
+            }
+        }
         
-        // Filter result properties based on requested features (UI/API requirement)
-        // ... (Filtering logic implemented in Builder to save cycles)
+        let builder = DNAReportBuilder()
+        let result = try await builder.analyze(url: url, lanes: lanes, progress: progress)
         
         return AudioReport(
-            summary: "Analysis complete for \(url.lastPathComponent). Domain breadth: \(features.count) features.",
+            summary: "Analysis complete for \(url.lastPathComponent). Dynamic Domain breadth: \(features.count) features (\(lanes.count) optimized lanes).",
             rawAnalysis: result.analysis,
             reportText: result.reportText,
             reportPath: result.mdPath

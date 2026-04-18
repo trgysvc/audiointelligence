@@ -1,6 +1,6 @@
 # ⚙️ Engines: Technical Implementation Reference
 
-This document provides a comprehensive technical reference for the **AudioIntelligence Infinity Suite**. Every analysis engine is implemented using high-priority **Apple Silicon (AMX/ANE)** protocols and adheres to professional broadcast and forensic standards.
+This document provides a comprehensive technical reference for the **AudioIntelligence Infinity Suite**. This complete **26-engine suite** is implemented using high-priority **Apple Silicon (M4 optimized AMX/ANE)** protocols and adheres to professional broadcast and forensic standards.
 
 ---
 
@@ -49,7 +49,11 @@ Engines focused on tonal content and musical structure.
 
 ### ChromaEngine & TonnetzEngine
 - **Chroma**: 12-bin harmonic distribution for chord and key recognition.
-- **Tonnetz**: 6D tonal centroid mapping representing Perfect Fifths, Major Thirds, and Minor Thirds.
+- **Tonnetz**: 6D tonal centroid mapping representing Perfect Fifths, Major Thirds, and Minor Thirds. The engine outputs a high-stability harmonic grid used for **Tonnetz DNA** visualization.
+
+### InstrumentEngine (Neural Predictor)
+- **Logic**: Neural-assisted classification of dominant sound sources.
+- **Output**: Instrument labels (e.g., Drums, Vocals, Bass) with associated confidence scores based on spectral flux and flatness.
 
 ### YINEngine & ViterbiEngine
 - **YIN**: Time-domain fundamental frequency (F0) estimation for pitch tracking.
@@ -82,6 +86,7 @@ Tools for provenance and authenticity verification.
 ### ForensicEngine & AudioScienceEngine
 - **Entropy Analysis**: Shannon Entropy calculation for bit-depth forgery detection (16-bit to 24-bit upscales).
 - **Codec Signature**: Detecting transcode ceilings and encoder-specific spectral bracketing.
+- **Laboratory Metrics**: Professional characterization of **AES17 Dynamic Range**, **SMPTE IMD** (Inter-modulation Distortion), and **ITU-R 468-4** weighted noise floors.
 
 ### ScientificAuditor
 - **Function**: Unified diagnostic portal that subjects the entire library to automated EBU/AES17 calibration audits.

@@ -14,6 +14,8 @@ public struct MelSpectrogramResult: Sendable {
     public let nMels: Int
 }
 
+/// Mel-scale Spectrogram Engine.
+/// Converts linear frequency spectra to perceptual Mel-scale representations (optimized for ANE).
 public final class MelSpectrogramEngine: @unchecked Sendable {
     
     private let stftEngine: STFTEngine
@@ -55,14 +57,28 @@ public final class MelSpectrogramEngine: @unchecked Sendable {
         
         var melData = [Float](repeating: 0, count: nFrames * nMels)
         
-        vDSP_mmul(
-            powerSpec, 1,
-            melFilterbank, 1,
-            &melData, 1,
-            vDSP_Length(nFrames),
-            vDSP_Length(nMels),
-            vDSP_Length(nFreqs)
-        )
+        // Use row-based dot product for 100% dimension safety and precision.
+        // Result[t, m] = sum_f Power[t, f] * Filter[m, f]
+        for t in 0..<nFrames {
+            let powerOffset = t * nFreqs
+            for m in 0..<nMels {
+                let filterOffset = m * nFreqs
+                var dot: Float = 0
+                
+                // Optimized strided access via vDSP_dotpr
+                // powerSpec is [nFrames x nFreqs], melFilterbank is [nMels x nFreqs]
+                // We dot the t-th frame of power with the m-th mel filter.
+                powerSpec.withUnsafeBufferPointer { pBuff in
+                    melFilterbank.withUnsafeBufferPointer { fBuff in
+                        guard let pBase = pBuff.baseAddress, let fBase = fBuff.baseAddress else { return }
+                        vDSP_dotpr(pBase.advanced(by: powerOffset), 1,
+                                   fBase.advanced(by: filterOffset), 1,
+                                   &dot, vDSP_Length(nFreqs))
+                    }
+                }
+                melData[t * nMels + m] = dot
+            }
+        }
         
         return MelSpectrogramResult(melData: melData, nFrames: nFrames, nMels: nMels)
     }

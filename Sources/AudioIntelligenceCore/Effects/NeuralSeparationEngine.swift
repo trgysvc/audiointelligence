@@ -15,6 +15,8 @@ public enum NeuralSeparationError: Error {
     case invalidInputSize
 }
 
+/// ANE-Accelerated Neural Stem Separation Engine.
+/// Uses CoreML and Apple Neural Engine (ANE) to isolate Vocals, Drums, Bass, and Other components.
 public final class NeuralSeparationEngine: Sendable {
     
     public init() {}

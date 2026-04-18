@@ -1,13 +1,11 @@
 import Foundation
 import Accelerate
 
-/**
- * v55.1: High-Trust Forensic Integrity Engine
- * Detects upsampling, codec artifacts, and digital truth.
- */
+/// High-Trust Forensic Integrity Engine.
+/// Detects upsampling, codec artifacts, and bit-depth forgery via Shannon Entropy analysis.
 public final class ForensicEngine: @unchecked Sendable {
     
-    public struct ForensicResult: Sendable {
+    public struct ForensicResult: Codable, Sendable {
         public let trueBitDepth: Int
         public let codecCutoffHz: Float
         public let clippingEvents: Int

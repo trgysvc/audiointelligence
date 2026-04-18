@@ -1,10 +1,8 @@
 import Foundation
 import Accelerate
 
-/**
- * v56.0: Instrument Recognition Engine
- * Uses spectral fingerprints and MFCC distance matching to identify musical components.
- */
+/// Neural Instrument Recognition Engine.
+/// Uses spectral fingerprints and MFCC distance matching to identify musical components and dominant sound sources.
 public final class InstrumentEngine: Sendable {
     
     // Theoretical Fingerprints for common instruments

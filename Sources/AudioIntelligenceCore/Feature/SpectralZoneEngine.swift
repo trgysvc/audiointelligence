@@ -6,6 +6,8 @@ import Accelerate
  * Analyzes frequency zones to determine tonal distribution and energy balance.
  * Scientific replacement for the former 'Semantic' engine.
  */
+/// Frequency Zone Analysis Engine.
+/// Analyzes energy distribution across semantic frequency bands (Sub, Bass, Low-Mid, Mid, High-Mid, High).
 public final class SpectralZoneEngine: Sendable {
     
     private let sampleRate: Double
@@ -14,7 +16,7 @@ public final class SpectralZoneEngine: Sendable {
         self.sampleRate = sampleRate
     }
     
-    public struct SpectralZoneResult: Sendable {
+    public struct SpectralZoneResult: Codable, Sendable {
         public let dominanceMap: [String: Float] // Category: Percentage
         public let primaryZone: String          // Bass, Body, Lead, Air
         public let textureType: String          // Spectral balance description

@@ -8,10 +8,12 @@
 import Foundation
 import Accelerate
 
-public struct TonnetzResult: Sendable {
+public struct TonnetzResult: Codable, Sendable {
     public let tonnetz: [[Float]] // [6 × nFrames]
 }
 
+/// Tonal Centroid (Tonnetz) Mapping Engine.
+/// Projects chroma features into a 6-dimensional space to represent harmonic relationships.
 public final class TonnetzEngine: Sendable {
     
     public init() {}

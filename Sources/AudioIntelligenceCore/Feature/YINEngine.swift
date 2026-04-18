@@ -18,13 +18,15 @@
 import Accelerate
 import Foundation
 
-public struct PitchResult: Sendable {
+public struct PitchResult: Codable, Sendable {
     public let f0Series: [Float]      // F0 per frame (NaN = unvoiced/silent)
     public let voicedFrames: [Int]    // Voiced frame indices
     public let meanF0: Float          // Mean of voiced frames only
     public let medianF0: Float        // Median of voiced frames (more robust)
 }
 
+/// Time-Domain Fundamental Frequency Estimation Engine (YIN).
+/// Provides robust pitch tracking by minimizing the squared difference function.
 public final class YINEngine: @unchecked Sendable {
 
     public let sampleRate: Double

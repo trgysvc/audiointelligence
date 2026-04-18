@@ -7,12 +7,14 @@
 import Foundation
 import Accelerate
 
-public struct TempogramResult: Sendable {
+public struct TempogramResult: Codable, Sendable {
     public let tempogram: [[Float]] // [winLength × nFrames]
     public let winLength: Int
     public let hopLength: Int
 }
 
+/// Cyclic Tempo and Rhythmic Periodicity Engine.
+/// Provides a detailed mapping of rhythmic recurrence and dominant tempo periods.
 public final class TempogramEngine: Sendable {
     
     private let winLength: Int

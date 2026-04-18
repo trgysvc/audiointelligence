@@ -1,4 +1,4 @@
-# 🔬 Scientific Validation: Diagnostic Protocol (v6.1)
+# 🔬 Scientific Validation: Diagnostic Protocol (v6.3)
 
 This protocol serves as the official diagnostic manifest for the **AudioIntelligence Infinity Suite**. It ensures 100% mathematical integrity and broadcast compliance via automated and manual audit scenarios.
 
@@ -56,8 +56,11 @@ To ensure that real-world file artifacts don't interfere with DSP accuracy, ever
 Professional engineers can verify these metrics at any time using the automated diagnostic suite:
 
 ```bash
-# Execute the full scientific validation set
+# Option 1: Execute the full scientific validation suite via tests
 swift test --filter ScientificValidationTests.testDiagnosticAuditReport
+
+# Option 2: Run a live forensic audit via the InfinityAudit CLI
+.build/release/InfinityAudit "path/to/audio/file.mp3" --output-dir "./Reports"
 ```
 
 *Verified Archive: 2026-04-18 — AudioIntelligence Infinity Release*

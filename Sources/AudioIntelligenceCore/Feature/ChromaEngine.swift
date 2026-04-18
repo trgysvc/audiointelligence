@@ -12,7 +12,7 @@ import Foundation
 
 // MARK: - Chroma Result
 
-public struct ChromaResult: Sendable {
+public struct ChromaResult: Codable, Sendable {
     public let chromagram: [[Float]]    // [12 × nFrames]
     public let meanChroma: [Float]      // [12] — Full duration average
     public let key: String              // "C Major", "A Minor" etc.
@@ -122,14 +122,21 @@ final class ChromaFilterBank: @unchecked Sendable {
         
         let nWeights = weights[0].count
 
-        for t in 0..<nFrames {
-            for c in 0..<12 {
-                var dotProduct: Float = 0
-                for f in 0..<min(nFreqs, nWeights) {
-                    let mag = magnitude[t * nFreqs + f]
-                    dotProduct += (mag * mag) * weights[c][f]
+        magnitude.withUnsafeBufferPointer { mBuff in
+            guard let mBase = mBuff.baseAddress else { return }
+            for t in 0..<nFrames {
+                let frameOffset = t * nFreqs
+                for c in 0..<12 {
+                    var dotProduct: Float = 0
+                    let weightRow = weights[c]
+                    weightRow.withUnsafeBufferPointer { wBuff in
+                        guard let wBase = wBuff.baseAddress else { return }
+                        let limit = min(nFreqs, nWeights)
+                        // Using vDSP_dotpr for hardware accelerated chroma projection
+                        vDSP_dotpr(mBase.advanced(by: frameOffset), 1, wBase, 1, &dotProduct, vDSP_Length(limit))
+                    }
+                    chroma[c][t] = dotProduct
                 }
-                chroma[c][t] = dotProduct
             }
         }
 
@@ -139,6 +146,8 @@ final class ChromaFilterBank: @unchecked Sendable {
 
 // MARK: - Chroma Engine
 
+/// Harmonic Energy Distribution (Chroma) Engine.
+/// Projects spectral energy into 12 semitone bins for chord and key recognition.
 public final class ChromaEngine: @unchecked Sendable {
 
     private let filterBank: ChromaFilterBank
