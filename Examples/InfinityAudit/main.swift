@@ -19,7 +19,7 @@ struct InfinityAudit {
         print("⚙️ Motor: Titan Native (v4.1)")
         print("------------------------------------------")
         
-        let intelligence = AudioIntelligence(device: .current, mode: .ultra)
+        let intelligence = AudioIntelligence(device: .automatic, mode: .performance)
         
         do {
             let result = try await intelligence.analyze(url: url) { percent, message, _ in

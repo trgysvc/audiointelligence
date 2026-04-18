@@ -116,4 +116,18 @@ public actor IntelligenceCache {
         try? FileManager.default.removeItem(at: cacheDirectory)
         try? FileManager.default.createDirectory(at: cacheDirectory, withIntermediateDirectories: true)
     }
+    
+    /// Returns the current size of the disk cache in bytes.
+    public func currentSize() async -> Int64 {
+        let files = try? FileManager.default.contentsOfDirectory(
+            at: cacheDirectory,
+            includingPropertiesForKeys: [.fileSizeKey],
+            options: []
+        )
+        guard let fileList = files else { return 0 }
+        return fileList.reduce(0) { total, url in
+            let resource = try? url.resourceValues(forKeys: [.fileSizeKey])
+            return total + Int64(resource?.fileSize ?? 0)
+        }
+    }
 }
