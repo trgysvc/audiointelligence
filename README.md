@@ -128,9 +128,14 @@ if result.forensic.isUpsampled {
 
 ## 📖 Technical Documentation
 
-- **[Calibration Manifest](docs/Calibration.md)**: Standard-aligned testing results.
-- **[Project Structure](docs/ProjectStructure.txt)**: Technical directory breakdown.
-- **[Benchmarking Guide](Sources/AIBenchmark/README.md)**: How to run professional audits.
+- **[Project Structure](ProjectStructure.md)**: Global directory and module breakdown.
+- **[Risk Management](RiskManagement.md)**: Strategic risk mitigation and migration guide.
+- **[Architecture Deep Dive](docs/Architecture.md)**: The "Glass Box" philosophy and silicon-native design.
+- **[Engine Manual](docs/Engines.md)**: Technical reference for all 36+ analysis engines.
+- **[Forensic Science](docs/Forensics.md)**: Bit-depth entropy and codec provenance theory.
+- **[Integration Guide](docs/Integration.md)**: Professional SPM setup and Swift 6 concurrency patterns.
+- **[Calibration Manifest](docs/Calibration.md)**: Verified parity vs EBU/AES standard vectors.
+- **[Scientific Validation](docs/ScientificValidation.md)**: Diagnostic audit protocol for engineers.
 
 ---
 
