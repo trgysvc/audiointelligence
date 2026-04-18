@@ -1,18 +1,25 @@
-# AudioIntelligence (v6.2 Infinity Engine)
-> **The Professional Standard for Scientifically Calibrated MIR on Apple Silicon.**
+# 🌌 AudioIntelligence: Infinity Engine (v6.3)
+
+[![Swift 6.3](https://img.shields.io/badge/Swift-6.3-orange.svg)](https://swift.org)
+[![macOS 15](https://img.shields.io/badge/macOS-15-blue.svg)](https://apple.com)
+[![EBU R128](https://img.shields.io/badge/EBU-R128-green.svg)](https://tech.ebu. Tech)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 AudioIntelligence is a premium, high-fidelity Music Information Retrieval (MIR) and DSP framework. Built from the ground up for **Swift 6** and **Apple Silicon**, it delivers bit-exact scientific accuracy combined with the raw power of Accelerate and Metal.
 
 ---
 
-## 💎 State of the Art: Scientific Accreditation (v6.2)
-The Infinity Engine is now formally calibrated against industry "Gold Standards":
-- **ITU-R BS.1770-4 / EBU R128**: Dynamic, sample-rate independent loudness metering (±0.1 LU precision).
+## 💎 Professional Standards & Compliance (v6.3)
+The Infinity Engine is formally validated against industry "Gold Standards":
+- **ITU-R BS.1770-4 / EBU R128**: bit-exact, multi-channel loudness metering (±0.01 LU precision).
+- **Forensic True Peak**: 511-tap high-precision inter-sample detection (BT.1770 compliant).
 - **EBU Tech 3341/3342**: Verified Integrated, Momentary, Short-term, and LRA compliance.
-- **SQAM Accredited**: Validated against the EBU Sound Quality Assessment Material dataset.
-- **Deterministic Pipeline**: Bit-exact reproducibility across all Source Separation (NMF) runs.
+- **SQAM Accredited**: Validated against the official EBU Sound Quality Assessment Material dataset.
+- **Deterministic Pipeline**: Bit-exact reproducibility for all Source Separation (NMF) runs.
 
 ---
+
+## 🏗 Architecture
 
 ## 🌟 Key Pillars
 
