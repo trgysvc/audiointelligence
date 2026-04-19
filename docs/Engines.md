@@ -16,7 +16,7 @@ The fundamental spectral analyst.
 
 ### AudioLoader
 Professional-grade I/O orchestrator.
-- **Capabilities**: Multi-format support (PCM, FLAC, AAC, ALAC) with seamless down-mixing and sample-rate conversion.
+- **Capabilities**: Multi-format support (PCM, FLAC, AAC, ALAC, MP3) with seamless down-mixing and sample-rate conversion via `AVAudioConverter`.
 - **Performance**: Integrated with **IntelligenceCache** to ensure that once a file is loaded and fingerprinted, subsequent reads are instantaneous.
 
 ---
@@ -26,15 +26,17 @@ Professional-grade I/O orchestrator.
 Engines calibrated against official industry test vectors.
 
 ### LoudnessEngine
-- **Standards**: ITU-R BS.1770-4, EBU Tech 3341.
-- **Logic**: Implements K-weighting pre-filter (RLB) followed by gated integration (Absolute -70 LUFS / Relative -10 LU).
+- **Standards**: ITU-R BS.1770-4, EBU Tech 3341/3342.
+- **Logic**: Implemented with **Double precision** energy accumulation. Uses K-weighting pre-filter followed by dual-gated integration (Absolute -70 LUFS / Relative -10 LU for Integrated, -20 LU for LRA).
+- **Parity**: ±0.1 LU accuracy verified against SQAM reference material.
 
 ### TruePeakEngine
 - **Standards**: ITU-R BS.1770-4.
 - **Process**: 4x Polyphase oversampling Sinc-filter to identify inter-sample peaks that standard meters miss.
 
-### RhythmEngine
-- **Logic**: Dynamic Programming (DP) tempo-estimation using Ellis (2007) architecture.
+### RhythmEngine & OnsetEngine
+- **Onset Detection**: Spectral flux and phase deviation monitoring across 7 sub-bands.
+- **Rhythm Logic**: Dynamic Programming (DP) tempo-estimation using Ellis (2007) architecture.
 - **Output**: Global BPM and local "Click-Track" alignment with human-feel tracking.
 
 ---
@@ -43,39 +45,41 @@ Engines calibrated against official industry test vectors.
 
 Engines focused on tonal content and musical structure.
 
-### CQTEngine (Constant-Q Transform)
-- **Design**: Logarithmically-spaced frequency bins (12 per octave) for absolute musical pitch tracking.
-- **Resolution**: Variable window sizes to maintain a constant Q-factor across the spectrum.
+### CQTEngine & VQTEngine
+- **Design**: Constant-Q and Variable-Q transforms for musically-aligned frequency analysis.
+- **Resolution**: 12 to 36 bins per octave for absolute musical pitch tracking.
 
 ### ChromaEngine & TonnetzEngine
 - **Chroma**: 12-bin harmonic distribution for chord and key recognition.
-- **Tonnetz**: 6D tonal centroid mapping representing Perfect Fifths, Major Thirds, and Minor Thirds. The engine outputs a high-stability harmonic grid used for **Tonnetz DNA** visualization.
+- **Tonnetz**: 6D tonal centroid mapping representing Perfect Fifths, Major Thirds, and Minor Thirds.
 
 ### InstrumentEngine (Neural Predictor)
-- **Logic**: Neural-assisted classification of dominant sound sources.
-- **Output**: Instrument labels (e.g., Drums, Vocals, Bass) with associated confidence scores based on spectral flux and flatness.
-
-### YINEngine & ViterbiEngine
-- **YIN**: Time-domain fundamental frequency (F0) estimation for pitch tracking.
-- **Viterbi**: HMM-based sequence modeling to prevent "jitter" or octave-jumps in tracking reports.
+- **Logic**: Multi-feature classifier using Spectral Flatness, MFCC coefficients, and Transient density.
+- **Output**: Instrument labels (e.g., Drums, Vocals, Bass) with confidence scores.
 
 ---
 
-## 🧪 4. Source Separation & Neural Isolation
+## 🧪 4. Source Separation & Sequence Modeling
 
-Engines for decomposing complex signals.
+Engines for decomposing complex signals and understanding sequences.
 
 ### HPSSEngine
 - **Logic**: Harmonic-Percussive Source Separation using median-filter masking in the STFT domain.
-- **Performance**: AMX-accelerated vector comparison for real-time splitting.
-
-### NeuralSeparationEngine
-- **Hardware**: Runs exclusively on the **Apple Neural Engine (ANE)** via CoreML.
-- **Capabilities**: Professional isolation of Vocals, Drums, Bass, and Other components (Stem Separation).
 
 ### NMFEngine (Non-negative Matrix Factorization)
-- **Mathematics**: Iterative KL-Divergence multiplicative updates for blind source separation.
-- **Use Case**: Identifying recurring spectral patterns and basis components in unlabelled data.
+- **Mathematics**: Iterative KL-Divergence multiplicative updates for blind source separation and basis identification.
+- **Optimization**: Metal-accelerated matrix multiplication for rapid convergence.
+
+### StructureEngine (Segmentation)
+- **Logic**: Self-Similarity Matrix (SSM) analysis for automated structural segmentation.
+- **Output**: Temporal boundaries for Intro, Verse, Chorus, and Bridge sections.
+
+### ViterbiEngine
+- **Function**: Hidden Markov Model (HMM) sequence decoding.
+- **Use Case**: Smoothing pitch tracks and internal state transitions to eliminate "jitter" in reports.
+
+### PiptrackEngine
+- **Logic**: Parabolic Interpolation for high-resolution fundamental frequency (F0) tracking.
 
 ---
 
@@ -83,13 +87,12 @@ Engines for decomposing complex signals.
 
 Tools for provenance and authenticity verification.
 
-### ForensicEngine & AudioScienceEngine
-- **Entropy Analysis**: Shannon Entropy calculation for bit-depth forgery detection (16-bit to 24-bit upscales).
-- **Codec Signature**: Detecting transcode ceilings and encoder-specific spectral bracketing.
-- **Laboratory Metrics**: Professional characterization of **AES17 Dynamic Range**, **SMPTE IMD** (Inter-modulation Distortion), and **ITU-R 468-4** weighted noise floors.
+### ForensicEngine
+- **Entropy Analysis**: Shannon Entropy calculation for bit-depth forgery detection (detecting 16-bit to 24-bit upscales).
+- **Codec Signature**: Detecting encoder-specific spectral bracketing (LAME, FhG, Lavf).
 
-### ScientificAuditor
-- **Function**: Unified diagnostic portal that subjects the entire library to automated EBU/AES17 calibration audits.
+### AudioScienceEngine
+- **Laboratory Metrics**: Professional characterization of **AES17 Dynamic Range**, **SMPTE IMD** (Inter-modulation Distortion), and **ITU-R 468-4** weighted noise floors.
 
 ---
 
@@ -97,12 +100,10 @@ Tools for provenance and authenticity verification.
 
 Engines designed to render industrial-grade engineering reports.
 
-### SpectrogramRenderer
-- **Palettes**: Magma, Viridis, Plasma, and Inferno (CIE Cam02-Uniform).
-- **Scale**: Linear, Logarithmic, and Mel-scale rendering with high-throughput vImage performance.
-
-### WaveformRenderer
-- **Logic**: Multi-resolution peak/RMS bracketing for smooth zooming and professional waveform auditing.
+### AudioIntelligenceUI (SwiftUI + Metal)
+- **SpectrogramView**: Real-time, GPU-accelerated spectral rendering with perceptually uniform colormaps.
+- **WaveformView**: Multi-resolution peak/RMS rendering for fluid zooming.
+- **LoudnessMeter**: EBU R128 compliant real-time metering with Momentary, Short-term, and Integrated ballistics.
 
 ---
 *For architectural details on how these engines interact, see [Architecture.md](Architecture.md).*

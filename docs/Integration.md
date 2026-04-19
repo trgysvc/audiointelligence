@@ -1,12 +1,12 @@
 # 🚀 Integration & Concurrency: Architectural Guide
 
-This guide is for developers and system architects integrating the **AudioIntelligence SDK** into enterprise ecosystems like EliteAgent or professional Mastering Dashboards.
+This guide is for developers and system architects integrating the **AudioIntelligence SDK** into enterprise ecosystems or professional Mastering Dashboards.
 
 ---
 
 ## 1. Professional Installation (SPM)
 
-AudioIntelligence is a modular SDK optimized for the **Swift Package Manager**. It is designed to be consumed as a version-locked dependency to ensure DSP stability.
+AudioIntelligence is a modular SDK optimized for the **Swift Package Manager**.
 
 ### Configuration
 Update your `Package.swift` to include the Infinity Engine:
@@ -15,13 +15,14 @@ Update your `Package.swift` to include the Infinity Engine:
 let package = Package(
     name: "MyProAudioApp",
     dependencies: [
-        .package(url: "https://hub.com/trgysvc/AudioIntelligence.git", from: "6.1.0")
+        .package(url: "https://github.com/trgysvc/AudioIntelligence.git", from: "6.3.0")
     ],
     targets: [
         .target(
             name: "MyTarget",
             dependencies: [
-                .product(name: "AudioIntelligence", package: "AudioIntelligence")
+                .product(name: "AudioIntelligence", package: "AudioIntelligence"),
+                .product(name: "AudioIntelligenceUI", package: "AudioIntelligence") // Add for UI views
             ]
         )
     ]
@@ -32,10 +33,10 @@ let package = Package(
 
 ## 2. Structured Concurrency (Swift 6)
 
-The SDK utilizes the **Actor Model** to ensure that heavy DSP calculations never block the Main Thread or interfere with low-latency audio capture.
+The SDK utilizes the **Actor Model** to ensure that heavy DSP calculations never block the UI thread or interfere with low-latency audio tasks.
 
 ### The Infinity Actor
-All analysis is performed within the `AudioIntelligence` actor. This provides compile-time protection against data races when accessing shared resources like the **IntelligenceCache**.
+All analysis is performed within the `AudioIntelligence` actor. This provides compile-time protection against data races.
 
 ### Async Analysis Lifecycle
 ```swift
@@ -43,47 +44,76 @@ import AudioIntelligence
 
 let sdk = AudioIntelligence()
 
-// 1. Kick off analysis (Non-blocking)
 Task {
     do {
-        let report = try await sdk.analyze(url: songURL) { progress, stage, detail in
-            // Handle granular progress UI (0.0 to 1.0)
+        let report = try await sdk.analyze(url: songURL) { progress, stage, _ in
+            print("[\(stage)] \(Int(progress * 100))%")
         }
         
-        // 2. Consume DNA Models
+        // Access 26-engine DNA results
         print("Loudness: \(report.rawAnalysis.mastering.integratedLUFS) LUFS")
-    } catch let error as AudioIntelligenceError {
-        // Handle categorized forensic errors
-        print("DSP Failure: \(error.localizedDescription)")
+        print("Structure: \(report.rawAnalysis.segments.count) sections detected")
+    } catch {
+        print("Analysis Error: \(error)")
     }
 }
 ```
 
 ---
 
-## 3. Advanced Memory & Cache Management
+## 3. 🎨 Native SwiftUI Visualizations
 
-### Hybrid 4GB Cache Strategy
-AudioIntelligence implements an intelligent persistent store to prevent redundant analysis.
-- **Content Hash**: Every analysis is keyed to a SHA256 hash of the audio content. Moving, renaming, or changing file metadata will **NOT** trigger a re-analysis.
-- **Resource Limits**: The cache maintains a strict **4GB Disk Limit** with an LRU (Least Recently Used) eviction policy, ensuring your application doesn't exhaust user storage.
+The **AudioIntelligenceUI** module provides high-performance, Metal-accelerated views for your dashboard.
 
-### Clearing Cache
-In forensic scenarios where a "Fresh Audit" is required:
+### Real-Time Spectrogram
+Render a professional, perceptually uniform spectrogram directly from your analysis results:
+
 ```swift
-await IntelligenceCache.shared.clear()
+import SwiftUI
+import AudioIntelligenceUI
+
+struct AnalysisDashboard: View {
+    @State private var analysis: MusicDNAAnalysis?
+
+    var body: some View {
+        VStack {
+            if let results = analysis {
+                // High-throughput Metal Spectrogram
+                SpectrogramView(results: results)
+                    .frame(height: 300)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                
+                // Standards-compliant Metering
+                LoudnessMeterView(lufs: results.mastering.integratedLUFS)
+            }
+        }
+    }
+}
 ```
 
 ---
 
-## 4. Hardware Optimization (Apple Silicon)
+## 4. Advanced Memory & Cache Management
 
-For maximum performance, ensure your host application is compiled natively for `arm64`.
+### Hybrid 4GB Persistent Cache
+AudioIntelligence implements an industrial-grade persistent store:
+- **Identifier**: Keyed to a SHA256 content hash. Moving or renaming files does **NOT** trigger re-analysis.
+- **Auto-Eviction**: Maintains a strict 4GB disk limit with an LRU policy.
 
-- **Efficiency Cores**: Low-priority background tagging.
-- **Performance Cores**: Active real-time analysis and Viterbi decoding.
-- **AMX (Accelerate)**: All matrix transforms are hardware-accelerated.
-- **ANE (CoreML)**: All stem-separation tasks consume zero CPU/GPU cycles.
+### Manual Invalidation
+```swift
+await sdk.invalidateCache() // Clears the hybrid store
+```
 
 ---
-*For a complete map of the project's internal structure, see [ProjectStructure.md](../../ProjectStructure.md).*
+
+## 5. Hardware Optimization (Apple Silicon)
+
+AudioIntelligence is a **Multi-Engine Hybrid** that optimizes for the modern M-series SoC:
+
+- **AMX (Accelerate)**: High-throughput matrix/vector math on Performance cores.
+- **ANE (Apple Neural Engine)**: Zero-CPU cost stem separation and instrument prediction.
+- **Metal GPU**: Parallelized FFT and UI rendering.
+
+---
+*For technical specs on specific analysis engines, see [Engines.md](Engines.md).*
