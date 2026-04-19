@@ -109,7 +109,8 @@ let package = Package(
         .executableTarget(
             name: "CLIExample",
             dependencies: ["AudioIntelligence"],
-            path: "Examples/CLIExample"
+            path: "Examples/CLIExample",
+            exclude: ["Package.swift", "Package.resolved"]
         ),
         
         .executableTarget(
