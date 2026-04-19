@@ -162,7 +162,7 @@ public actor DNAReportBuilder {
         progress(85, "Executing Traditional Musicology & Reduction Audit...", nil)
         
         // --- 26 + 4 (New Musicology) Engines Orchestration ---
-        let flatChroma = allChroma.compactMap { $0 }.flatMap { $0 }
+        _ = allChroma.compactMap { $0 }.flatMap { $0 }
         let nFramesChroma = allChroma.compactMap { $0 }.first?.count ?? 0
         var transposedChroma = [[Float]](repeating: [], count: 12)
         if nFramesChroma > 0 {

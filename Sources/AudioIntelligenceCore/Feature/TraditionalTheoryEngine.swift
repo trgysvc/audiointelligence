@@ -117,7 +117,7 @@ public final class TraditionalTheoryEngine: @unchecked Sendable {
         guard keyParts.count >= 2 else { return ("Tonic", "Dominant behavior in current context") }
         
         let keyRootName = keyParts[0]
-        let isMinorKey = keyParts[1].lowercased() == "minor"
+        _ = keyParts[1].lowercased() == "minor"
         let keyRootBin = ChromaResult.noteNames.firstIndex(of: keyRootName) ?? 0
         
         let intervalFromKey = (root - keyRootBin + 12) % 12
