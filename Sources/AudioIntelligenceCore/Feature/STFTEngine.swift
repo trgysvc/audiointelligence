@@ -166,57 +166,57 @@ public final class STFTEngine: @unchecked Sendable {
         }
 
         let nSamples = input.count
-        let nFrames = 1 + (nSamples - nFFT) / hopLength
+        let nFrames = 1 + Int(floor(Float(nSamples - nFFT) / Float(hopLength)))
         
-        // Output buffers: Flattened for performance
         var magnitudes = [Float](repeating: 0, count: nFreqs * nFrames)
         var phases     = [Float](repeating: 0, count: nFreqs * nFrames)
 
-        // DFT working buffers (Split-complex for Real-to-Complex efficiency)
-        var windowedInput = [Float](repeating: 0, count: nFFT)
-        var realOut = [Float](repeating: 0, count: nFFT / 2)
-        var imagOut = [Float](repeating: 0, count: nFFT / 2)
+        // Log-based FFT setup for zrip
+        let log2n = UInt(round(log2(Double(nFFT))))
+        let fftSetup = vDSP_create_fftsetup(log2n, FFTRadix(kFFTRadix2))!
+        defer { vDSP_destroy_fftsetup(fftSetup) }
+        
+        var splitComplex = DSPSplitComplex(
+            realp: UnsafeMutablePointer<Float>.allocate(capacity: nFFT / 2),
+            imagp: UnsafeMutablePointer<Float>.allocate(capacity: nFFT / 2)
+        )
+        defer {
+            splitComplex.realp.deallocate()
+            splitComplex.imagp.deallocate()
+        }
 
         for t in 0..<nFrames {
             let start = t * hopLength
             
-            // Apply window
+            // 1. Apply window and pack into split complex for zrip
             input.withUnsafeBufferPointer { iBuff in
                 guard let iBase = iBuff.baseAddress else { return }
-                vDSP_vmul(iBase.advanced(by: start), 1,
-                          window, 1,
-                          &windowedInput, 1,
-                          vDSP_Length(nFFT))
+                var windowed = [Float](repeating: 0, count: nFFT)
+                for i in 0..<nFFT {
+                    windowed[i] = iBase.advanced(by: start + i).pointee * window[i]
+                }
+                
+                windowed.withUnsafeBufferPointer { wBuff in
+                    wBuff.baseAddress!.withMemoryRebound(to: DSPComplex.self, capacity: nFFT / 2) { complexPtr in
+                        vDSP_ctoz(complexPtr, 1, &splitComplex, 1, vDSP_Length(nFFT / 2))
+                    }
+                }
             }
 
-            // Efficient Real-to-Complex FFT (vDSP_DFT_zrop uses specific layout)
-            // Output length is N/2 (NFFT bins packed into complex pairs)
-            vDSP_DFT_Execute(dftSetup, windowedInput, [Float](repeating: 0, count: nFFT / 2), &realOut, &imagOut)
-
-            // Extract magnitude and phase
-            // vDSP_DFT_zrop special layout:
-            // realOut[0] = DC, imagOut[0] = Nyquist
+            // 2. Forward Real FFT
+            vDSP_fft_zrip(fftSetup, &splitComplex, 1, log2n, FFTDirection(kFFTDirection_Forward))
             
-            // DC Bins
-            let dcMag = abs(realOut[0])
-            magnitudes[t * nFreqs + 0] = dcMag
-            phases[t * nFreqs + 0] = (realOut[0] >= 0) ? 0.0 : .pi
-            
-            // Nyquist Bins
-            let nyMag = abs(imagOut[0])
-            magnitudes[t * nFreqs + (nFreqs - 1)] = nyMag
-            phases[t * nFreqs + (nFreqs - 1)] = (imagOut[0] >= 0) ? 0.0 : .pi
+            // 3. Extract Mags and Phases
+            magnitudes[t * nFreqs + 0] = abs(splitComplex.realp[0])
+            phases[t * nFreqs + 0] = (splitComplex.realp[0] >= 0) ? 0.0 : .pi
+            magnitudes[t * nFreqs + (nFreqs - 1)] = abs(splitComplex.imagp[0])
+            phases[t * nFreqs + (nFreqs - 1)] = (splitComplex.imagp[0] >= 0) ? 0.0 : .pi
 
-            // In-between complex bins
             for f in 1..<nFreqs - 1 {
-                let re = realOut[f]
-                let im = imagOut[f]
-                
-                let mag = sqrtf(re * re + im * im)
-                let phi = atan2f(im, re)
-                
-                magnitudes[t * nFreqs + f] = mag
-                phases[t * nFreqs + f]     = phi
+                let re = splitComplex.realp[f]
+                let im = splitComplex.imagp[f]
+                magnitudes[t * nFreqs + f] = sqrtf(re * re + im * im)
+                phases[t * nFreqs + f]     = atan2f(im, re)
             }
         }
         
@@ -229,7 +229,8 @@ public final class STFTEngine: @unchecked Sendable {
 
     /// Industry Standard: istft() — core/spectrum.py
     /// Reconstructs time-domain signal from STFT matrix.
-    public func synthesize(_ stft: STFTMatrix) -> [Float] {
+    /// - Parameter length: If provided, crops padding to match original signal length (useful when center=true)
+    public func synthesize(_ stft: STFTMatrix, length: Int? = nil) -> [Float] {
         let nFrames = stft.nFrames
         let nFreqs = stft.nFreqs
         let nFFT = stft.nFFT
@@ -239,40 +240,52 @@ public final class STFTEngine: @unchecked Sendable {
         var signal = [Float](repeating: 0, count: expectedLength)
         var windowSum = [Float](repeating: 0, count: expectedLength)
         
-        var realIn  = [Float](repeating: 0, count: nFFT / 2)
-        var imagIn  = [Float](repeating: 0, count: nFFT / 2)
+        // Log-based FFT setup for zrip
+        let log2n = UInt(round(log2(Double(nFFT))))
+        let fftSetup = vDSP_create_fftsetup(log2n, FFTRadix(kFFTRadix2))!
+        defer { vDSP_destroy_fftsetup(fftSetup) }
+        
+        var splitComplex = DSPSplitComplex(
+            realp: UnsafeMutablePointer<Float>.allocate(capacity: nFFT / 2),
+            imagp: UnsafeMutablePointer<Float>.allocate(capacity: nFFT / 2)
+        )
+        defer {
+            splitComplex.realp.deallocate()
+            splitComplex.imagp.deallocate()
+        }
+        
         var timeDomainOut = [Float](repeating: 0, count: nFFT)
         
         for t in 0..<nFrames {
-            // 1. Map STFT Matrix to vDSP_DFT_zrop specialized complex layout
-            // DC -> realIn[0], Nyquist -> imagIn[0]
+            // 1. Pack into DSPSplitComplex specialized layout for vDSP_fft_zrip
+            // DC in realp[0], Nyquist in imagp[0]
+            splitComplex.realp[0] = stft.magnitude[t * nFreqs + 0] * cosf(stft.phase[t * nFreqs + 0])
+            splitComplex.imagp[0] = stft.magnitude[t * nFreqs + (nFreqs - 1)] * cosf(stft.phase[t * nFreqs + (nFreqs - 1)])
             
-            let dcMag = stft.magnitude[t * nFreqs + 0]
-            let dcPhi = stft.phase[t * nFreqs + 0]
-            realIn[0] = dcMag * cosf(dcPhi)
-            
-            let nyMag = stft.magnitude[t * nFreqs + (nFreqs - 1)]
-            let nyPhi = stft.phase[t * nFreqs + (nFreqs - 1)]
-            imagIn[0] = nyMag * cosf(nyPhi)
-            
-            // Complex Bins
             for f in 1..<nFreqs - 1 {
                 let mag = stft.magnitude[t * nFreqs + f]
                 let phi = stft.phase[t * nFreqs + f]
-                
-                realIn[f] = mag * cosf(phi)
-                imagIn[f] = mag * sinf(phi)
+                splitComplex.realp[f] = mag * cosf(phi)
+                splitComplex.imagp[f] = mag * sinf(phi)
             }
             
-            // 2. Inverse Efficient Real FFT
-            var zeroBuffer = [Float](repeating: 0, count: nFFT)
-            vDSP_DFT_Execute(idftSetup, realIn, imagIn, &timeDomainOut, &zeroBuffer)
+            // 2. Inverse FFT
+            vDSP_fft_zrip(fftSetup, &splitComplex, 1, log2n, FFTDirection(kFFTDirection_Inverse))
             
-            // vDSP Scale for Inverse FFT: 1/N
-            var scale = 1.0 / Float(nFFT)
+            // 3. Unpack and Scale
+            // vDSP_fft_zrip Inverse scale: 1/(2N) or just handle it here
+            var scale = 0.5 / Float(nFFT) 
+            
+            timeDomainOut.withUnsafeMutableBufferPointer { buffer in
+                guard let baseAddress = buffer.baseAddress else { return }
+                baseAddress.withMemoryRebound(to: DSPComplex.self, capacity: nFFT / 2) { complexPtr in
+                    vDSP_ztoc(&splitComplex, 1, complexPtr, 1, vDSP_Length(nFFT / 2))
+                }
+            }
+            
             vDSP_vsmul(timeDomainOut, 1, &scale, &timeDomainOut, 1, vDSP_Length(nFFT))
             
-            // 3. Apply window and Overlap-Add
+            // 4. Overlap-Add
             let start = t * hopLength
             for i in 0..<nFFT {
                 let sIdx = start + i
@@ -284,10 +297,20 @@ public final class STFTEngine: @unchecked Sendable {
             }
         }
         
-        // 4. Normalize by window square sum (WOLA)
+        // Normalize by window square sum (WOLA)
         for i in 0..<expectedLength {
-            if windowSum[i] > 1e-10 {
+            if windowSum[i] > 1e-8 {
                 signal[i] /= windowSum[i]
+            }
+        }
+        
+        // 5. Crop Padding
+        if let length = length {
+            let startIdx = nFFT / 2
+            let endIdx = startIdx + length
+            if startIdx < expectedLength {
+                let safeEnd = min(endIdx, expectedLength)
+                return Array(signal[startIdx..<safeEnd])
             }
         }
         

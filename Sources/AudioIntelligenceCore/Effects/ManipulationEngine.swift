@@ -24,7 +24,11 @@ public final class ManipulationEngine: Sendable {
     public func timeStretch(_ samples: [Float], rate: Float) async -> [Float] {
         let stft = await stftEngine.analyze(samples)
         let stretchedSTFT = vocoder.stretch(stft: stft, rate: rate)
-        return stftEngine.synthesize(stretchedSTFT)
+        
+        // Calculate expected output length (Input length scaled by 1/rate)
+        let expectedOutLength = Int(round(Float(samples.count) / rate))
+        
+        return stftEngine.synthesize(stretchedSTFT, length: expectedOutLength)
     }
     
     /// Industry Standard: effects.pitch_shift()
@@ -37,26 +41,26 @@ public final class ManipulationEngine: Sendable {
         // 1. Time-stretch by 1/rate to prepare for resampling
         let stretched = await timeStretch(samples, rate: 1.0 / rate)
         
-        // 2. Resample back to original length (or rather, change playback rate)
-        // For simplicity and quality, high-quality resampling is needed.
-        // We can use Accelerate's SRC or a simple linear interpolation for now.
+        // 2. Resample back to original length
         return resample(stretched, rate: rate)
     }
     
-    /// Optimized resampling using vDSP_vgenp (Vectorized Linear Interpolation)
     private func resample(_ samples: [Float], rate: Float) -> [Float] {
         let nIn = samples.count
         let nOut = Int(Float(nIn) / rate)
         var result = [Float](repeating: 0, count: nOut)
         
-        // Control vector for vDSP_vgenp: [0, rate, 2*rate, ...]
-        var control = [Float](repeating: 0, count: nOut)
-        var start: Float = 0
-        var step = rate
-        vDSP_vgen(&start, &step, &control, 1, vDSP_Length(nOut))
-        
-        // Vectorized Interpolation
-        vDSP_vgenp(samples, 1, control, 1, &result, 1, vDSP_Length(nOut), vDSP_Length(nIn))
+        for i in 0..<nOut {
+            let pos = Float(i) * rate
+            let index = Int(floor(pos))
+            let alpha = pos - Float(index)
+            
+            if index < nIn - 1 {
+                result[i] = samples[index] * (1.0 - alpha) + samples[index + 1] * alpha
+            } else if index < nIn {
+                result[i] = samples[index]
+            }
+        }
         
         return result
     }
