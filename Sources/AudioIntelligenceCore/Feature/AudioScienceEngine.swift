@@ -29,13 +29,16 @@ public final class AudioScienceEngine: Sendable {
         var totalMS: Float = 0
         vDSP_measqv(samples, 1, &totalMS, vDSP_Length(samples.count))
         let noiseMS = powf(10.0, (noiseRel / 10.0))
-        let snr = 10 * log10f(max(1e-12, totalMS / max(1e-15, noiseMS)))
+        
+        // v6.4 Physics Guard: Clamp and prevent infinity
+        let rawSNR = 10 * log10f(max(1e-12, totalMS / max(1e-14, noiseMS)))
+        let snr = min(144.0, max(0.0, rawSNR))
         
         return ScienceResult(
-            dynamicRangeAES17: dr,
+            dynamicRangeAES17: min(144.0, dr),
             thdPlusN: thdn,
             smpteIMD: imd,
-            snr: max(0, snr),
+            snr: snr,
             noiseFloorWeight468: noiseRel
         )
     }

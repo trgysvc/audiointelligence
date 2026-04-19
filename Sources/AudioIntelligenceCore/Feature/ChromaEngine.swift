@@ -243,16 +243,33 @@ public final class ChromaEngine: @unchecked Sendable {
         var bestKey = 0
         var bestMinor = false
 
+        // Root-Priority Logic (v6.4):
+        // Before correlation, identify the absolute dominant chroma bin.
+        // We favor keys that have this bin as their root or a major chord component.
+        var maxChromaVal: Float = 0
+        var dominantBin = 0
+        for c in 0..<12 {
+            if mean[c] > maxChromaVal {
+                maxChromaVal = mean[c]
+                dominantBin = c
+            }
+        }
+
         for root in 0..<12 {
             // Major
-            let majorCorr = correlation(mean, rotated(majorProfile, by: root))
+            var majorCorr = correlation(mean, rotated(majorProfile, by: root))
+            // Boost root-alignment: If this key's root is the dominant bin, give a 15% bonus
+            if root == dominantBin { majorCorr *= 1.15 }
+            
             if majorCorr > bestCorr {
                 bestCorr = majorCorr
                 bestKey = root
                 bestMinor = false
             }
             // Minor
-            let minorCorr = correlation(mean, rotated(minorProfile, by: root))
+            var minorCorr = correlation(mean, rotated(minorProfile, by: root))
+            if root == dominantBin { minorCorr *= 1.15 }
+            
             if minorCorr > bestCorr {
                 bestCorr = minorCorr
                 bestKey = root

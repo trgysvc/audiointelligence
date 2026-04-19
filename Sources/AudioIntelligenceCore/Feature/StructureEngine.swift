@@ -148,18 +148,26 @@ public final class StructureEngine: @unchecked Sendable {
         let mid = (start + end) / 2
         let ratio = Double(mid) / Double(nFrames)
         
-        if ratio < 0.1 { return "Intro" }
-        if ratio > 0.9 { return "Outro" }
+        // 1. Boundary Labels
+        if ratio < 0.08 { return "Intro" }
+        if ratio > 0.92 { return "Outro" }
         
+        // 2. Content Analysis: Recurrence (Harmony) vs Change (Timbre)
         let strength = DSPHelpers.streamingRecurrenceStrength(flatFeatures: flatChroma, featureDim: chromaDim, start: start, end: end)
         let normalizedRecurrence = strength / Float((end - start) * (nFrames - (end - start)))
         
-        if normalizedRecurrence > 0.6 {
+        // v6.4 Logic: Differentiate between a "hook" (Chorus) and a "solo" (Lead/Thematic)
+        // Highly repetitive sections (High SSM recurrence) → Chorus
+        if normalizedRecurrence > 0.65 {
             return "Chorus"
-        } else if ratio < 0.5 {
-            return "Verse"
-        } else {
-            return "Bridge/Verse"
+        } 
+        
+        // Low recurrence middle sections → Solo/Thematic vs Verse
+        if ratio > 0.3 && ratio < 0.8 {
+            // In a 'Descarga', these are the most likely solo sections
+            return normalizedRecurrence < 0.4 ? "Solo / Lead Section" : "Thematic Development"
         }
+        
+        return ratio < 0.5 ? "Verse" : "Bridge"
     }
 }

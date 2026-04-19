@@ -37,6 +37,10 @@ public struct MusicDNAAnalysis: Codable, Sendable, Identifiable {
     public let piptrack: PiptrackMetrics
     public let viterbi: ViterbiMetrics // v6.3 Addition: Refined Pitch Sequence
     
+    // v6.5 Traditional Musicology & Reduction
+    public let reduction: ReductionMetrics
+    public let musicology: MusicologyMetrics
+    
     // Metadata / Paths
     public var reportPath: String?
     
@@ -62,7 +66,9 @@ public struct MusicDNAAnalysis: Codable, Sendable, Identifiable {
                  tempogram: TempogramMetrics,
                  nmf: NMFMetrics,
                  piptrack: PiptrackMetrics,
-                 viterbi: ViterbiMetrics) {
+                 viterbi: ViterbiMetrics,
+                 reduction: ReductionMetrics,
+                 musicology: MusicologyMetrics) {
         self.id = id
         self.timestamp = timestamp
         self.fileName = fileName
@@ -86,6 +92,8 @@ public struct MusicDNAAnalysis: Codable, Sendable, Identifiable {
         self.nmf = nmf
         self.piptrack = piptrack
         self.viterbi = viterbi
+        self.reduction = reduction
+        self.musicology = musicology
     }
 }
 
@@ -236,4 +244,35 @@ public struct PiptrackMetrics: Codable, Sendable {
 public struct ViterbiMetrics: Codable, Sendable {
     public let path: [Int]
     public let confidence: Float
+}
+
+// MARK: - v6.5 Traditional Musicology & Tonal Reduction
+
+public struct ReductionMetrics: Codable, Sendable {
+    public let fundamentalNote: String // The Ur-Note
+    public let structuralPillars: [String] // Sequence of reduced tonics
+    public let stabilityScore: Float
+    public let theoryBasis: String // Description of reduction logic
+}
+
+public struct MusicologyMetrics: Codable, Sendable {
+    public let ursatz: String // Structural fundamental pattern (Urlinie/Ursatz)
+    public let cadences: [CadenceEvent]
+    public let verticalAnalysis: [VerticalChord]
+    public let counterpointSpecies: String // "1:1", "1:2", "Aksak", etc.
+    public let counterpointErrors: [String] // Parallel 5ths, etc.
+    public let fundamentalBasis: String // General summary (Temel Harç)
+}
+
+public struct VerticalChord: Codable, Sendable {
+    public let frame: Int
+    public let symbol: String // e.g., "C/E"
+    public let function: String // e.g., "Secondary Dominant"
+    public let reasoning: String // Theoretical explanation
+}
+
+public struct CadenceEvent: Codable, Sendable {
+    public let frame: Int
+    public let type: String // "PAC", "Half", "Plagal", etc.
+    public let description: String
 }

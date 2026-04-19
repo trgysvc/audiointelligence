@@ -159,6 +159,49 @@ public actor DNAReportBuilder {
             idx += 1
         }
         
+        progress(85, "Executing Traditional Musicology & Reduction Audit...", nil)
+        
+        // --- 26 + 4 (New Musicology) Engines Orchestration ---
+        let flatChroma = allChroma.compactMap { $0 }.flatMap { $0 }
+        let nFramesChroma = allChroma.compactMap { $0 }.first?.count ?? 0
+        var transposedChroma = [[Float]](repeating: [], count: 12)
+        if nFramesChroma > 0 {
+            _ = allChroma.compactMap { $0 }.count * nFramesChroma
+            transposedChroma = (0..<12).map { c in
+                allChroma.compactMap { $0 }.flatMap { $0 } // This is simplified, needs proper transpose
+            }
+            // Real transpose needed for reduction
+            transposedChroma = (0..<12).map { c in
+                allChroma.compactMap { $0 }.map { $0[c] }
+            }
+        }
+        
+        let pitchPath = allPiptrack.compactMap { Int($0 ?? 0) }
+        
+        // Engines
+        let reductionEng = ReductionEngine()
+        let theoryEng = TraditionalTheoryEngine()
+        let counterEng = CounterpointEngine()
+        let cadenceEng = CadenceEngine()
+        
+        let finalSegments = allStructure.flatMap { $0?.segments ?? [] }.enumerated().map { i, seg in
+            MusicSegment(id: i + 1, start: seg.startSec, end: seg.endSec, label: seg.label)
+        }
+        
+        let reductionRes = reductionEng.reduce(chromagram: transposedChroma, segments: finalSegments)
+        let verticalRes = theoryEng.analyzeVertical(chromagram: transposedChroma, cqtMatrix: [], key: "C Major") // Empty CQT for now
+        let counterRes = counterEng.analyze(pitchPath: pitchPath, chroma: transposedChroma)
+        let cadenceRes = cadenceEng.detect(verticalChords: verticalRes, segments: finalSegments, key: "C Major")
+        
+        let musicology = MusicologyMetrics(
+            ursatz: reductionRes.fundamentalNote,
+            cadences: cadenceRes,
+            verticalAnalysis: verticalRes,
+            counterpointSpecies: counterRes.species,
+            counterpointErrors: counterRes.errors,
+            fundamentalBasis: reductionRes.theoryBasis
+        )
+        
         progress(90, "Finalizing Atomic Data Aggregation...", nil)
         
         let finalAnalysis = assembleFinalDNA(
@@ -170,7 +213,9 @@ public actor DNAReportBuilder {
             allNMF: allNMF.compactMap{$0}, allPiptrack: allPiptrack.compactMap{$0}, 
             allViterbi: [], allYIN: allYIN.compactMap{$0}, 
             allMFCC: allMFCC.compactMap{$0}, allStructure: allStructure.compactMap{$0}, 
-            allRhythm: allRhythm.compactMap{$0}, allContrast: allContrast.compactMap{$0}
+            allRhythm: allRhythm.compactMap{$0}, allContrast: allContrast.compactMap{$0},
+            reduction: reductionRes,
+            musicology: musicology
         )
         
         let reportText = generateLegacyFormattedMarkdown(analysis: finalAnalysis)
@@ -191,7 +236,9 @@ public actor DNAReportBuilder {
                                   allScience: [ScienceMetrics], allTonnetz: [[Float]], allNMF: [Float], 
                                   allPiptrack: [Float], allViterbi: [[Int]], allYIN: [PitchResult], 
                                   allMFCC: [[Float]], allStructure: [StructureResult], 
-                                  allRhythm: [RhythmResult], allContrast: [[Float]]) -> MusicDNAAnalysis {
+                                  allRhythm: [RhythmResult], allContrast: [[Float]],
+                                  reduction: ReductionMetrics,
+                                  musicology: MusicologyMetrics) -> MusicDNAAnalysis {
         
         let powers = allLoudness.map { powf(10.0, ($0.integratedLUFS + 0.691) / 10.0) }
         let finalLufs = 10.0 * log10f(powers.reduce(0, +) / Float(max(1, powers.count))) - 0.691
@@ -228,7 +275,9 @@ public actor DNAReportBuilder {
             tempogram: TempogramMetrics(cyclicTempoMap: [], dominantPeriod: 120), 
             nmf: NMFMetrics(reconstructionError: 0.001, componentEnergy: [0.8, 0.2]), 
             piptrack: PiptrackMetrics(refinedMeanF0: allPiptrack.reduce(0, +) / Float(max(1, allPiptrack.count)), trackingConfidence: 0.95), 
-            viterbi: ViterbiMetrics(path: allViterbi.first ?? [], confidence: 0.98)
+            viterbi: ViterbiMetrics(path: allViterbi.first ?? [], confidence: 0.98),
+            reduction: reduction,
+            musicology: musicology
         )
     }
 

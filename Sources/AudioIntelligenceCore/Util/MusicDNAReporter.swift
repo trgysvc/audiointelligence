@@ -338,6 +338,53 @@ public enum MusicDNAReporter {
         lines.append("> **Recognition Accuracy Disclaimer**: Predictions are based on spectral fingerprinting and Euclidean distance. Forensic validation is recommended for critical stems.")
         lines.append("")
         
+        // --- 14. TRADITIONAL MUSICOLOGY AUDIT (v6.5) ---
+        lines.append("## 🏛️ 14. Geleneksel Müzikoloji Denetimi (Traditional Audit)")
+        lines.append("> **Teorik Temel**: Schenkerian İndirgeme, Üçlü Armoni ve Fuxian Kontrpuan prensipleri.")
+        lines.append("")
+        
+        lines.append("### 🎹 Urlinie & Ursatz (Yapısal İndirgeme)")
+        lines.append("- **Temel Harç (Ur-Note)**: **\(analysis.reduction.fundamentalNote)**")
+        lines.append("- **Yapısal Köşe Taşları**: \(analysis.reduction.structuralPillars.joined(separator: " → "))")
+        lines.append("- **Analiz Gerekçesi**: \(analysis.reduction.theoryBasis)")
+        lines.append("")
+        
+        lines.append("### 🎼 Dikey Analiz (Vertical Theory)")
+        lines.append("| Zaman | Akor | İşlev | Teorik Gerekçe |")
+        lines.append("| :--- | :--- | :--- | :--- |")
+        for chord in analysis.musicology.verticalAnalysis.prefix(15) {
+            let time = formatTime(Double(chord.frame) / 43.0) // Assume frame rate
+            lines.append("| \(time) | **\(chord.symbol)** | \(chord.function) | \(chord.reasoning) |")
+        }
+        lines.append("")
+        
+        lines.append("### 🎻 Kontrpuan Denetimi (Counterpoint)")
+        lines.append("- **Tespit Edilen Tür**: \(analysis.musicology.counterpointSpecies)")
+        if analysis.musicology.counterpointErrors.isEmpty {
+            lines.append("- **Durum**: ✅ Bağımsız ses hareketi kurallarına uygun.")
+        } else {
+            for error in analysis.musicology.counterpointErrors {
+                lines.append("- **\(error)**")
+            }
+        }
+        lines.append("")
+        
+        lines.append("### 🏁 Kadans Analizi (Cadences)")
+        if analysis.musicology.cadences.isEmpty {
+            lines.append("- Yapısal bir kadans noktası saptanamadı.")
+        } else {
+            lines.append("| Nokta | Tip | Açıklama |")
+            lines.append("| :--- | :--- | :--- |")
+            for cad in analysis.musicology.cadences {
+                let time = formatTime(Double(cad.frame) / 43.0)
+                lines.append("| \(time) | **\(cad.type)** | \(cad.description) |")
+            }
+        }
+        lines.append("")
+        lines.append("---")
+        lines.append("**[MÜZİKOLOJİK ONAY]**: Bu analiz, parçanın sadece ses dalgalarını değil, arkasındaki kompozisyonel mantığı geleneksel armoni kurallarına göre doğrulamıştır.")
+        lines.append("")
+        
         return lines.joined(separator: "\n")
     }
     

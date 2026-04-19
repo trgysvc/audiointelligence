@@ -49,8 +49,13 @@ public final class LoudnessEngine: Sendable {
             if let metal = metalEngine {
                 squared = metal.executeParallelSquaring(samples: weightedChannels[ch])
             } else {
-                squared = [Float](repeating: 0, count: nFrames)
-                vDSP_vsq(weightedChannels[ch], 1, UnsafeMutablePointer(mutating: squared), 1, vDSP_Length(nFrames))
+                var sqBuffer = [Float](repeating: 0, count: nFrames)
+                sqBuffer.withUnsafeMutableBufferPointer { buffer in
+                    if let base = buffer.baseAddress {
+                        vDSP_vsq(weightedChannels[ch], 1, base, 1, vDSP_Length(nFrames))
+                    }
+                }
+                squared = sqBuffer
             }
             
             // Channel weights: L/R/C = 1.0, Surrounds = 1.41 (+1.5 dB)
