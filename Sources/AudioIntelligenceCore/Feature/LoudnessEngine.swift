@@ -2,8 +2,14 @@ import Foundation
 import Accelerate
 import AudioIntelligenceMetal
 
-/// EBU R128 / ITU-R BS.1770-4 Calibrated Loudness Metering Engine.
+/// EBU R128 / ITU-R BS.1770-4 / EBU Tech 3342 Calibrated Loudness Metering Engine.
 /// Provides Integrated LUFS, Momentary LUFS, Short-term LUFS, and Loudness Range (LRA).
+///
+/// Features:
+/// - Double Precision prefix sum for energy accumulation (BS.1770-4 compliant).
+/// - Industry-standard Dual-Gating (-70 absolute, -10/-20 relative).
+/// - Correct Channel Summing (Energy addition vs averaging).
+/// - Standard Percentile Logic for LRA (10th/95th).
 public final class LoudnessEngine: Sendable {
     
     private let sampleRate: Double
@@ -23,7 +29,7 @@ public final class LoudnessEngine: Sendable {
         public let loudnessRange: Float
     }
     
-    /// Multi-channel Loudness Analysis (EBU R128)
+    /// Multi-channel Loudness Analysis (EBU R128 / BS.1770-4)
     public func analyze(channels: [[Float]]) -> LoudnessResult {
         guard !channels.isEmpty, !channels[0].isEmpty else {
             return LoudnessResult(integratedLUFS: -100, momentaryLUFsMax: -100, shortTermLUFsMax: -100, truePeakDb: -100, loudnessRange: 0)
@@ -35,62 +41,71 @@ public final class LoudnessEngine: Sendable {
         // 1. K-Weighting Filter each channel (BS.1770)
         let weightedChannels = channels.map { applyBS1770Filter(samples: $0) }
         
-        // 2. High-Throughput Power Calculation (Integral Signal Architecture)
-        // Step A: Square all channels & sum them (Global Pass)
+        // 2. High-Precision Power Calculation (Sum of Channel Energies)
+        // BS.1770-4: Loudness is based on the sum of weighted channel energies.
         var totalSquared = [Float](repeating: 0, count: nFrames)
         for ch in 0..<nChannels {
             let squared: [Float]
             if let metal = metalEngine {
                 squared = metal.executeParallelSquaring(samples: weightedChannels[ch])
             } else {
-                squared = weightedChannels[ch].map { $0 * $0 }
+                squared = [Float](repeating: 0, count: nFrames)
+                vDSP_vsq(weightedChannels[ch], 1, UnsafeMutablePointer(mutating: squared), 1, vDSP_Length(nFrames))
             }
+            
+            // Channel weights: L/R/C = 1.0, Surrounds = 1.41 (+1.5 dB)
+            // For now, we assume 1.0 for L/R in typical layouts. 
+            // In a pro implementation, we check channel map.
             vDSP_vadd(totalSquared, 1, squared, 1, &totalSquared, 1, vDSP_Length(nFrames))
         }
         
-        // Step B: Compute Prefix Sum for O(1) Windowed Energy (CPU)
-        var prefixSum = [Float](repeating: 0, count: nFrames + 1)
-        var runningSum: Float = 0
+        // Step B: Compute Double Precision Prefix Sum
+        // Critical for preventing precision loss in long tracks and large dynamics.
+        var prefixSum = [Double](repeating: 0, count: nFrames + 1)
+        var runningSum: Double = 0
         for i in 0..<nFrames {
-            runningSum += totalSquared[i]
+            runningSum += Double(totalSquared[i])
             prefixSum[i + 1] = runningSum
         }
         
         // 3. Sliding Window Analysis
-        let stWindowSteps = Int(3.0 * sampleRate) // 3 seconds
-        let momWindowSteps = Int(0.4 * sampleRate) // 400ms
-        let stepSize = Int(0.1 * sampleRate) // 100ms overlap
+        // Momentary: 400ms. Short-term: 3s.
+        let momWindowSteps = Int(round(0.4 * sampleRate))
+        let stWindowSteps = Int(round(3.0 * sampleRate))
+        let hopSize = Int(round(0.1 * sampleRate)) // 100ms step (10Hz sampling)
         
         var momentaryLUFS = [Float]()
         var shortTermLUFS = [Float]()
         
-        for i in stride(from: 0, to: nFrames - stWindowSteps, by: stepSize) {
-            let sumST = prefixSum[i + stWindowSteps] - prefixSum[i]
-            let sumMom = prefixSum[i + stWindowSteps] - prefixSum[i + stWindowSteps - momWindowSteps]
-            
-            // Channel weights (Assume sum of weights=1.0 for simplicity in this pass, 
-            // but BS.1770 uses 1.0 for L/R/C and 1.41 for surrounds)
-            let msST = sumST / Float(stWindowSteps)
-            let msMom = sumMom / Float(momWindowSteps)
-            
+        // Sample Momentary across the whole file
+        for i in stride(from: 0, to: nFrames - momWindowSteps + 1, by: hopSize) {
+            let sumMom = prefixSum[i + momWindowSteps] - prefixSum[i]
+            let msMom = Float(sumMom / Double(momWindowSteps))
             momentaryLUFS.append(-0.691 + 10 * log10f(max(1e-12, msMom)))
+        }
+        
+        // Sample Short-term across the whole file
+        for i in stride(from: 0, to: nFrames - stWindowSteps + 1, by: hopSize) {
+            let sumST = prefixSum[i + stWindowSteps] - prefixSum[i]
+            let msST = Float(sumST / Double(stWindowSteps))
             shortTermLUFS.append(-0.691 + 10 * log10f(max(1e-12, msST)))
         }
         
-        // 4. Integrated Loudness (Gated blocks)
-        var blocksPower = [Float]()
-        let blockSize = momWindowSteps
-        for i in stride(from: 0, to: nFrames - blockSize, by: blockSize / 4) {
-            let sum = prefixSum[i + blockSize] - prefixSum[i]
-            blocksPower.append(sum / Float(blockSize))
+        // 4. Integrated Loudness (Dual-Gated)
+        // BS.1770-4: Mean of 400ms blocks above thresholds.
+        var integratedLUFS: Float = -70.0
+        
+        // Use the momentary (400ms) blocks for integration gating.
+        let blocksPower = stride(from: 0, to: nFrames - momWindowSteps + 1, by: hopSize).map { i in
+            Float((prefixSum[i + momWindowSteps] - prefixSum[i]) / Double(momWindowSteps))
         }
         
-        var integratedLUFS: Float = -70.0
         let absGateBlocks = blocksPower.filter { -0.691 + 10 * log10f(max(1e-12, $0)) > -70.0 }
         if !absGateBlocks.isEmpty {
             let meanAbsGated = absGateBlocks.reduce(0, +) / Float(absGateBlocks.count)
             let relThresholdLUFS = (-0.691 + 10 * log10f(max(1e-12, meanAbsGated))) - 10.0
             let relThresholdPower = powf(10.0, (relThresholdLUFS + 0.691) / 10.0)
+            
             let relGatedBlocks = absGateBlocks.filter { $0 >= relThresholdPower }
             if !relGatedBlocks.isEmpty {
                 let finalMeanPower = relGatedBlocks.reduce(0, +) / Float(relGatedBlocks.count)
@@ -120,30 +135,38 @@ public final class LoudnessEngine: Sendable {
         return analyze(channels: [samples])
     }
     
-    private func calculateLRA(prefixSum: [Float], nFrames: Int) -> Float {
-        let stWindowSteps = Int(3.0 * sampleRate)
-        let stepSize = Int(0.1 * sampleRate)
+    private func calculateLRA(prefixSum: [Double], nFrames: Int) -> Float {
+        let stWindowSteps = Int(round(3.0 * sampleRate))
+        let stepSize = Int(round(0.1 * sampleRate)) // Use 100ms step (10Hz) for highest accuracy
         
-        var stPowers = [Float]()
-        for i in stride(from: 0, to: nFrames - stWindowSteps, by: stepSize) {
+        var stPowers = [Double]()
+        for i in stride(from: 0, to: nFrames - stWindowSteps + 1, by: stepSize) {
             let sum = prefixSum[i + stWindowSteps] - prefixSum[i]
-            stPowers.append(sum / Float(stWindowSteps))
+            stPowers.append(sum / Double(stWindowSteps))
         }
         
-        let stLUFS = stPowers.map { -0.691 + 10 * log10f(max(1e-12, $0)) }
+        guard !stPowers.isEmpty else { return 0.0 }
+        
+        let stLUFS = stPowers.map { -0.691 + 10.0 * log10(max(1e-12, $0)) }
         let absGated = stLUFS.filter { $0 > -70.0 }
         guard !absGated.isEmpty else { return 0.0 }
         
         // Relative Gate (-20 LU)
-        let absGatedPower = absGated.map { powf(10.0, ($0 + 0.691) / 10.0) }
-        let meanPower = absGatedPower.reduce(0, +) / Float(absGatedPower.count)
-        let relThresholdLUFS = (-0.691 + 10 * log10f(max(1e-12, meanPower))) - 20.0
+        // EBU-3342: Threshold is relative to the mean power of abs-gated blocks.
+        let absGatedPower = absGated.map { pow(10.0, ($0 + 0.691) / 10.0) }
+        let meanPower = absGatedPower.reduce(0, +) / Double(absGatedPower.count)
+        let relThresholdLUFS = (-0.691 + 10.0 * log10(max(1e-12, meanPower))) - 20.0
         
         let finalLUFS = absGated.filter { $0 >= relThresholdLUFS }.sorted()
         guard !finalLUFS.isEmpty else { return 0.0 }
         
-        let low = finalLUFS[Int(Double(finalLUFS.count) * 0.10)]
-        let high = finalLUFS[Int(Double(finalLUFS.count) * 0.95)]
+        // Percentile Calculation (10th and 95th)
+        let n = Double(finalLUFS.count)
+        let lowIdx = Int(round((n - 1) * 0.10))
+        let highIdx = Int(round((n - 1) * 0.95))
+        
+        let low = Float(finalLUFS[min(max(0, lowIdx), finalLUFS.count - 1)])
+        let high = Float(finalLUFS[min(max(0, highIdx), finalLUFS.count - 1)])
         
         return high - low
     }
@@ -153,16 +176,18 @@ public final class LoudnessEngine: Sendable {
         let rlbCoeffs = LoudnessFilterBuilder.rlbFilterCoefficients(sampleRate: sampleRate)
         
         var output = [Float](repeating: 0, count: samples.count)
-        var tempInput = samples
-        applyBiquad(input: &tempInput, output: &output, coeffs: preCoeffs.asArray)
-        var tempInput2 = output
-        applyBiquad(input: &tempInput2, output: &output, coeffs: rlbCoeffs.asArray)
+        var temp = [Float](repeating: 0, count: samples.count)
+        
+        applyBiquad(input: samples, output: &temp, coeffs: preCoeffs.asArray)
+        applyBiquad(input: temp, output: &output, coeffs: rlbCoeffs.asArray)
+        
         return output
     }
     
-    private func applyBiquad(input: inout [Float], output: inout [Float], coeffs: [Double]) {
+    private func applyBiquad(input: [Float], output: inout [Float], coeffs: [Double]) {
         guard let setup = vDSP_biquad_CreateSetup(coeffs, 1) else { return }
         defer { vDSP_biquad_DestroySetup(setup) }
+        
         var delay = [Float](repeating: 0, count: 2)
         vDSP_biquad(setup, &delay, input, 1, &output, 1, vDSP_Length(input.count))
     }
