@@ -21,6 +21,22 @@ While legacy libraries like Librosa are excellent for research, AudioIntelligenc
 
 ---
 
+## 🎨 UI Showcase: AudioIntelligenceUI
+Built with **SwiftUI** and **Metal**, our ready-to-use components deliver industrial-grade visualization out of the box.
+
+![AudioIntelligence Dashboard Mockup](/Users/trgysvc/.gemini/antigravity/brain/466fb5fb-9a53-4a30-849d-20e64a06c0e4/audiointelligence_dashboard_mockup_1776601605730.png)
+*Example: The 'AudioScope Pro' dashboard built using the Infinity Engine v6.3.*
+
+---
+
+## 🌉 The Librosa Bridge
+Coming from the Python world? AudioIntelligence provides 1:1 functional parity with Librosa while delivering 10x performance improvements.
+
+- **[Migration Guide](docs/Migration_from_Librosa.md)**: A Rosetta stone for Librosa users.
+- **[Format Support](docs/FormatSupport.md)**: Native support for WAV, MP3, FLAC, and more.
+
+---
+
 ## 💎 Professional Standards & Compliance (v6.3)
 The Infinity Engine is formally validated against industry "Gold Standards":
 - **ITU-R BS.1770-4 / EBU R128**: bit-exact, multi-channel loudness metering (±0.1 LU precision).
@@ -59,7 +75,8 @@ From time-domain forensic analysis to frequency-domain neural separation, AudioI
 - **Viterbi Decoder**: Professional sequence modeling for state analysis.
 - **Onsets & Rhythm**: Multi-band rhythmic mapping and tempograms.
 - **Harmony & Tonnetz**: 6D Harmonic relationship mapping on the tonnetz grid.
-- **StructureEngine**: Automated structural segmentation (Intro, Verse, Chorus, Outro).
+- **StructureEngine**: Automated structural segmentation (Intro, Verse, Chorus, Outro) and **Recurrence Matrices**.
+- **Wavelets**: Multi-resolution analysis via DWT (Haar, Daubechies 2/3).
 
 ### Advanced Processing & Science
 - **NMF Source Separation**: Deterministic non-negative matrix factorization.

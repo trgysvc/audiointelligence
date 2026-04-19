@@ -36,6 +36,16 @@ public final class StructureEngine: @unchecked Sendable {
         self.sampleRate = sampleRate
     }
 
+    // MARK: - Academic Parity: librosa.segment.recurrence_matrix()
+
+    /// Computes a Cosine Self-Similarity Matrix (SSM) for structural analysis.
+    /// - Parameters:
+    ///   - features: Feature matrix where each inner array is a frequency/coefficient bin.
+    /// - Returns: A 2D array representing the recurrence of patterns across time.
+    public func recurrenceMatrix(features: [[Float]]) -> [[Float]] {
+        return DSPHelpers.selfSimilarityMatrix(features)
+    }
+
     // MARK: Analyze
 
     /// Performs structural analysis using multiple feature types.

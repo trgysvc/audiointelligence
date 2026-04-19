@@ -43,21 +43,20 @@ public final class ManipulationEngine: Sendable {
         return resample(stretched, rate: rate)
     }
     
+    /// Optimized resampling using vDSP_vgenp (Vectorized Linear Interpolation)
     private func resample(_ samples: [Float], rate: Float) -> [Float] {
         let nIn = samples.count
         let nOut = Int(Float(nIn) / rate)
         var result = [Float](repeating: 0, count: nOut)
         
-        for i in 0..<nOut {
-            let pos = Float(i) * rate
-            let left = Int(floor(pos))
-            let right = min(left + 1, nIn - 1)
-            let alpha = pos - Float(left)
-            
-            if left < nIn {
-                result[i] = samples[left] * (1.0 - alpha) + samples[right] * alpha
-            }
-        }
+        // Control vector for vDSP_vgenp: [0, rate, 2*rate, ...]
+        var control = [Float](repeating: 0, count: nOut)
+        var start: Float = 0
+        var step = rate
+        vDSP_vgen(&start, &step, &control, 1, vDSP_Length(nOut))
+        
+        // Vectorized Interpolation
+        vDSP_vgenp(samples, 1, control, 1, &result, 1, vDSP_Length(nOut), vDSP_Length(nIn))
         
         return result
     }
