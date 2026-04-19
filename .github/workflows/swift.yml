@@ -2,21 +2,40 @@ name: CI
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "develop" ]
   pull_request:
-    branches: [ "main" ]
+    branches: [ "main", "develop" ]
 
 jobs:
-  build:
+  build-and-test:
+    name: Build & Scientific Validation
     runs-on: macos-15
+    
     steps:
-      - uses: actions/checkout@v4.2.2
+      - name: Checkout Repository
+        uses: actions/checkout@v4.2.2
       
-      - name: Set Swift Version
-        run: swift --version
+      - name: Environment Audit
+        run: |
+          swift --version
+          xcodebuild -version
       
-      - name: Build
-        run: swift build -v
+      - name: Resolve Dependencies
+        run: swift package resolve
+      
+      - name: Build SDK (Release Mode)
+        run: swift build -c release -v
         
-      - name: Run tests
-        run: swift test -v
+      - name: Run Scientific Validation Suite
+        run: swift test --filter ScientificValidationTests -v
+        
+      - name: Run Librosa Parity Suite
+        run: swift test --filter LibrosaParityTests -v
+
+      - name: Archive Build Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          path: .build/*.log
+          if-no-files-found: ignore

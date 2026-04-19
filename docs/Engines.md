@@ -51,7 +51,7 @@ Engines focused on tonal content and musical structure.
 
 ### ChromaEngine & TonnetzEngine
 - **Chroma**: 12-bin harmonic distribution for chord and key recognition.
-- **Tonnetz**: 6D tonal centroid mapping representing Perfect Fifths, Major Thirds, and Minor Thirds.
+- **Tonnetz**: 6D tonal centroid mapping. Uses a hexagonal grid to represent Perfect Fifths, Major Thirds, and Minor Thirds. The transformation maps the 12 Chroma bins into a 6D space (3 complex planes) to identify harmonic pull and tonal stability.
 
 ### InstrumentEngine (Neural Predictor)
 - **Logic**: Multi-feature classifier using Spectral Flatness, MFCC coefficients, and Transient density.
@@ -65,6 +65,7 @@ Engines for decomposing complex signals and understanding sequences.
 
 ### HPSSEngine
 - **Logic**: Harmonic-Percussive Source Separation using median-filter masking in the STFT domain.
+- **Neural Stems**: Hybrid logic that combines HPSS with a pre-trained ANE (Apple Neural Engine) model to isolate Vocals and Drums with zero Phase-smearing.
 
 ### NMFEngine (Non-negative Matrix Factorization)
 - **Mathematics**: Iterative KL-Divergence multiplicative updates for blind source separation and basis identification.
@@ -88,7 +89,7 @@ Engines for decomposing complex signals and understanding sequences.
 Tools for provenance and authenticity verification.
 
 ### ForensicEngine
-- **Entropy Analysis**: Shannon Entropy calculation for bit-depth forgery detection (detecting 16-bit to 24-bit upscales).
+- **Entropy Analysis**: Calculates Shannon Entropy ($H = -\sum p_i \log_2 p_i$) of the LSB (Least Significant Bit) layer. In high-fidelity 24-bit audio, the LSB should exhibit near-white noise entropy. Flat or repetitive LSB patterns trigger an "Upsample Forgery" alert, indicating 16-bit source material.
 - **Codec Signature**: Detecting encoder-specific spectral bracketing (LAME, FhG, Lavf).
 
 ### AudioScienceEngine
