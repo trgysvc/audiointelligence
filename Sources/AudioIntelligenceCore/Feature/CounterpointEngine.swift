@@ -55,8 +55,6 @@ public final class CounterpointEngine: @unchecked Sendable {
         guard length > 5 else { return [] }
         
         var lastInterval = -1
-        var lastLeadMove = 0
-        var lastBassMove = 0
         
         for i in 1..<length {
             let interval = abs(lead[i] - bass[i]) % 12
@@ -78,8 +76,6 @@ public final class CounterpointEngine: @unchecked Sendable {
             }
             
             lastInterval = interval
-            lastLeadMove = leadMove
-            lastBassMove = bassMove
         }
         
         // Deduplicate errors to avoid spamming the report

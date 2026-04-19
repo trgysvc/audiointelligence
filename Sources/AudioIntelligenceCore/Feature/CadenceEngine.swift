@@ -16,7 +16,7 @@ public final class CadenceEngine: @unchecked Sendable {
         for segment in segments {
             // Find the chord at the end of the segment
             let segmentEndFrame = findNearestFrame(target: segment.end, frames: frames)
-            let segmentStartFrame = findNearestFrame(target: segment.start, frames: frames)
+            _ = findNearestFrame(target: segment.start, frames: frames)
             
             // Check for concluding chord (I) vs dominant (V)
             guard let conclusionChord = chordMap[segmentEndFrame] else { continue }

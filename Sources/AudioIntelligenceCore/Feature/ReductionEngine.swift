@@ -19,7 +19,7 @@ public final class ReductionEngine: @unchecked Sendable {
         
         // 1. Analyze each segment for its "Structural Tonic"
         for segment in segments {
-            let startFrame = Int(segment.start * (Double(nFrames) / segment.end)) // Rough mapping if end is total
+            _ = Int(segment.start * (Double(nFrames) / segment.end)) // Rough mapping if end is total
             // Better frame mapping:
             let totalDuration = segments.last?.end ?? 1.0
             let sFrame = Int((segment.start / totalDuration) * Double(nFrames))
