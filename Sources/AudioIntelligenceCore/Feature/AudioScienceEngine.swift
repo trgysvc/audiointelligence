@@ -34,12 +34,16 @@ public final class AudioScienceEngine: Sendable {
         let rawSNR = 10 * log10f(max(1e-12, totalMS / max(1e-14, noiseMS)))
         let snr = min(144.0, max(0.0, rawSNR))
         
+        func safe(_ val: Float) -> Float {
+            return val.isNaN || val.isInfinite ? 0.0 : val
+        }
+
         return ScienceResult(
-            dynamicRangeAES17: min(144.0, dr),
-            thdPlusN: thdn,
-            smpteIMD: imd,
+            dynamicRangeAES17: min(144.0, safe(dr)),
+            thdPlusN: safe(thdn),
+            smpteIMD: safe(imd),
             snr: snr,
-            noiseFloorWeight468: noiseRel
+            noiseFloorWeight468: safe(noiseRel)
         )
     }
     

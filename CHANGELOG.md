@@ -4,6 +4,18 @@ All notable changes to the **AudioIntelligence SDK** will be documented in this 
 
 ---
 
+## [7.1.0] - 2026-04-20
+### Added
+- **GPU Discovery**: Enhanced Metal initialization with explicit hardware discovery logs for M4 Silicon.
+- **Asynchronous Metal**: Implemented non-blocking GPU semaphore wait patterns for improved utilization tracking.
+- **Long-File DNA**: Added support for forensic aggregation of files >45 minutes (Verified with Ruben Gonzalez high-fidelity donor tracks).
+
+### Fixed
+- **Chroma Aggregation**: Corrected logical error where only the first chroma bin was aggregated; now utilizes mean fragment vectors.
+- **Data Alignment**: Resolved `Index Out of Range` crashes in Musicology engines by enforcing strict fragment alignment.
+- **Path Resolution**: Fixed report naming logic to correctly handle various audio extensions (.flac, .wav) during `.dna.md` generation.
+- **CPU Overload**: Replaced slow Swift `map` fallbacks with high-performance `vDSP` routines in the Metal pipeline.
+
 ## [6.3.0] - 2026-04-19
 ### Added
 - **Librosa Parity**: Added `WaveletEngine` for Discrete Wavelet Transforms (DWT).

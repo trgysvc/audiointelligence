@@ -1,38 +1,23 @@
 import Foundation
 @_exported import AudioIntelligenceCore
+import AudioIntelligenceMetal
 
 /// The central entry point for the AudioIntelligence SDK.
 /// Managed as a thread-safe Swift Actor, it provides both "One-Stop" DNA analysis
 /// and granular access to specific MIR, Mastering, and Forensic engines.
 public actor AudioIntelligence {
     
-    /// Hardware execution targets for the DSP pipeline.
-    public enum Device: Sendable {
-        /// Automatic selection based on task (ANE for neural, AMX for DSP).
-        case automatic
-        
-        /// Force Apple Silicon acceleration (AMX + ANE).
-        case appleSilicon
-        
-        /// Fallback to standard CPU execution.
-        case cpu
-    }
-    
-    /// Energy and throughput profiles.
-    public enum Mode: Sendable {
-        /// Optimized for background processing with minimal thermal impact.
-        case efficiency
-        
-        /// Standard balance of speed and power.
-        case balanced
-        
-        /// Maximum throughput (high AMX utilization).
-        case performance
-    }
+    private let device: Device
+    private let mode: Mode
+    private let metalEngine: MetalEngine
     
     // MARK: - Initialization
     
-    public init(device: Device = .automatic, mode: Mode = .balanced) {}
+    public init(device: Device = .automatic, mode: Mode = .balanced) {
+        self.device = device
+        self.mode = mode
+        self.metalEngine = MetalEngine() // Pre-warm GPU on init
+    }
     
     // MARK: - Analysis APIs
     
@@ -65,7 +50,7 @@ public actor AudioIntelligence {
             }
         }
         
-        let builder = DNAReportBuilder()
+        let builder = DNAReportBuilder(device: device, mode: mode, metalEngine: metalEngine)
         let result = try await builder.analyze(url: url, lanes: lanes, progress: progress)
         
         return AudioReport(

@@ -13,7 +13,8 @@ public final class AudioSessionManager: ObservableObject {
     @Published public var statusMessage: String = ""
     @Published public var currentAnalysis: MusicDNAAnalysis?
     
-    private let builder = DNAReportBuilder()
+    private let metalEngine = MetalEngine()
+    private lazy var builder = DNAReportBuilder(metalEngine: metalEngine)
     
     public init() {}
     

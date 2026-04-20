@@ -6,6 +6,7 @@
 
 import Accelerate
 import Foundation
+import AudioIntelligenceMetal
 import CryptoKit
 
 // MARK: - Window Type
@@ -81,15 +82,23 @@ public final class STFTEngine: @unchecked Sendable {
     private let window: [Float]
     private let dftSetup: vDSP_DFT_Setup
     private let idftSetup: vDSP_DFT_Setup
+    private let metalEngine: MetalEngine?
+
+    /// v7.6 SEALED: M4 Silicon Hardware Acceleration Status
+    public var isHardwareAccelerated: Bool {
+        return metalEngine != nil
+    }
 
     public init(nFFT: Int = defaultNFFT, 
                 hopLength: Int = defaultHopLength, 
-                sampleRate: Double = 22050,
-                windowType: WindowType = .hann) {
+                sampleRate: Double = 44100,
+                windowType: WindowType = .hann,
+                metalEngine: MetalEngine? = nil) {
         self.nFFT = nFFT
         self.hopLength = hopLength
         self.sampleRate = sampleRate
         self.windowType = windowType
+        self.metalEngine = metalEngine
         self.nFreqs = nFFT / 2 + 1
 
         // Use periodic window (Industry Standard default: sym=False)
@@ -184,21 +193,43 @@ public final class STFTEngine: @unchecked Sendable {
             splitComplex.realp.deallocate()
             splitComplex.imagp.deallocate()
         }
+        var allReal = [Float](repeating: 0, count: nFrames * nFreqs)
+        var allImag = [Float](repeating: 0, count: nFrames * nFreqs)
+
+        // v7.6 GPU Optimization: Batched Windowing
+        // --- [M4 SILICON HOOK: SEALED] ---
+        let preWindowed: [Float]
+        if let metal = metalEngine {
+            preWindowed = metal.executeBatchWindowing(samples: input, window: window, nFFT: nFFT, hopLength: hopLength)
+        } else {
+            preWindowed = [] // Fallback handled in loop
+        }
 
         for t in 0..<nFrames {
             let start = t * hopLength
             
-            // 1. Apply window and pack into split complex for zrip
-            input.withUnsafeBufferPointer { iBuff in
-                guard let iBase = iBuff.baseAddress else { return }
-                var windowed = [Float](repeating: 0, count: nFFT)
-                for i in 0..<nFFT {
-                    windowed[i] = iBase.advanced(by: start + i).pointee * window[i]
-                }
-                
-                windowed.withUnsafeBufferPointer { wBuff in
-                    wBuff.baseAddress!.withMemoryRebound(to: DSPComplex.self, capacity: nFFT / 2) { complexPtr in
+            // 1. Pack into split complex for zrip
+            if !preWindowed.isEmpty {
+                // Use pre-windowed GPU buffer
+                let frameStart = t * nFFT
+                preWindowed.withUnsafeBufferPointer { wBuff in
+                    guard let wBase = wBuff.baseAddress else { return }
+                    wBase.advanced(by: frameStart).withMemoryRebound(to: DSPComplex.self, capacity: nFFT / 2) { complexPtr in
                         vDSP_ctoz(complexPtr, 1, &splitComplex, 1, vDSP_Length(nFFT / 2))
+                    }
+                }
+            } else {
+                // CPU Fallback: Manual windowing as before
+                input.withUnsafeBufferPointer { iBuff in
+                    guard let iBase = iBuff.baseAddress else { return }
+                    var windowed = [Float](repeating: 0, count: nFFT)
+                    for i in 0..<nFFT {
+                        windowed[i] = iBase.advanced(by: start + i).pointee * window[i]
+                    }
+                    windowed.withUnsafeBufferPointer { wBuff in
+                        wBuff.baseAddress!.withMemoryRebound(to: DSPComplex.self, capacity: nFFT / 2) { complexPtr in
+                            vDSP_ctoz(complexPtr, 1, &splitComplex, 1, vDSP_Length(nFFT / 2))
+                        }
                     }
                 }
             }
@@ -206,17 +237,36 @@ public final class STFTEngine: @unchecked Sendable {
             // 2. Forward Real FFT
             vDSP_fft_zrip(fftSetup, &splitComplex, 1, log2n, FFTDirection(kFFTDirection_Forward))
             
-            // 3. Extract Mags and Phases
-            magnitudes[t * nFreqs + 0] = abs(splitComplex.realp[0])
-            phases[t * nFreqs + 0] = (splitComplex.realp[0] >= 0) ? 0.0 : .pi
-            magnitudes[t * nFreqs + (nFreqs - 1)] = abs(splitComplex.imagp[0])
-            phases[t * nFreqs + (nFreqs - 1)] = (splitComplex.imagp[0] >= 0) ? 0.0 : .pi
-
-            for f in 1..<nFreqs - 1 {
-                let re = splitComplex.realp[f]
-                let im = splitComplex.imagp[f]
-                magnitudes[t * nFreqs + f] = sqrtf(re * re + im * im)
-                phases[t * nFreqs + f]     = atan2f(im, re)
+            // Extract Split Complex for Batching
+            for f in 0..<nFreqs - 1 {
+                allReal[t * nFreqs + f] = splitComplex.realp[f]
+                allImag[t * nFreqs + f] = splitComplex.imagp[f]
+            }
+            // Nyquist storage (imagp[0])
+            allReal[t * nFreqs + (nFreqs - 1)] = splitComplex.imagp[0]
+            allImag[t * nFreqs + (nFreqs - 1)] = 0.0
+        }
+        
+        // v7.5 GPU Optimization: Batch Magnitude/Phase to Metal
+        if let metal = metalEngine {
+            let res = metal.executeComplexMagnitudePhase(real: allReal, imag: allImag)
+            if !res.magnitude.isEmpty {
+                magnitudes = res.magnitude
+                phases = res.phase
+            } else {
+                // CPU Fallback
+                for i in 0..<allReal.count {
+                    let re = allReal[i]; let im = allImag[i]
+                    magnitudes[i] = sqrtf(re * re + im * im)
+                    phases[i] = atan2f(im, re)
+                }
+            }
+        } else {
+            // CPU Pure Accelerate
+            for i in 0..<allReal.count {
+                let re = allReal[i]; let im = allImag[i]
+                magnitudes[i] = sqrtf(re * re + im * im)
+                phases[i] = atan2f(im, re)
             }
         }
         

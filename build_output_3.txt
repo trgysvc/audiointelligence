@@ -1,0 +1,149 @@
+[0/1] Planning build
+[1/1] Compiling plugin GenerateManual
+[2/2] Compiling plugin GenerateDoccReference
+Building for production...
+[2/7] Write swift-version--58304C5D6DBC2206.txt
+[4/8] Compiling AudioIntelligenceCore AudioIntelligenceCore.swift
+/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Feature/MeterEngine.swift:26:13: warning: variable 'groupings' was never mutated; consider changing to 'let' constant
+24 |         // 2. Pulse grouping analysis (looking for accents every N beats)
+25 |         // We look for higher onset energy at beat positions
+26 |         var groupings = [2, 3, 4, 5, 7, 9]
+   |             `- warning: variable 'groupings' was never mutated; consider changing to 'let' constant
+27 |         var scores = [Int: Float]()
+28 |         
+
+/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Feature/TonnetzEngine.swift:67:17: warning: initialization of immutable value 'angleM3' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+65 |             matrix[1][k] = r1 * cosf(angleFifth)
+66 |             
+67 |             let angleM3 = Float(k) * 3.0 * .pi / 2.0 // Actually it's 2*pi*(k*3)/12? No, Industry Standard uses specific constants.
+   |                 `- warning: initialization of immutable value 'angleM3' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+68 |             // Industry Standard defaults:
+69 |             // d1 = 7 (fifth), d2 = 3 (m3), d3 = 4 (M3)
+
+/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Util/DNAReportBuilder.swift:196:13: warning: variable 'transposedChroma' was written to, but never read
+194 |         let validChroma = allChroma.compactMap { $0 }
+195 |         let nFramesChroma = validChroma.count
+196 |         var transposedChroma = [[Float]](repeating: [], count: 12)
+    |             `- warning: variable 'transposedChroma' was written to, but never read
+197 |         
+198 |         if nFramesChroma > 0 {
+
+/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Util/DNAReportBuilder.swift:299:12: error: cannot find 'fullBeatTimes' in scope
+297 |         // Global Rhythm Refinement (v7.1 Forensic upgrade)
+298 |         var globalBPM: Float = 0
+299 |         if fullBeatTimes.count > 1 {
+    |            `- error: cannot find 'fullBeatTimes' in scope
+300 |             var ibis = [Float]()
+301 |             for i in 1..<fullBeatTimes.count {
+
+/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Util/DNAReportBuilder.swift:301:26: error: cannot find 'fullBeatTimes' in scope
+299 |         if fullBeatTimes.count > 1 {
+300 |             var ibis = [Float]()
+301 |             for i in 1..<fullBeatTimes.count {
+    |                          `- error: cannot find 'fullBeatTimes' in scope
+302 |                 ibis.append(Float(fullBeatTimes[i] - fullBeatTimes[i-1]))
+303 |             }
+
+/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Util/DNAReportBuilder.swift:302:35: error: cannot find 'fullBeatTimes' in scope
+300 |             var ibis = [Float]()
+301 |             for i in 1..<fullBeatTimes.count {
+302 |                 ibis.append(Float(fullBeatTimes[i] - fullBeatTimes[i-1]))
+    |                                   `- error: cannot find 'fullBeatTimes' in scope
+303 |             }
+304 |             ibis.sort()
+
+/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Util/DNAReportBuilder.swift:302:54: error: cannot find 'fullBeatTimes' in scope
+300 |             var ibis = [Float]()
+301 |             for i in 1..<fullBeatTimes.count {
+302 |                 ibis.append(Float(fullBeatTimes[i] - fullBeatTimes[i-1]))
+    |                                                      `- error: cannot find 'fullBeatTimes' in scope
+303 |             }
+304 |             ibis.sort()
+
+/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Util/DNAReportBuilder.swift:324:12: error: cannot find 'fullBeatTimes' in scope
+322 |         // Global Beat Consistency (v7.1 Forensic upgrade)
+323 |         var globalBeatConsistency: Float = 0
+324 |         if fullBeatTimes.count > 2 {
+    |            `- error: cannot find 'fullBeatTimes' in scope
+325 |             var ibis = [Float]()
+326 |             for i in 1..<fullBeatTimes.count {
+
+/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Util/DNAReportBuilder.swift:326:26: error: cannot find 'fullBeatTimes' in scope
+324 |         if fullBeatTimes.count > 2 {
+325 |             var ibis = [Float]()
+326 |             for i in 1..<fullBeatTimes.count {
+    |                          `- error: cannot find 'fullBeatTimes' in scope
+327 |                 ibis.append(Float(fullBeatTimes[i] - fullBeatTimes[i-1]))
+328 |             }
+
+/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Util/DNAReportBuilder.swift:327:35: error: cannot find 'fullBeatTimes' in scope
+325 |             var ibis = [Float]()
+326 |             for i in 1..<fullBeatTimes.count {
+327 |                 ibis.append(Float(fullBeatTimes[i] - fullBeatTimes[i-1]))
+    |                                   `- error: cannot find 'fullBeatTimes' in scope
+328 |             }
+329 |             let avg = ibis.reduce(0, +) / Float(ibis.count)
+
+/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Util/DNAReportBuilder.swift:327:54: error: cannot find 'fullBeatTimes' in scope
+325 |             var ibis = [Float]()
+326 |             for i in 1..<fullBeatTimes.count {
+327 |                 ibis.append(Float(fullBeatTimes[i] - fullBeatTimes[i-1]))
+    |                                                      `- error: cannot find 'fullBeatTimes' in scope
+328 |             }
+329 |             let avg = ibis.reduce(0, +) / Float(ibis.count)
+
+/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Util/DNAReportBuilder.swift:350:45: error: value of type 'PitchResult' has no member 'voicedRatio'
+348 |         let minF0 = allF0s.min() ?? 0
+349 |         let maxF0 = allF0s.max() ?? 0
+350 |         let voicedRatio = validYIN.map { $0.voicedRatio }.reduce(0, +) / Float(max(1, validYIN.count))
+    |                                             `- error: value of type 'PitchResult' has no member 'voicedRatio'
+351 |         let stability = validYIN.map { $0.stability }.reduce(0, +) / Float(max(1, validYIN.count))
+352 | 
+
+/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Util/DNAReportBuilder.swift:351:43: error: value of type 'PitchResult' has no member 'stability'
+349 |         let maxF0 = allF0s.max() ?? 0
+350 |         let voicedRatio = validYIN.map { $0.voicedRatio }.reduce(0, +) / Float(max(1, validYIN.count))
+351 |         let stability = validYIN.map { $0.stability }.reduce(0, +) / Float(max(1, validYIN.count))
+    |                                           `- error: value of type 'PitchResult' has no member 'stability'
+352 | 
+353 |         let finalAnalysis = MusicDNAAnalysis(
+
+/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Util/ScientificFilterBuilder.swift:22:13: warning: initialization of immutable value 'f1' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+20 |         // A-weighting is made of 3 cascaded biquads
+21 |         // Simplified poles/zeros implementation
+22 |         let f1 = 20.598997
+   |             `- warning: initialization of immutable value 'f1' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+23 |         let f2 = 107.65265
+24 |         let f3 = 737.86223
+
+/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Util/ScientificFilterBuilder.swift:23:13: warning: initialization of immutable value 'f2' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+21 |         // Simplified poles/zeros implementation
+22 |         let f1 = 20.598997
+23 |         let f2 = 107.65265
+   |             `- warning: initialization of immutable value 'f2' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+24 |         let f3 = 737.86223
+25 |         let f4 = 12194.217
+
+/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Util/ScientificFilterBuilder.swift:24:13: warning: initialization of immutable value 'f3' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+22 |         let f1 = 20.598997
+23 |         let f2 = 107.65265
+24 |         let f3 = 737.86223
+   |             `- warning: initialization of immutable value 'f3' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+25 |         let f4 = 12194.217
+26 |         let gain = 10.0 // Normalization at 1kHz
+
+/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Util/ScientificFilterBuilder.swift:25:13: warning: initialization of immutable value 'f4' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+23 |         let f2 = 107.65265
+24 |         let f3 = 737.86223
+25 |         let f4 = 12194.217
+   |             `- warning: initialization of immutable value 'f4' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+26 |         let gain = 10.0 // Normalization at 1kHz
+27 |         
+
+/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Util/ScientificFilterBuilder.swift:26:13: warning: initialization of immutable value 'gain' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+24 |         let f3 = 737.86223
+25 |         let f4 = 12194.217
+26 |         let gain = 10.0 // Normalization at 1kHz
+   |             `- warning: initialization of immutable value 'gain' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+27 |         
+28 |         // This is a complex calculation; for v6.2 we provide the high-precision 48k/96k/192k 

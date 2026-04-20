@@ -12,8 +12,10 @@ public final class TraditionalTheoryEngine: @unchecked Sendable {
         let nFrames = chromagram[0].count
         var verticalChords = [VerticalChord]()
         
-        // Sampling rate for vertical analysis (e.g., every 0.5s to avoid noise)
-        let step = max(1, nFrames / 20) 
+        // v7.1 Fix: Use fixed 500ms step instead of totalFrames/20
+        // Industry Standard: 512 hop at 44.1kHz results in 44100/512 = ~86 fps.
+        // 0.5s = ~43 frames.
+        let step = max(1, Int(0.5 / (512.0 / 44100.0))) 
         
         for t in stride(from: 0, to: nFrames, by: step) {
             let frameChroma = (0..<12).map { chromagram[$0][t] }
@@ -44,12 +46,18 @@ public final class TraditionalTheoryEngine: @unchecked Sendable {
     }
     
     private func identifyTriad(_ chroma: [Float]) -> (root: Int, type: TriadType) {
-        // Standard Triad Profiles
+        // Standard Triad & Jazz Extension Profiles
         let profiles: [(type: TriadType, offsets: [Int])] = [
             (.major, [0, 4, 7]),
             (.minor, [0, 3, 7]),
             (.diminished, [0, 3, 6]),
-            (.augmented, [0, 4, 8])
+            (.augmented, [0, 4, 8]),
+            // Jazz / v7.0 Additions
+            (.major, [0, 4, 7, 11]), // Maj7
+            (.major, [0, 4, 7, 10]), // Dominant 7th
+            (.minor, [0, 3, 7, 10]), // m7
+            (.diminished, [0, 3, 6, 10]), // m7b5
+            (.minor, [0, 3, 7, 9])  // m6 (Dorian hint)
         ]
         
         var bestScore: Float = 0
@@ -94,16 +102,16 @@ public final class TraditionalTheoryEngine: @unchecked Sendable {
     
     private func formatSymbol(root: Int, type: TriadType, bass: Int) -> String {
         let rootName = ChromaResult.noteNames[root]
-        let suffix: String
+        var chordName = rootName
+        
         switch type {
-        case .major: suffix = ""
-        case .minor: suffix = "m"
-        case .diminished: suffix = "dim"
-        case .augmented: suffix = "aug"
-        case .unclassified: suffix = "?"
+        case .major: chordName += ""
+        case .minor: chordName = rootName.lowercased() // Musicology Standard
+        case .diminished: chordName = "\(rootName.lowercased())°"
+        case .augmented: chordName += "+"
+        case .unclassified: chordName += "?"
         }
         
-        let chordName = "\(rootName)\(suffix)"
         if root == bass {
             return chordName
         } else {
@@ -129,16 +137,16 @@ public final class TraditionalTheoryEngine: @unchecked Sendable {
         if isDiatonic {
             let names = ["Tonic (I)", "Supertonic (ii)", "Mediant (iii)", "Subdominant (IV)", "Dominant (V)", "Submediant (vi)", "Leading Tone (vii)"]
             let idx = majorDiatonic.firstIndex(of: intervalFromKey) ?? 0
-            return (names[idx], "Bu akor, \(key) tonunun \(names[idx]) derecesidir ve yapısal bir kolon görevi görür.")
+            return (names[idx], "This chord is the \(names[idx]) degree of the \(key) key and serves as a structural pillar.")
         } else {
             // Functional Accidents
             if intervalFromKey == 6 { // Tritone
-                return ("Secondary Dominant (V/V)", "Bu arıza (\(ChromaResult.noteNames[root])), Dominant tona yeden nota işlevi görerek armonik gerilimi artırmaktadır.")
+                return ("Secondary Dominant (V/V)", "This accidental (\(ChromaResult.noteNames[root])) acts as a leading tone to the Dominant key, increasing harmonic tension.")
             }
             if intervalFromKey == 1 { // Neapolitan / Phrygian II
-                return ("Neapolitan (bII)", "Bu kromatik geçiş, tonun dikey dengesini bozarak hüzünlü veya dramatik bir etki yaratmaktadır.")
+                return ("Neapolitan (bII)", "This chromatic shift destabilizes the vertical balance of the key, creating a melancholic or dramatic effect.")
             }
-            return ("Chromatic Color", "Bu akor ton dışı olmasına rağmen tonal zenginlik katan bir armonik süsleme işlevi görmektedir.")
+            return ("Chromatic Color", "Although non-diatonic, this chord functions as a harmonic ornament providing tonal richness.")
         }
     }
 }

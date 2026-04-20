@@ -1,5 +1,6 @@
 import Foundation
 import Accelerate
+import AudioIntelligenceMetal
 
 public struct HPSSResult: Sendable {
     public let harmonic: STFTMatrix
@@ -15,14 +16,16 @@ public final class HPSSEngine: Sendable {
     
     private let winHarm: Int
     private let winPerc: Int
+    private let metalEngine: MetalEngine?
     
-    public init(winHarm: Int = 31, winPerc: Int = 31) {
+    public init(winHarm: Int = 31, winPerc: Int = 31, metalEngine: MetalEngine? = nil) {
         self.winHarm = winHarm
         self.winPerc = winPerc
+        self.metalEngine = metalEngine
     }
     
     public func analyze(stft: STFTMatrix) -> HPSSResult {
-        let (h, p) = HPSSEngine.separate(from: stft, winHarm: winHarm, winPerc: winPerc)
+        let (h, p) = separate(from: stft, winHarm: winHarm, winPerc: winPerc)
         
         // Calculate energy ratios
         var hEnergy: Float = 0
@@ -53,8 +56,8 @@ public final class HPSSEngine: Sendable {
     }
     
     /// Industry Standard: decompose.hpss()
-    /// Optimized for Apple Silicon using Accelerate vDSP_medfilt (O(N) performance).
-    public static func separate(
+    /// Refactored for Dual-Path Acceleration (v7.2 Aligned)
+    public func separate(
         from stft: STFTMatrix, 
         winHarm: Int = 31, 
         winPerc: Int = 31,
@@ -65,18 +68,25 @@ public final class HPSSEngine: Sendable {
         let nFrames = stft.nFrames
         let magnitude = stft.magnitude
         
-        // 1. Median Filtering (vDSP Hardware Acceleration)
-        // Harmonic: Median filter across time frames for each frequency bin (Vertical in T x F layout)
-        let harmonicMedian = vDSPMedianFilter(magnitude, nRows: nFrames, nCols: nFreqs, windowSize: winHarm, axis: .vertical)
-        
-        // Percussive: Median filter across frequency bins for each time frame (Horizontal in T x F layout)
-        let percussiveMedian = vDSPMedianFilter(magnitude, nRows: nFrames, nCols: nFreqs, windowSize: winPerc, axis: .horizontal)
+        var harmonicMedian: [Float]
+        var percussiveMedian: [Float]
+
+        // 1. Dual-Path Median Filtering (GPU Priority)
+        if let metal = metalEngine, nFrames * nFreqs > 10000 {
+            // Offload to M4 GPU for large spectrograms
+            harmonicMedian = metal.executeMedianFilter2D(data: magnitude, nRows: nFrames, nCols: nFreqs, windowSize: winHarm, isHorizontal: false)
+            percussiveMedian = metal.executeMedianFilter2D(data: magnitude, nRows: nFrames, nCols: nFreqs, windowSize: winPerc, isHorizontal: true)
+        } else {
+            // Fallback to optimized Accelerate (AMX)
+            harmonicMedian = HPSSEngine.vDSPMedianFilter(magnitude, nRows: nFrames, nCols: nFreqs, windowSize: winHarm, axis: .vertical)
+            percussiveMedian = HPSSEngine.vDSPMedianFilter(magnitude, nRows: nFrames, nCols: nFreqs, windowSize: winPerc, axis: .horizontal)
+        }
         
         // 2. Softmasking (Wiener Filter)
         var maskHarmonic   = [Float](repeating: 0, count: magnitude.count)
         var maskPercussive = [Float](repeating: 0, count: magnitude.count)
         
-        // Optimization: Vectorized power and mask calculation
+        // Vectorized power and mask calculation
         for i in 0..<magnitude.count {
             let h = powf(harmonicMedian[i], power)
             let p = powf(percussiveMedian[i], power)
@@ -105,7 +115,6 @@ public final class HPSSEngine: Sendable {
     }
     
     /// Hardware-accelerated 2D median filter using a sliding window approach with vDSP sorting.
-    /// This provides a robust, high-performance fallback for environments where vDSP_medfilt is unavailable.
     private static func vDSPMedianFilter(
         _ data: [Float], 
         nRows: Int, 

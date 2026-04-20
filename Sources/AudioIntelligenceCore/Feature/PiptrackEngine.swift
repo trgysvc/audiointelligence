@@ -63,18 +63,19 @@ public final class PiptrackEngine: Sendable {
                 }
             }
             
-            // 3. Selection (usually pick the strongest peak)
+            // 3. Selection (v7.1 Forensic Upgrade: Favor fundamental over overtones)
             if !frameMags.isEmpty {
-                var maxIdx = 0
-                var maxM: Float = -1.0
+                let maxM = frameMags.max() ?? 1.0
+                var fundamentalIdx = 0
+                // Pick the LOWEST peak that is at least 30% of the max peak's strength
                 for (i, m) in frameMags.enumerated() {
-                    if m > maxM {
-                        maxM = m
-                        maxIdx = i
+                    if m > (maxM * 0.3) {
+                        fundamentalIdx = i
+                        break
                     }
                 }
-                pitches[t] = framePitches[maxIdx]
-                magnitudes[t] = frameMags[maxIdx]
+                pitches[t] = framePitches[fundamentalIdx]
+                magnitudes[t] = frameMags[fundamentalIdx]
             }
         }
         
