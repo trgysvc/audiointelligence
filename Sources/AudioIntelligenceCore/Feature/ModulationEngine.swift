@@ -7,8 +7,8 @@ public final class ModulationEngine: Sendable {
     
     public init() {}
     
-    /// Detects modulations over time based on chromagram windows.
-    public func detectModulations(chromagram: [[Float]], initialKey: String) -> [ModulationDNA] {
+    /// Detects modulations over time based on chromagram windows (Async Forensic Path).
+    public func detectModulations(chromagram: [[Float]], initialKey: String) async -> [ModulationDNA] {
         var modulations = [ModulationDNA]()
         let nFrames = chromagram[0].count
         guard nFrames > 40 else { return [] }
@@ -17,13 +17,20 @@ public final class ModulationEngine: Sendable {
         var currentKey = initialKey
         
         for t in stride(from: windowSize, to: nFrames, by: windowSize / 2) {
+            if t % 1000 == 0 { await Task.yield() }
+            
             let windowChroma = (0..<12).map { bin in
-                let start = max(0, t - windowSize)
-                let end = min(nFrames, t)
+                let binCount = chromagram[bin].count
+                let start = Swift.max(0, Swift.min(binCount, t - windowSize))
+                let end = Swift.max(start, Swift.min(binCount, t))
+                
                 let slice = Array(chromagram[bin][start..<end])
                 var sum: Float = 0
-                vDSP_sve(slice, 1, &sum, vDSP_Length(slice.count))
-                return sum / Float(slice.count)
+                if !slice.isEmpty {
+                    vDSP_sve(slice, 1, &sum, vDSP_Length(slice.count))
+                    return sum / Float(slice.count)
+                }
+                return 0
             }
             
             let detectedKey = identifyKey(windowChroma)

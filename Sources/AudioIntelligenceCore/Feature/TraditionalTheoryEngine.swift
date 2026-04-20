@@ -14,10 +14,16 @@ public final class TraditionalTheoryEngine: @unchecked Sendable {
         
         // v7.1 Fix: Use fixed 500ms step instead of totalFrames/20
         // Industry Standard: 512 hop at 44.1kHz results in 44100/512 = ~86 fps.
-        // 0.5s = ~43 frames.
         let step = max(1, Int(0.5 / (512.0 / 44100.0))) 
         
         for t in stride(from: 0, to: nFrames, by: step) {
+            // Forensic Safety: Ensure across all 12 bins that the frame 't' exists
+            var isSafe = true
+            for c in 0..<12 {
+                if t >= chromagram[c].count { isSafe = false; break }
+            }
+            guard isSafe else { continue }
+            
             let frameChroma = (0..<12).map { chromagram[$0][t] }
             let (root, type) = identifyTriad(frameChroma)
             

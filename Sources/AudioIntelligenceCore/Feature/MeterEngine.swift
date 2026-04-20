@@ -7,11 +7,13 @@ public final class MeterEngine: Sendable {
     
     public init() {}
     
-    /// Analyzes beat times and onsets to determine the meter.
-    public func detectMeter(beatTimes: [Double], onsetStrength: [Float], sr: Double) -> MeterDNA {
+    /// Analyzes beat times and onsets to determine the meter (Async Forensic Path).
+    public func detectMeter(beatTimes: [Double], onsetStrength: [Float], sr: Double) async -> MeterDNA {
         guard beatTimes.count > 4 else {
             return MeterDNA(timeSignature: "Unknown", meterType: "Simple", isAnacrusis: false, polyrhythmRatio: nil, measures: 0)
         }
+        
+        await Task.yield()
         
         // 1. Calculate inter-beat intervals (IBI)
         var ibis = [Double]()
@@ -22,7 +24,6 @@ public final class MeterEngine: Sendable {
         let avgIBI = ibis.reduce(0, +) / Double(ibis.count)
         
         // 2. Pulse grouping analysis (looking for accents every N beats)
-        // We look for higher onset energy at beat positions
         let groupings = [2, 3, 4, 5, 7, 9]
         var scores = [Int: Float]()
         
@@ -34,48 +35,56 @@ public final class MeterEngine: Sendable {
                     score += onsetStrength[frame]
                 }
             }
-            scores[g] = score / Float(beatTimes.count / g)
+            scores[g] = score / Float(Swift.max(1, beatTimes.count / g))
         }
         
-        let bestG = scores.max(by: { $0.value < $1.value })?.key ?? 4
+        let maxScore = scores.values.max() ?? 0
+        let bestG = maxScore > 0.1 ? (scores.max(by: { $0.value < $1.value })?.key ?? 4) : 0
         
         // 3. Classify Meter Type
         let ts: String
         let type: String
         
-        switch bestG {
-        case 3:
-            ts = "3/4"
-            type = "Simple"
-        case 4:
-            ts = "4/4"
-            type = "Simple"
-        case 9:
-            ts = "9/8 (Aksak)"
-            type = "Aksak"
-        case 7:
-            ts = "7/8 (Devr-i Turan)"
-            type = "Aksak"
-        case 5:
-            ts = "5/8"
-            type = "Aksak"
-        default:
-            ts = "\(bestG)/4"
-            type = "Complex"
+        if bestG == 0 {
+            ts = "Complex / Poly-meter"
+            type = "Irregular"
+        } else {
+            switch bestG {
+            case 3:
+                ts = "3/4"
+                type = "Simple"
+            case 4:
+                ts = "4/4"
+                type = "Simple"
+            case 9:
+                ts = "9/8 (Aksak)"
+                type = "Aksak"
+            case 7:
+                ts = "7/8 (Devr-i Turan)"
+                type = "Aksak"
+            case 5:
+                ts = "5/8"
+                type = "Aksak"
+            default:
+                ts = "\(bestG)/4"
+                type = "Complex"
+            }
         }
         
         // 4. Anacrusis Detection (Eksik Vuruş)
-        // If the first beat starts "late" relative to the first significant onset
         let firstSignificantOnset = onsetStrength.enumerated().first(where: { $0.element > 0.5 })?.offset ?? 0
         let firstOnsetTime = Double(firstSignificantOnset) * 512.0 / sr
         let isAnacrusis = (beatTimes[0] - firstOnsetTime) > (avgIBI * 0.3)
+        
+        // Final Safety: Prevent Division by Zero on complex meters
+        let finalG = Swift.max(1, bestG)
         
         return MeterDNA(
             timeSignature: ts,
             meterType: type,
             isAnacrusis: isAnacrusis,
             polyrhythmRatio: detectPolyrhythm(onsetStrength),
-            measures: beatTimes.count / bestG
+            measures: beatTimes.count / finalG
         )
     }
     

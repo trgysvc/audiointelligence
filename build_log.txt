@@ -1,0 +1,90 @@
+[1/1] Compiling plugin GenerateManual
+[2/2] Compiling plugin GenerateDoccReference
+Building for production...
+[2/14] Write swift-version--58304C5D6DBC2206.txt
+[4/11] Compiling AudioIntelligenceCore AudioIntelligenceCore.swift
+/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Util/DNAReportBuilder.swift:711:10: error: invalid escape sequence in literal
+709 |         
+710 |         ## 📊 14. Professional Binary Data (Apple Property List Standard)
+711 |         \> [!IMPORTANT]
+    |          `- error: invalid escape sequence in literal
+712 |         \> Machine-readable raw metrics are now stored in **Apple Binary Property List (.plist)** format for 1000x faster integration and lower memory footprint.
+713 |         - **Binary File**: `\( (analysis.fileName as NSString).deletingPathExtension ).plist`
+
+/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Util/DNAReportBuilder.swift:712:10: error: invalid escape sequence in literal
+710 |         ## 📊 14. Professional Binary Data (Apple Property List Standard)
+711 |         \> [!IMPORTANT]
+712 |         \> Machine-readable raw metrics are now stored in **Apple Binary Property List (.plist)** format for 1000x faster integration and lower memory footprint.
+    |          `- error: invalid escape sequence in literal
+713 |         - **Binary File**: `\( (analysis.fileName as NSString).deletingPathExtension ).plist`
+714 |         - **Standard**: Apple Forensic DNA v7.3 (Binary Plist / Zero-Loss)
+
+/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Feature/AudioScienceEngine.swift:227:57: warning: cannot use inout expression here; argument 'realp' must be a pointer that outlives the call to 'init(realp:imagp:)' [#TemporaryPointers]
+225 |         defer { vDSP_destroy_fftsetupD(fftSetup) }
+226 |         
+227 |         var splitComplex = DSPDoubleSplitComplex(realp: &real, imagp: &imag)
+    |                                                         |- warning: cannot use inout expression here; argument 'realp' must be a pointer that outlives the call to 'init(realp:imagp:)' [#TemporaryPointers]
+    |                                                         |- note: implicit argument conversion from '[Double]' to 'UnsafeMutablePointer<Double>' produces a pointer valid only for the duration of the call to 'init(realp:imagp:)'
+    |                                                         `- note: use the 'withUnsafeMutableBufferPointer' method on Array in order to explicitly convert argument to buffer pointer valid for a defined scope
+228 |         vDSP_fft_zipD(fftSetup, &splitComplex, 1, log2n, FFTDirection(kFFTDirection_Forward))
+229 |         
+
+/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Feature/AudioScienceEngine.swift:227:71: warning: cannot use inout expression here; argument 'imagp' must be a pointer that outlives the call to 'init(realp:imagp:)' [#TemporaryPointers]
+225 |         defer { vDSP_destroy_fftsetupD(fftSetup) }
+226 |         
+227 |         var splitComplex = DSPDoubleSplitComplex(realp: &real, imagp: &imag)
+    |                                                                       |- warning: cannot use inout expression here; argument 'imagp' must be a pointer that outlives the call to 'init(realp:imagp:)' [#TemporaryPointers]
+    |                                                                       |- note: implicit argument conversion from '[Double]' to 'UnsafeMutablePointer<Double>' produces a pointer valid only for the duration of the call to 'init(realp:imagp:)'
+    |                                                                       `- note: use the 'withUnsafeMutableBufferPointer' method on Array in order to explicitly convert argument to buffer pointer valid for a defined scope
+228 |         vDSP_fft_zipD(fftSetup, &splitComplex, 1, log2n, FFTDirection(kFFTDirection_Forward))
+229 |         
+
+/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Feature/CQTEngine.swift:78:13: warning: variable 'padded' was never mutated; consider changing to 'let' constant
+ 76 | 
+ 77 |         // --- 1. FFT of zero-padded signal ---
+ 78 |         var padded = samples + [Float](repeating: 0, count: nFFT - n)
+    |             `- warning: variable 'padded' was never mutated; consider changing to 'let' constant
+ 79 |         var sigReal = [Float](repeating: 0, count: halfFFT)
+ 80 |         var sigImag = [Float](repeating: 0, count: halfFFT)
+
+/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Util/ScientificFilterBuilder.swift:22:13: warning: initialization of immutable value 'f1' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+20 |         // A-weighting is made of 3 cascaded biquads
+21 |         // Simplified poles/zeros implementation
+22 |         let f1 = 20.598997
+   |             `- warning: initialization of immutable value 'f1' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+23 |         let f2 = 107.65265
+24 |         let f3 = 737.86223
+
+/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Util/ScientificFilterBuilder.swift:23:13: warning: initialization of immutable value 'f2' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+21 |         // Simplified poles/zeros implementation
+22 |         let f1 = 20.598997
+23 |         let f2 = 107.65265
+   |             `- warning: initialization of immutable value 'f2' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+24 |         let f3 = 737.86223
+25 |         let f4 = 12194.217
+
+/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Util/ScientificFilterBuilder.swift:24:13: warning: initialization of immutable value 'f3' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+22 |         let f1 = 20.598997
+23 |         let f2 = 107.65265
+24 |         let f3 = 737.86223
+   |             `- warning: initialization of immutable value 'f3' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+25 |         let f4 = 12194.217
+26 |         let gain = 10.0 // Normalization at 1kHz
+
+/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Util/ScientificFilterBuilder.swift:25:13: warning: initialization of immutable value 'f4' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+23 |         let f2 = 107.65265
+24 |         let f3 = 737.86223
+25 |         let f4 = 12194.217
+   |             `- warning: initialization of immutable value 'f4' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+26 |         let gain = 10.0 // Normalization at 1kHz
+27 |         
+
+/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Util/ScientificFilterBuilder.swift:26:13: warning: initialization of immutable value 'gain' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+24 |         let f3 = 737.86223
+25 |         let f4 = 12194.217
+26 |         let gain = 10.0 // Normalization at 1kHz
+   |             `- warning: initialization of immutable value 'gain' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+27 |         
+28 |         // This is a complex calculation; for v6.2 we provide the high-precision 48k/96k/192k 
+
+[#TemporaryPointers]: <https://docs.swift.org/compiler/documentation/diagnostics/temporary-pointers>

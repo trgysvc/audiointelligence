@@ -8,8 +8,8 @@ public final class MotifEngine: Sendable {
     
     public init() {}
     
-    /// Analyzes a pitch sequence and chromagram for recurring motifs.
-    public func detectMotifs(pitchPath: [Int], chromagram: [[Float]], sr: Double, hopLength: Int = 512) -> [MotifDNA] {
+    /// Analyzes a pitch sequence and chromagram for recurring motifs (Async Forensic Path).
+    public func detectMotifs(pitchPath: [Int], chromagram: [[Float]], sr: Double, hopLength: Int = 512) async -> [MotifDNA] {
         var motifs = [MotifDNA]()
         let nFrames = pitchPath.count
         guard nFrames > 20 else { return [] }
@@ -33,6 +33,8 @@ public final class MotifEngine: Sendable {
         
         for windowSize in stride(from: minWindow, through: maxWindow, by: anchorStride) {
             for i in stride(from: 0, to: nFrames - windowSize, by: anchorStride) {
+                if i % (anchorStride * 10) == 0 { await Task.yield() } // Prevent OS Timeouts
+                
                 let segment = pitchPath[i..<i+windowSize]
                 guard isInteresting(Array(segment)) else { continue }
                 

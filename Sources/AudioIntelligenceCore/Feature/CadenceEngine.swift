@@ -6,18 +6,19 @@ public final class CadenceEngine: @unchecked Sendable {
     
     public init() {}
     
-    /// Detects cadences at the boundaries of structural segments.
-    public func detect(verticalChords: [VerticalChord], segments: [MusicSegment], key: String, sr: Double) -> [CadenceEvent] {
+    /// Detects cadences at the boundaries of structural segments (Async Forensic Path).
+    public func detect(verticalChords: [VerticalChord], segments: [MusicSegment], key: String, sr: Double) async -> [CadenceEvent] {
         var cadences = [CadenceEvent]()
         
         let chordMap = verticalChords.reduce(into: [Int: VerticalChord]()) { $0[$1.frame] = $1 }
         let frames = verticalChords.map { $0.frame }.sorted()
         let hop = 512
         
-        for segment in segments {
-            // Find the chord at the end of the segment
+        for (idx, segment) in segments.enumerated() {
+            if idx % 100 == 0 { await Task.yield() }
+            
+            // Find the chord at the end of the segment using binary search for speed
             let segmentEndFrame = findNearestFrame(target: segment.end, frames: frames, sr: sr, hop: hop)
-            _ = findNearestFrame(target: segment.start, frames: frames, sr: sr, hop: hop)
             
             // Check for concluding chord (I) vs dominant (V)
             guard let conclusionChord = chordMap[segmentEndFrame] else { continue }
@@ -42,10 +43,24 @@ public final class CadenceEngine: @unchecked Sendable {
     }
     
     private func findNearestFrame(target: Double, frames: [Int], sr: Double, hop: Int) -> Int {
+        guard !frames.isEmpty else { return 0 }
         let frameRate = sr / Double(hop)
-        // Optimization: Use binary search for nearest if frames is large, 
-        // but since we only call this a few times per segment, linear is fine if not hanging.
-        return frames.min(by: { abs(Double($0) - target * frameRate) < abs(Double($1) - target * frameRate) }) ?? 0
+        let targetFrame = Int(target * frameRate)
+        
+        // v7.9 Optimization: Binary Search instead of Linear min(by:)
+        var low = 0
+        var high = frames.count - 1
+        
+        while low <= high {
+            let mid = (low + high) / 2
+            if frames[mid] == targetFrame { return frames[mid] }
+            if frames[mid] < targetFrame { low = mid + 1 }
+            else { high = mid - 1 }
+        }
+        
+        // Return nearest neighbor from binary search convergence
+        let idx = Swift.min(Swift.max(0, low), frames.count - 1)
+        return frames[idx]
     }
     
     private func classify(prep: VerticalChord, conc: VerticalChord, key: String) -> (type: String, description: String)? {

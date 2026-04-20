@@ -1,110 +1,66 @@
-# ⚙️ Engines: Technical Implementation Reference
+# ⚙️ Engines: The Infinity Suite Catalog (v7.1)
 
-This document provides a comprehensive technical reference for the **AudioIntelligence Infinity Suite**. This complete **26-engine suite** is implemented using high-priority **Apple Silicon (M4 optimized AMX/ANE)** protocols and adheres to professional broadcast and forensic standards.
-
----
-
-## 🏗️ 1. Core Signal Infrastructure
-
-The foundation of all DSP tasks within the SDK.
-
-### STFTEngine
-The fundamental spectral analyst.
-- **Algorithm**: Complex-to-Complex / Real-to-Complex FFT via `vDSP_DFT`.
-- **Optimization**: Supports zero-padding, periodic window coefficients, and mag-scaling for energy preservation.
-- **Parity**: Adheres strictly to standardized STFT structure (nBins, nFrames).
-
-### AudioLoader
-Professional-grade I/O orchestrator.
-- **Capabilities**: Multi-format support (PCM, FLAC, AAC, ALAC, MP3) with seamless down-mixing and sample-rate conversion via `AVAudioConverter`.
-- **Performance**: Integrated with **IntelligenceCache** to ensure that once a file is loaded and fingerprinted, subsequent reads are instantaneous.
+This document provides a comprehensive technical reference for all analysis engines integrated into the **AudioIntelligence Infinity Suite**.
 
 ---
 
-## 📈 2. Standards-Compliant Analysis
+## 1. Core Signal & Infrastructure
+| Engine | Purpose | Logic |
+| :--- | :--- | :--- |
+| **STFTEngine** | Spectral Foundation | vDSP DFT-based time-frequency transform. |
+| **AudioLoader** | Smart I/O | Multi-format loader with persistent caching. |
+| **StereoEngine** | Spatial Analysis | Phase correlation and LR balance metrics. |
 
-Engines calibrated against official industry test vectors.
+## 2. Rhythmic & Temporal DNA
+| Engine | Purpose | Technical Basis |
+| :--- | :--- | :--- |
+| **OnsetEngine** | Event Detection | Spectral flux and multi-band energy deviation. |
+| **RhythmEngine** | Tempo Tracking | Dynamic Programming (DP) for BPM estimation. |
+| **TempogramEngine**| Pulse Mapping | Cyclic tempo-periodicity analysis. |
+| **MeterEngine** | Time Signature | Beat-synchronous meter and bar detection. |
+| **MotifEngine** | Pattern Recognition| Repetitive rhythmic and melodic motif detection. |
 
-### LoudnessEngine
-- **Standards**: ITU-R BS.1770-4, EBU Tech 3341/3342.
-- **Logic**: Implemented with **Double precision** energy accumulation. Uses K-weighting pre-filter followed by dual-gated integration (Absolute -70 LUFS / Relative -10 LU for Integrated, -20 LU for LRA).
-- **Parity**: ±0.1 LU accuracy verified against SQAM reference material.
+## 3. Harmonic, Tonal & Pitch DNA
+| Engine | Purpose | Technical Basis |
+| :--- | :--- | :--- |
+| **CQTEngine/VQTEngine** | Musical Pitch | Constant-Q/Variable-Q transforms. |
+| **ChromaEngine** | Tonal Distribution | 12-bin musical energy mapping. |
+| **TonnetzEngine** | Harmonic Centroids | 6D hexagonal tonal relationship mapping. |
+| **YINEngine** | Pitch Tracking | Time-domain autocorrelation for F0 detection. |
+| **PiptrackEngine** | Res. Fundamental | Parabolic Interpolation for ultra-precise pitch. |
+| **ViterbiEngine** | Seq. Smoothing | Path optimization via Hidden Markov Models. |
+| **ModulationEngine**| Key Changes | Detecting harmonic shifts within a signal. |
 
-### TruePeakEngine
-- **Standards**: ITU-R BS.1770-4.
-- **Process**: 4x Polyphase oversampling Sinc-filter to identify inter-sample peaks that standard meters miss.
+## 4. Musicological & Traditional Analysis
+| Engine | Purpose | Theoretical Basis |
+| :--- | :--- | :--- |
+| **ReductionEngine** | Ur-Note Reduction | Schenkerian-inspired harmonic simplification. |
+| **TraditionalTheoryEngine**| Vertical Harmony | Chord identification and inversion analysis. |
+| **CounterpointEngine**| Structural Logic | Species-based counterpoint validation. |
+| **CadenceEngine** | Structural Finish | Detection of Perfect, Imperfect, and Deceptive cadences. |
+| **HistoricalEngine**| Contextual DNA | Artistic movement and historical period inference. |
 
-### RhythmEngine & OnsetEngine
-- **Onset Detection**: Spectral flux and phase deviation monitoring across 7 sub-bands.
-- **Rhythm Logic**: Dynamic Programming (DP) tempo-estimation using Ellis (2007) architecture.
-- **Output**: Global BPM and local "Click-Track" alignment with human-feel tracking.
+## 5. Source Separation & Sequence Modelling
+| Engine | Purpose | Technical Basis |
+| :--- | :--- | :--- |
+| **HPSSEngine** | STEM Isolation | Median-masking for Harmonic/Percussive splitting. |
+| **NMFEngine** | Blind Separation | Non-negative Matrix Factorization. |
+| **StructureEngine**| Segmentation | SSM-based (Self-Similarity Matrix) sectioning. |
 
----
+## 6. Forensic & Scientific Auditing
+| Engine | Purpose | Standard/Logic |
+| :--- | :--- | :--- |
+| **ForensicEngine** | Truth Detection | Entropy analysis and Codec bracketing. |
+| **LoudnessEngine** | Metering | EBU R128 / ITU-R BS.1770-4 compliance. |
+| **TruePeakEngine** | Inter-sample Peak | 4x Sinc-interpolation for TP detection. |
+| **AudioScienceEngine**| Lab Metrics | AES17 Dynamic Range, THD+N, SNR, IMD. |
 
-## 🧬 3. Harmonic & Melodic DNA
-
-Engines focused on tonal content and musical structure.
-
-### CQTEngine & VQTEngine
-- **Design**: Constant-Q and Variable-Q transforms for musically-aligned frequency analysis.
-- **Resolution**: 12 to 36 bins per octave for absolute musical pitch tracking.
-
-### ChromaEngine & TonnetzEngine
-- **Chroma**: 12-bin harmonic distribution for chord and key recognition.
-- **Tonnetz**: 6D tonal centroid mapping. Uses a hexagonal grid to represent Perfect Fifths, Major Thirds, and Minor Thirds. The transformation maps the 12 Chroma bins into a 6D space (3 complex planes) to identify harmonic pull and tonal stability.
-
-### InstrumentEngine (Neural Predictor)
-- **Logic**: Multi-feature classifier using Spectral Flatness, MFCC coefficients, and Transient density.
-- **Output**: Instrument labels (e.g., Drums, Vocals, Bass) with confidence scores.
-
----
-
-## 🧪 4. Source Separation & Sequence Modeling
-
-Engines for decomposing complex signals and understanding sequences.
-
-### HPSSEngine
-- **Logic**: Harmonic-Percussive Source Separation using median-filter masking in the STFT domain.
-- **Neural Stems**: Hybrid logic that combines HPSS with a pre-trained ANE (Apple Neural Engine) model to isolate Vocals and Drums with zero Phase-smearing.
-
-### NMFEngine (Non-negative Matrix Factorization)
-- **Mathematics**: Iterative KL-Divergence multiplicative updates for blind source separation and basis identification.
-- **Optimization**: Metal-accelerated matrix multiplication for rapid convergence.
-
-### StructureEngine (Segmentation)
-- **Logic**: Self-Similarity Matrix (SSM) analysis for automated structural segmentation.
-- **Output**: Temporal boundaries for Intro, Verse, Chorus, and Bridge sections.
-
-### ViterbiEngine
-- **Function**: Hidden Markov Model (HMM) sequence decoding.
-- **Use Case**: Smoothing pitch tracks and internal state transitions to eliminate "jitter" in reports.
-
-### PiptrackEngine
-- **Logic**: Parabolic Interpolation for high-resolution fundamental frequency (F0) tracking.
+## 7. Advanced Timbral & Semantic Analysis
+| Engine | Purpose | Technical Basis |
+| :--- | :--- | :--- |
+| **InstrumentEngine**| Labeling | Neural-assisted prediction using MFCCs. |
+| **WaveletEngine** | Multi-Res Analysis | Multi-level discrete wavelet transforms (DWT). |
+| **SpectralZoneEngine**| Energy Budgeting | Detailed sub-band energy distribution. |
 
 ---
-
-## 🔍 5. Forensic & Scientific Auditing
-
-Tools for provenance and authenticity verification.
-
-### ForensicEngine
-- **Entropy Analysis**: Calculates Shannon Entropy ($H = -\sum p_i \log_2 p_i$) of the LSB (Least Significant Bit) layer. In high-fidelity 24-bit audio, the LSB should exhibit near-white noise entropy. Flat or repetitive LSB patterns trigger an "Upsample Forgery" alert, indicating 16-bit source material.
-- **Codec Signature**: Detecting encoder-specific spectral bracketing (LAME, FhG, Lavf).
-
-### AudioScienceEngine
-- **Laboratory Metrics**: Professional characterization of **AES17 Dynamic Range**, **SMPTE IMD** (Inter-modulation Distortion), and **ITU-R 468-4** weighted noise floors.
-
----
-
-## 🖼️ 6. Professional Visualization
-
-Engines designed to render industrial-grade engineering reports.
-
-### AudioIntelligenceUI (SwiftUI + Metal)
-- **SpectrogramView**: Real-time, GPU-accelerated spectral rendering with perceptually uniform colormaps.
-- **WaveformView**: Multi-resolution peak/RMS rendering for fluid zooming.
-- **LoudnessMeter**: EBU R128 compliant real-time metering with Momentary, Short-term, and Integrated ballistics.
-
----
-*For architectural details on how these engines interact, see [Architecture.md](Architecture.md).*
+*Last Updated: 2026-04-20 — Total Engines: 31+*

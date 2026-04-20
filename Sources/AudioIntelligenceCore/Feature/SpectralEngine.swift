@@ -28,7 +28,10 @@ public final class SpectralEngine: Sendable {
         public let kurtosis: Float // v50.0 Addition
         public let rmsMean: Float
         public let rmsMax: Float
-        public let dynamicRangeDb: Float
+        /// Spectral Crest Factor = 20·log₁₀(rmsMax/rmsMean).
+        /// NOTE: This is NOT Dynamic Range. True DR (EBU R128 LRA) is measured by LoudnessEngine.
+        /// Crest Factor describes the peak-to-average energy ratio across frames.
+        public let spectralCrestFactor: Float
         
         // Time series for visualization
         public let centroidTimeSeries: [Float]
@@ -124,7 +127,9 @@ public final class SpectralEngine: Sendable {
         vDSP_meanv(rmsSeries, 1, &rmsMean, vDSP_Length(nFrames))
         vDSP_maxv(rmsSeries, 1, &rmsMax, vDSP_Length(nFrames))
 
-        let dynamicRangeDb = (rmsMean > 1e-8) ? 20.0 * log10f(max(1e-8, rmsMax / rmsMean)) : 0.0
+        // Crest Factor: 20·log₁₀(rmsMax/rmsMean)
+        // Not the same as Dynamic Range. Use LoudnessEngine.lra for EBU R128 LRA.
+        let spectralCrestFactor = (rmsMean > 1e-8) ? 20.0 * log10f(max(1e-8, rmsMax / rmsMean)) : 0.0
 
         // Reconstruct matrix for visualization (Frequency-major for UI mapping)
         var visualMatrix = [[Float]]()
@@ -147,7 +152,7 @@ public final class SpectralEngine: Sendable {
             kurtosis: meanKurtosis,
             rmsMean: rmsMean,
             rmsMax: rmsMax,
-            dynamicRangeDb: dynamicRangeDb,
+            spectralCrestFactor: spectralCrestFactor,
             centroidTimeSeries: centroidSeries,
             rmsSeries: rmsSeries,
             fullMagnitudes: visualMatrix

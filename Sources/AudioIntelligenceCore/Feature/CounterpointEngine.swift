@@ -7,8 +7,8 @@ public final class CounterpointEngine: @unchecked Sendable {
     
     public init() {}
     
-    /// Analyzes the relationship between Bass and Lead voices.
-    public func analyze(pitchPath: [Int], chroma: [[Float]]) -> (species: String, errors: [String]) {
+    /// Analyzes the relationship between Bass and Lead voices (Async Forensic Path).
+    public func analyze(pitchPath: [Int], chroma: [[Float]]) async -> (species: String, errors: [String]) {
         // 1. Identify "Structural Voices"
         // We'll use the Pitch Path (Viterbi) for Lead and the dominant low chroma for Bass
         let nFrames = pitchPath.count
@@ -18,6 +18,8 @@ public final class CounterpointEngine: @unchecked Sendable {
         var bassNotes = [Int]()
         
         for t in 0..<nFrames {
+            if t % 5000 == 0 { await Task.yield() } // Prevent OS Timeouts on 30min tracks
+            
             // Lead from Viterbi path (Midi Note)
             let leadMidi = pitchPath[t]
             if leadMidi > 0 { leadNotes.append(leadMidi) }

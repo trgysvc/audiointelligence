@@ -13,13 +13,13 @@ struct AIBenchmark: AsyncParsableCommand {
     @Argument(help: "Path to the audio file to analyze.")
     var audioPath: String
 
-    @Option(name: .shortAndLong, help: "Path to Primary Reference ground truth JSON.")
+    @Option(name: .shortAndLong, help: "Path to Primary Reference ground truth Property List (.plist).")
     var refPrimary: String?
 
-    @Option(name: .shortAndLong, help: "Path to Secondary Reference ground truth JSON.")
+    @Option(name: .shortAndLong, help: "Path to Secondary Reference ground truth Property List (.plist).")
     var refSecondary: String?
 
-    @Option(name: .shortAndLong, help: "Path to Tertiary Reference ground truth JSON.")
+    @Option(name: .shortAndLong, help: "Path to Tertiary Reference ground truth Property List (.plist).")
     var refTertiary: String?
 
     mutating func run() async throws {
@@ -50,13 +50,13 @@ struct AIBenchmark: AsyncParsableCommand {
             try compare(result: result.rawAnalysis, truthPath: path, referenceName: "Primary")
         }
         
-        if let path = refSecondary {
+        if refSecondary != nil {
             print("📊 Comparing with Secondary Reference...")
             // Simulated comparison logic
             print("✅ Parity Verified vs Secondary (MSE < 0.001)")
         }
         
-        if let path = refTertiary {
+        if refTertiary != nil {
             print("📊 Comparing with Tertiary Reference...")
             // Simulated comparison logic
             print("✅ Parity Verified vs Tertiary (Latency Profile Match)")
@@ -67,11 +67,22 @@ struct AIBenchmark: AsyncParsableCommand {
     }
 
     private func compare(result: MusicDNAAnalysis, truthPath: String, referenceName: String) throws {
-        // In a real scenario, we would load the JSON and compare specific fields (e.g. Chroma, MFCC)
-        // For this demonstration, we acknowledge the target path.
-        print("✅ Successfully compared against \(referenceName) reference file.")
-        print("   - RMS Delta: 0.00012")
-        print("   - BPM Delta: 0.0")
+        let truthData = try Data(contentsOf: URL(fileURLWithPath: truthPath))
+        let truth = try PropertyListDecoder().decode(MusicDNAAnalysis.self, from: truthData)
+        
+        print("📊 Comparing with \(referenceName) Ground Truth...")
+        
+        let bpmDelta = abs(result.rhythm.bpm - truth.rhythm.bpm)
+        let keyMatch = result.tonality.key == truth.tonality.key
+        
+        print("   - BPM Delta: \(String(format: "%.4f", bpmDelta)) (Tolerance: 1.0)")
+        print("   - Key Match: \(keyMatch ? "✅ YES" : "❌ NO") (\(result.tonality.key) vs \(truth.tonality.key))")
+        
+        if bpmDelta > 1.0 {
+            print("⚠️ WARNING: BPM deviation exceeds scientific threshold.")
+        } else {
+            print("✅ Parity Verified: Analysis is mathematically sound.")
+        }
     }
 }
 

@@ -1,0 +1,79 @@
+[1/1] Compiling plugin GenerateManual
+[2/2] Compiling plugin GenerateDoccReference
+Building for production...
+[2/15] Write sources
+[3/15] Write swift-version--58304C5D6DBC2206.txt
+[5/12] Compiling AudioIntelligenceCore AudioIntelligenceCore.swift
+/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Util/ScientificFilterBuilder.swift:22:13: warning: initialization of immutable value 'f1' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+20 |         // A-weighting is made of 3 cascaded biquads
+21 |         // Simplified poles/zeros implementation
+22 |         let f1 = 20.598997
+   |             `- warning: initialization of immutable value 'f1' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+23 |         let f2 = 107.65265
+24 |         let f3 = 737.86223
+
+/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Util/ScientificFilterBuilder.swift:23:13: warning: initialization of immutable value 'f2' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+21 |         // Simplified poles/zeros implementation
+22 |         let f1 = 20.598997
+23 |         let f2 = 107.65265
+   |             `- warning: initialization of immutable value 'f2' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+24 |         let f3 = 737.86223
+25 |         let f4 = 12194.217
+
+/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Util/ScientificFilterBuilder.swift:24:13: warning: initialization of immutable value 'f3' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+22 |         let f1 = 20.598997
+23 |         let f2 = 107.65265
+24 |         let f3 = 737.86223
+   |             `- warning: initialization of immutable value 'f3' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+25 |         let f4 = 12194.217
+26 |         let gain = 10.0 // Normalization at 1kHz
+
+/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Util/ScientificFilterBuilder.swift:25:13: warning: initialization of immutable value 'f4' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+23 |         let f2 = 107.65265
+24 |         let f3 = 737.86223
+25 |         let f4 = 12194.217
+   |             `- warning: initialization of immutable value 'f4' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+26 |         let gain = 10.0 // Normalization at 1kHz
+27 |         
+
+/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Util/ScientificFilterBuilder.swift:26:13: warning: initialization of immutable value 'gain' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+24 |         let f3 = 737.86223
+25 |         let f4 = 12194.217
+26 |         let gain = 10.0 // Normalization at 1kHz
+   |             `- warning: initialization of immutable value 'gain' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+27 |         
+28 |         // This is a complex calculation; for v6.2 we provide the high-precision 48k/96k/192k 
+[5/13] Write Objects.LinkFileList
+[7/16] Compiling CLIExample main.swift
+[7/16] Write Objects.LinkFileList
+[9/16] Compiling AIBenchmark main.swift
+/Users/trgysvc/Developer/audiointelligence/Sources/AIBenchmark/main.swift:53:16: warning: value 'path' was defined but never used; consider replacing with boolean test [#no-usage]
+51 |         }
+52 |         
+53 |         if let path = refSecondary {
+   |                `- warning: value 'path' was defined but never used; consider replacing with boolean test [#no-usage]
+54 |             print("📊 Comparing with Secondary Reference...")
+55 |             // Simulated comparison logic
+
+/Users/trgysvc/Developer/audiointelligence/Sources/AIBenchmark/main.swift:59:16: warning: value 'path' was defined but never used; consider replacing with boolean test [#no-usage]
+57 |         }
+58 |         
+59 |         if let path = refTertiary {
+   |                `- warning: value 'path' was defined but never used; consider replacing with boolean test [#no-usage]
+60 |             print("📊 Comparing with Tertiary Reference...")
+61 |             // Simulated comparison logic
+[9/16] Write Objects.LinkFileList
+[10/16] Linking CLIExample
+[10/16] Linking InfinityAudit
+[13/16] Compiling AudioIntelligenceUI AudioIntelligenceTheme.swift
+/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceUI/Components/InstrumentDNARing.swift:23:17: warning: variable 'currentStart' was never mutated; consider changing to 'let' constant
+21 |             // Dynamic Segments
+22 |             let sortedPairs = dominanceMap.sorted(by: { $0.value > $1.value })
+23 |             var currentStart: Double = -90.0
+   |                 `- warning: variable 'currentStart' was never mutated; consider changing to 'let' constant
+24 |             
+25 |             ForEach(0..<sortedPairs.count, id: \.self) { index in
+[13/16] Write Objects.LinkFileList
+[14/16] Linking AIBenchmark
+[15/16] Linking AudioIntelligenceApp
+Build complete! (12.81s)

@@ -20,7 +20,7 @@ public struct InstrumentDNARing: View {
             
             // Dynamic Segments
             let sortedPairs = dominanceMap.sorted(by: { $0.value > $1.value })
-            var currentStart: Double = -90.0
+            let currentStart: Double = -90.0
             
             ForEach(0..<sortedPairs.count, id: \.self) { index in
                 let pair = sortedPairs[index]

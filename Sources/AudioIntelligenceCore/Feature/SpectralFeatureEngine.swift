@@ -142,8 +142,10 @@ public enum SpectralFeatureEngine {
                 }
                 
                 let sorted = bandMags.sorted()
-                let valley = sorted[Int(Float(sorted.count) * 0.1)] // 10th percentile
-                let peak = sorted[Int(Float(sorted.count) * 0.9)]   // 90th percentile
+                guard !sorted.isEmpty else { continue }
+                
+                let valley = sorted[Int(Float(sorted.count) * 0.02)] // 2nd percentile (Industry Standard)
+                let peak   = sorted[Int(Float(sorted.count) * 0.98)] // 98th percentile (Industry Standard)
                 
                 contrast[b][t] = log10f(max(1e-10, peak) / max(1e-10, valley))
             }

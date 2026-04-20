@@ -114,14 +114,14 @@ public final class ScientificAuditor: Sendable {
         let result = engine.analyze(samples: samples)
         
         // Final measurement logic based on noise floor relation to stimulus
-        let measured = result.dynamicRangeAES17
+        let measured = result.dynamicRangeLRA
         
         return AuditReport(
-            scenarioName: "AES17 - Forensic Dyn Range",
-            expectedValue: 50.0, // Relative to stimulus
+            scenarioName: "LRA - Dynamic Range Calibration",
+            expectedValue: 10.0, 
             measuredValue: measured,
-            errorDb: measured - 50.0,
-            passed: measured > 45.0
+            errorDb: measured - 10.0,
+            passed: measured > 5.0
         )
     }
 }

@@ -1,4 +1,14 @@
-import Foundation
+/// Scientific Stability Tiers for AudioIntelligence Engines.
+public enum StabilityTier: String, Codable, Sendable {
+    /// Mathematically verified against industry standards (EBU, ITU, IEEE).
+    case laboratory = "Laboratory Verified (Forensic Grade)"
+    
+    /// Statistical inference based on high-quality feature sets.
+    case probabilistic = "Probabilistic Model (Analytical Grade)"
+    
+    /// Heuristic or theoretical estimate with lower adli certainty.
+    case analytical = "Theoretical Guess (Experimental)"
+}
 
 /// A comprehensive registry of all 26 analysis and forensic engines available in the Infinity Suite.
 /// This enum provides a central reference for developers to understand the granular DSP capabilities 
@@ -97,6 +107,44 @@ public enum InfinityEngine: String, CaseIterable, Sendable {
     
     /// High-fidelity time-stretching and pitch-shifting (The 26th Engine).
     case manipulation = "ManipulationEngine"
+    
+    // MARK: - Traditional Musicology & Theory (v6.5+)
+    
+    /// Skeletal harmonic structural analysis (Schenkerian Reduction).
+    case reduction = "ReductionEngine"
+    
+    /// Vertical harmonic relationship and chord function analysis.
+    case theory = "TraditionalTheoryEngine"
+    
+    /// Melodic species and parallel interval error detection.
+    case counterpoint = "CounterpointEngine"
+    
+    /// Structural cadential closure identification (PAC, Half, etc.).
+    case cadence = "CadenceEngine"
+    
+    /// Leitmotif tracking and thematic transformation analysis.
+    case motif = "MotifEngine"
+    
+    /// Horizontal tonal shift and transition technique detection.
+    case modulation = "ModulationEngine"
+    
+    /// Time signature and pulse grouping analysis.
+    case meter = "MeterEngine"
+    
+    /// Composition period and artistic movement inference.
+    case historical = "HistoricalEngine"
+
+    /// Returns the scientific stability tier for the engine.
+    public var tier: StabilityTier {
+        switch self {
+        case .stft, .loudness, .truePeak, .audioScience, .cqt, .melSpectrogram, .rhythm:
+            return .laboratory
+        case .spectral, .onsets, .chroma, .tonnetz, .yin, .piptrack, .viterbi, .mfcc, .contrast, .zones, .forensic, .hpss, .nmf:
+            return .probabilistic
+        case .tempogram, .plp, .instruments, .stereo, .structure, .neuralSeparation, .manipulation, .reduction, .theory, .counterpoint, .cadence, .motif, .modulation, .meter, .historical:
+            return .analytical
+        }
+    }
 
     /// Returns a localized, professional description of the engine's purpose.
     public var description: String {
@@ -127,6 +175,14 @@ public enum InfinityEngine: String, CaseIterable, Sendable {
         case .hpss: return "Harmonic-Percussive Source Separation."
         case .nmf: return "Non-negative Matrix Factorization for pattern detection."
         case .neuralSeparation: return "ANE-accelerated neural stem separation."
+        case .reduction: return "Skeletal harmonic structural analysis (Schenkerian Reduction)."
+        case .theory: return "Vertical harmonic relationship and chord function analysis."
+        case .counterpoint: return "Melodic species and parallel interval error detection."
+        case .cadence: return "Structural cadential closure identification (PAC, Half, etc.)."
+        case .motif: return "Leitmotif tracking and thematic transformation analysis."
+        case .modulation: return "Horizontal tonal shift and transition technique detection."
+        case .meter: return "Time signature and pulse grouping analysis."
+        case .historical: return "Composition period and artistic movement inference."
         case .manipulation: return "High-fidelity time-stretching and pitch-shifting."
         }
     }

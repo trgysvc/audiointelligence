@@ -44,20 +44,29 @@ public final class PiptrackEngine: Sendable {
         for t in 0..<nFrames {
             var framePitches: [Float] = []
             var frameMags: [Float] = []
-            
-            // 1. Find local maxima in the frequency range (Contiguous in Frame-major)
+
+            // Librosa piptrack: threshold = 0.1 * max(S[:, t]) in [fMin, fMax] range
+            // This makes detection amplitude-invariant (same behaviour on quiet and loud signals)
+            var frameMax: Float = 0
+            for f in max(1, binMin)...binMax {
+                let v = stft.magnitude[t * nFreqs + f]
+                if v > frameMax { frameMax = v }
+            }
+            let dynamicThreshold = threshold * frameMax
+
+            // 1. Find local maxima in [fMin, fMax] — parabolic interpolation
             for f in max(1, binMin)...binMax {
                 let current = stft.magnitude[t * nFreqs + f]
-                let prev = stft.magnitude[t * nFreqs + (f - 1)]
-                let next = stft.magnitude[t * nFreqs + (f + 1)]
-                
-                if current > prev && current > next && current > threshold {
-                    // 2. Parabolic Interpolation
-                    // p = 0.5 * (prev - next) / (prev - 2*current + next)
+                let prev    = stft.magnitude[t * nFreqs + (f - 1)]
+                let next    = stft.magnitude[t * nFreqs + (f + 1)]
+
+                // Local-max AND above frame-normalised threshold
+                if current > prev && current > next && current > dynamicThreshold {
+                    // 2. Parabolic interpolation (sub-bin refinement)
                     let p = 0.5 * (prev - next) / (prev - 2.0 * current + next)
                     let refinedBin = Float(f) + p
                     let refinedFreq = refinedBin * sr / nFFT
-                    
+
                     framePitches.append(refinedFreq)
                     frameMags.append(current)
                 }

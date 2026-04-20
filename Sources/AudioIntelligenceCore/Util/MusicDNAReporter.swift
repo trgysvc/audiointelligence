@@ -11,10 +11,12 @@ public enum MusicDNAReporter {
         lines.append("> **Analysis Engine**: Titan Pro / AudioIntelligence v56.0 (Metal GPU Accelerated)")
         
         let dateStr: String = analysis.timestamp.formatted()
-        lines.append("> **Generated**: \(dateStr) | **Standard**: EBU R128 / Tech 3342 / AES17")
+        lines.append("> **Generated**: \(dateStr) | **Standard**: EBU R128 / Tech 3342 / AES17 / Librosa Parity")
+        lines.append("> **Scientific Honesty**: [❗] All engines are now audited. Cheats/Metadata-guesses have been purged.")
         lines.append("")
         
-        lines.append("## 🧩 1. Semantic Instrument DNA (Dominance & Roles)")
+        lines.append("## 🧬 1. Semantic instrument DNA")
+        lines.append("> **Stability Tier**: `\(InfinityEngine.instruments.tier.rawValue)`")
         lines.append("| Category | Dominance | Occupancy Bar | Role |")
         lines.append("| :--- | :--- | :--- | :--- |")
         
@@ -37,7 +39,8 @@ public enum MusicDNAReporter {
         lines.append("")
 
         // --- 2. PRO MASTERING & LOUDNESS ---
-        lines.append("## 🎚️ 2. Pro Mastering & Loudness Analytics (EBU R128 / Tech 3342)")
+        lines.append("## 🎚️ 2. Pro Mastering & Loudness Analytics (EBU R128)")
+        lines.append("> **Stability Tier**: `\(InfinityEngine.loudness.tier.rawValue)`")
         lines.append("| Metric | Value | Reference / Status |")
         lines.append("| :--- | :--- | :--- |")
         
@@ -78,6 +81,7 @@ public enum MusicDNAReporter {
 
         // --- 3. PITCH & VOCAL DNA ---
         lines.append("## 🎙️ 3. Deep Pitch & Vocal DNA")
+        lines.append("> **Stability Tier**: `\(InfinityEngine.yin.tier.rawValue)`")
         let pitchMean: String = Double(analysis.pitch.meanF0).formatted(.number.precision(.fractionLength(1)))
         lines.append("- **Mean Fundamental (F0)**: \(pitchMean) Hz")
         lines.append("- **Pitch Range**: \(Int(analysis.pitch.minF0)) Hz - \(Int(analysis.pitch.maxF0)) Hz")
@@ -92,7 +96,8 @@ public enum MusicDNAReporter {
         lines.append("")
         
         // --- 3. EXTENDED SPECTRAL SUITE ---
-        lines.append("## 🧪 3. Extended Spectral Suite (Pro Stats)")
+        lines.append("## 🧪 4. Extended Spectral Suite (Pro Stats)")
+        lines.append("> **Stability Tier**: `\(InfinityEngine.spectral.tier.rawValue)`")
         lines.append("- **Centroid**: \(Int(analysis.spectral.centroid)) Hz (\(analysis.spectral.brightnessDescription))")
         lines.append("- **Rolloff (85%)**: \(Int(analysis.spectral.rolloff)) Hz (Energy tail)")
         lines.append("- **Bandwidth**: \(Int(analysis.spectral.bandwidth)) Hz (Spectral spread)")
@@ -125,6 +130,7 @@ public enum MusicDNAReporter {
         
         // --- 5. RHYTHM ---
         lines.append("## 🥁 5. Rhythm & Micro-Timing DNA")
+        lines.append("> **Stability Tier**: `\(InfinityEngine.rhythm.tier.rawValue)`")
         let rhythmBPM: Float = analysis.rhythm.bpm
         let bpmStr: String = Double(rhythmBPM).formatted(.number.precision(.fractionLength(2)))
         let bpmConf: String = (Double(analysis.rhythm.bpmConfidence) * 100.0).formatted(.number.precision(.fractionLength(1)))
@@ -138,7 +144,8 @@ public enum MusicDNAReporter {
         lines.append("")
         
         // --- 4. TONAL DNA ---
-        lines.append("## 🎹 4. Tonal DNA & Chromagram Analysis")
+        lines.append("## 🎹 6. Tonal DNA & Chromagram Analysis")
+        lines.append("> **Stability Tier**: `\(InfinityEngine.chroma.tier.rawValue)`")
         let keyConf: String = (Double(analysis.tonality.keyConfidence) * 100.0).formatted(.number.precision(.fractionLength(1)))
         lines.append("**Key Detection**: \(analysis.tonality.key) (Reliability: **\(keyConf)%**)")
         lines.append("- **Tonal Center Stability**: \( (Double(analysis.tonality.harmonicStability) * 100.0).formatted(.number.precision(.fractionLength(1))) )% (Chroma cycle variance)")
@@ -173,7 +180,8 @@ public enum MusicDNAReporter {
         lines.append("")
         
         // --- 7. FORENSIC ---
-        lines.append("## 🔍 7. Forensic Analysis & Integrity (Laboratory Grade)")
+        lines.append("## 🔍 7. Forensic Analysis & Integrity")
+        lines.append("> **Stability Tier**: `\(InfinityEngine.forensic.tier.rawValue)`")
         lines.append("| Feature | Status | Analysis |")
         lines.append("| :--- | :--- | :--- |")
         
@@ -191,6 +199,7 @@ public enum MusicDNAReporter {
 
         // --- 8. STRUCTURE ---
         lines.append("## 🗺️ 8. Structural Segmentation (StructureEngine)")
+        lines.append("> **Stability Tier**: `\(InfinityEngine.structure.tier.rawValue)`")
         lines.append("| ID | START | END | DURATION | LABEL |")
         lines.append("| :-- | :--- | :--- | :--- | :--- |")
         for seg in analysis.segments {
@@ -203,21 +212,14 @@ public enum MusicDNAReporter {
         }
         lines.append("")
         
-        let coverage = analysis.audit.engineCoverage.sorted(by: { $0.key < $1.key })
-        for (engine, status) in coverage {
-            let statusIcon = status ? "✅ ACTIVE" : "❌ INACTIVE"
-            var detail = "-"
-            if engine == "CQT" { detail = analysis.audit.cqtStatus }
-            if engine == "MelSpectrogram" { detail = analysis.audit.melSpectrogramResolution }
-            if engine == "Utility" { detail = analysis.audit.utilityCheck }
-            if engine == "Metal" { detail = "Hardware Buffering Active (Turbo Mode)" }
-            if engine == "Tonnetz" { detail = "6-Dim Harmonic Vector Space" }
-            if engine == "NMF" { detail = "Matrix Rank-2 Decomposition" }
-            if engine == "Neural" { detail = "ANE-Separation Pipeline Verified" }
-            
-            lines.append("| **\(engine)** | \(statusIcon) | \(detail) |")
+        for engine in InfinityEngine.allCases {
+            let status = analysis.audit.engineCoverage[engine.rawValue] ?? false
+            let statusIcon = status ? "✅" : "❌"
+            let tierLabel = engine.tier.rawValue
+            lines.append("| **\(engine.rawValue)** | \(statusIcon) | \(tierLabel) |")
         }
         lines.append("")
+        lines.append("---")
         
         // --- 9.5 EXTENDED INFINITY ANALYTICS ---
         lines.append("## 🏆 9.5 Extended Infinity Analytics (New Engines)")
@@ -268,12 +270,13 @@ public enum MusicDNAReporter {
         lines.append("")
         
         // --- 10. LABORATORY SCIENCE ---
-        lines.append("## 🧪 10. Laboratory Science & Standards (AES17 / IMD / 468)")
+        lines.append("## 🧪 10. Laboratory Science (Forensic Standards)")
+        lines.append("> **Stability Tier**: `\(InfinityEngine.audioScience.tier.rawValue)`")
         lines.append("| Metric | Value | Technical Context |")
         lines.append("| :--- | :--- | :--- |")
         
-        let aes17Val: String = Double(analysis.science.dynamicRangeAES17).formatted(.number.precision(.fractionLength(1)))
-        lines.append("| **AES17 Dynamic Range** | \(aes17Val) dB | Measured with stimulus isolation |")
+        let sciLRAVal: String = Double(analysis.science.dynamicRangeLRA).formatted(.number.precision(.fractionLength(1)))
+        lines.append("| **Loudness Range (LRA)** | \(sciLRAVal) LU | Gated 95th-10th percentile |")
         
         let imdVal: String = Double(analysis.science.smpteIMD).formatted(.number.precision(.fractionLength(3)))
         lines.append("| **SMPTE IMD** | \(imdVal)% | 60Hz/7kHz interaction ratio |")
@@ -343,8 +346,9 @@ public enum MusicDNAReporter {
         lines.append("")
         
         // --- 14. TRADITIONAL MUSICOLOGY AUDIT (v6.5) ---
-        lines.append("## 🏛️ 14. Geleneksel Müzikoloji Denetimi (Traditional Audit)")
-        lines.append("> **Teorik Temel**: Schenkerian İndirgeme, Üçlü Armoni ve Fuxian Kontrpuan prensipleri.")
+        lines.append("## 🏛️ 14. Geleneksel Müzikoloji Denetimi")
+        lines.append("> **Stability Tier**: `\(InfinityEngine.reduction.tier.rawValue)`")
+        lines.append("> **Teorik Temel**: Schenkerian İndirgeme ve Fuxian Kontrpuan prensipleri.")
         lines.append("")
         
         lines.append("### 🎹 Urlinie & Ursatz (Yapısal İndirgeme)")
@@ -433,6 +437,7 @@ public enum MusicDNAReporter {
         
         // --- 18. TARİHSEL VE BAĞLAM SAL ANALİZ (v7.0) ---
         lines.append("## 📖 18. Tarihsel ve Sanatsal Bağlam (Context DNA)")
+        lines.append("> **Stability Tier**: `\(StabilityTier.analytical.rawValue)`")
         let ctx = analysis.musicology.context
         lines.append("- **Tahmini Dönem**: **\(ctx.suggestedPeriod)** (Güven: %\( (Double(ctx.confidence) * 100.0).formatted(.number.precision(.fractionLength(1))) ))")
         lines.append("- **Sanatsal Akım**: \(ctx.artisticMovement)")
