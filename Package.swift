@@ -28,6 +28,10 @@ let package = Package(
             name: "AIBenchmark",
             targets: ["AIBenchmark"]
         ),
+        .executable(
+            name: "SQAMAuditTool",
+            targets: ["SQAMAuditTool"]
+        ),
         .library(
             name: "AudioIntelligenceUI",
             targets: ["AudioIntelligenceUI"]
@@ -117,6 +121,12 @@ let package = Package(
             name: "InfinityAudit",
             dependencies: ["AudioIntelligence"],
             path: "Examples/InfinityAudit"
+        ),
+        
+        .executableTarget(
+            name: "SQAMAuditTool",
+            dependencies: ["AudioIntelligence"],
+            path: "Examples/SQAMAuditTool"
         ),
         
         .executableTarget(
