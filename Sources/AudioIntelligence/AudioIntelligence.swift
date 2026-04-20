@@ -63,17 +63,24 @@ public actor AudioIntelligence {
     
     // MARK: - Granular Utility APIs
     
+    /// Type-safe hardware telemetry for M4 Silicon auditing.
+    public struct HardwareStats: Sendable, Codable {
+        public let acceleration: String
+        public let activeThreads: Int
+        public let cacheUsageMB: Int
+    }
+    
+    /// Returns current hardware telemetry in a Swift 6 thread-safe manner.
+    public func getHardwareStats() async -> HardwareStats {
+        return HardwareStats(
+            acceleration: "AMX/ANE/Metal",
+            activeThreads: ProcessInfo.processInfo.activeProcessorCount,
+            cacheUsageMB: Int(await IntelligenceCache.shared.currentSize() / 1024 / 1024)
+        )
+    }
+    
     /// Manually clears the 4GB hybrid disk/RAM cache.
     public func invalidateCache() async {
         await IntelligenceCache.shared.clear()
-    }
-    
-    /// Returns current hardware telemetry.
-    public func getHardwareStats() async -> [String: Any] {
-        return [
-            "acceleration": "AMX/ANE",
-            "threads": ProcessInfo.processInfo.activeProcessorCount,
-            "cache_usage_bytes": await IntelligenceCache.shared.currentSize()
-        ]
     }
 }

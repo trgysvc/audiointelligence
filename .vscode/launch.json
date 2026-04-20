@@ -99,6 +99,26 @@
             "target": "DownloadsAudit",
             "configuration": "release",
             "preLaunchTask": "swift: Build Release DownloadsAudit"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:audiointelligence}",
+            "name": "Debug SQAMAuditTool",
+            "target": "SQAMAuditTool",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug SQAMAuditTool"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:audiointelligence}",
+            "name": "Release SQAMAuditTool",
+            "target": "SQAMAuditTool",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release SQAMAuditTool"
         }
     ]
 }

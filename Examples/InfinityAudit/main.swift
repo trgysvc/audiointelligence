@@ -50,7 +50,16 @@ struct InfinityAudit {
             
             print("\n\n✅ Analiz Tamamlandı!")
             print("------------------------------------------")
-            print("📝 Rapor Oluşturuldu: \(result.reportPath)")
+            
+            // Hardware Telemetry
+            let stats = await intelligence.getHardwareStats()
+            print("🔥 Donanım Telemetrisi:")
+            print("   - İvmelendirme: \(stats.acceleration)")
+            print("   - Aktif Çekirdekler: \(stats.activeThreads) Thread")
+            print("   - Önbellek Kullanımı: \(stats.cacheUsageMB) MB")
+            
+            print("------------------------------------------")
+            print("📝 Rapor Oluşturuldu: \(result.reportPath ?? "Disk kaydı yapılmadı")")
             print("📊 Özet: \(result.summary)")
             print("\n--- RAPOR ÖNİZLEME ---\n")
             print(result.reportText)
