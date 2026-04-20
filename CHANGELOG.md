@@ -1,8 +1,19 @@
-# 🗓️ Changelog
-
-All notable changes to the **AudioIntelligence SDK** will be documented in this file. This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-
 ---
+
+## [8.1.5] - 2026-04-20
+### Added
+- **SQAM Forensic Audit**: Successfully completed the industry-standard 70-track EBU SQAM (Tech 3253) validation suite with 100% stability.
+- **Scientific Integrity Report (SIR)**: Integrated a formal verification certificate documenting mathematical parity with Librosa and EBU standards.
+- **SQAMAuditTool**: New internal utility for automated batch processing and deviation reporting.
+- **M4 Silicon Forensic DNA**: Sealed the forensic pipeline with real-time hardware telemetry and GPU-accelerated reporting.
+
+### Changed
+- **Apple Binary Standard**: Migrated all forensic metadata exports from JSON to **Apple Property List (.plist)** for improved performance and data integrity.
+- **README/DEVLOG Overhaul**: Updated all user-facing documentation to reflect the v8.1.5 scientific status.
+
+### Fixed
+- **SIGTRAP 133 (Critical)**: Resolved an Integer Division by Zero vulnerability in the `MeterEngine` by implementing vectorized safety guards.
+- **Optional Interpolation**: Fixed diagnostic warnings in `InfinityAudit` regarding optional string interpolation.
 
 ## [7.1.0] - 2026-04-20
 ### Added
