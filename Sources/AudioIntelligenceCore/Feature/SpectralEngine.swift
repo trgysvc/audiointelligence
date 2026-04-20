@@ -97,8 +97,8 @@ public final class SpectralEngine: Sendable {
             }
         }
         
-        let meanSkewness = totalSkewness / Float(nFrames)
-        let meanKurtosis = totalKurtosis / Float(nFrames)
+        let meanSkewness = (totalSkewness / Float(nFrames)).isNaN ? 0.0 : (totalSkewness / Float(nFrames))
+        let meanKurtosis = (totalKurtosis / Float(nFrames)).isNaN ? 0.0 : (totalKurtosis / Float(nFrames))
 
         // 4. Rolloff
         let rolloffSeries = spectralRolloff(magnitude: mag, nFrames: nFrames, frequencies: freqs)

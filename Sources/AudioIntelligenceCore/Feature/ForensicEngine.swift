@@ -58,22 +58,35 @@ public final class ForensicEngine: @unchecked Sendable {
         let nBins = nFFT / 2 + 1
         let binFreq = Float(sampleRate) / Float(nFFT)
         
-        // Search from top down for the first bin with significant energy
-        var cutoffBin = nBins - 1
-        let threshold: Float = 1e-6 // -60dB relative to 1.0
-        
-        for f in stride(from: nBins - 1, through: 0, by: -1) {
-            var binMax: Float = 0
-            
-            // Gather bin across all frames (Strided access in Frame-major)
+        // 1. Calculate average spectrum across all frames (Mean Pooling)
+        var meanMag = [Float](repeating: 0, count: nBins)
+        for f in 0..<nBins {
+            var sum: Float = 0
             for t in 0..<nFrames {
-                let mag = magnitude[t * nBins + f]
-                if mag > binMax { binMax = mag }
+                sum += magnitude[t * nBins + f]
             }
+            meanMag[f] = sum / Float(nFrames)
+        }
+        
+        // 2. Search for the "Cliff": Point where HF energy drops > 10dB relative to lower band
+        // Typical MP3 cutoffs: 16kHz, 18kHz, 20kHz
+        let searchStartBin = Int(Float(nBins) * 0.4) // Start above 4k for speed
+        var cutoffBin = nBins - 1
+        
+        for f in stride(from: nBins - 2, through: searchStartBin, by: -1) {
+            let high = meanMag[f+1] + 1e-12
+            let low  = meanMag[f]   + 1e-12
             
-            if binMax > threshold {
+            // If energy drops by 10x (10dB) between adjacent bins, we found a codec edge
+            if low / high > 10.0 {
                 cutoffBin = f
                 break
+            }
+            
+            // Also detection via floor: If avg magnitude is below -80dB relative to peak
+            let maxMag = meanMag.max() ?? 1.0
+            if meanMag[f] < maxMag * 0.0001 {
+                cutoffBin = f
             }
         }
         

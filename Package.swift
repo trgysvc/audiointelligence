@@ -45,6 +45,7 @@ let package = Package(
             name: "AudioIntelligence",
             dependencies: [
                 "AudioIntelligenceCore",
+                "AudioIntelligenceMetal",
                 .product(name: "Atomics", package: "swift-atomics")
             ],
             path: "Sources/AudioIntelligence",

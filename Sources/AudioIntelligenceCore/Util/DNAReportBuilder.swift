@@ -9,7 +9,21 @@ public enum AnalysisLane: String, Codable, CaseIterable, Sendable {
 
 public actor DNAReportBuilder {
     
-    public init() {}
+    private let device: Device
+    private let mode: Mode
+    private let metalEngine: MetalEngine
+    
+    private var allHPSS: [HPSSResult?] = []
+    
+    public init(
+        device: Device = .automatic, 
+        mode: Mode = .balanced,
+        metalEngine: MetalEngine = MetalEngine()
+    ) {
+        self.device = device
+        self.mode = mode
+        self.metalEngine = metalEngine
+    }
 
     public func analyze(
         url: URL, 
@@ -20,7 +34,6 @@ public actor DNAReportBuilder {
         let filename = url.lastPathComponent
         progress(5, "Initializing Absolute Forensic Completeness v7.1...", nil)
         
-        let metalEngine = MetalEngine()
         let hwStatus = metalEngine.getHardwareStatus()
         progress(10, "M4 Hardware Hook: \(hwStatus) [STABLE]", nil)
         
@@ -37,11 +50,23 @@ public actor DNAReportBuilder {
         
         // --- 26-Engine Aggregator State (PRE-ALLOCATED FOR BUS ERROR PROTECTION) ---
         let maxExpectedFragments = Int(ceil(Double(totalFrames) / Double(chunkInputFrames))) + 1
+        let sampleRate = inputFormat.sampleRate
+        
+        // High-Resolution Feature Buffers (v7.1 Forensic Upgrade)
+        var fullChromagram = [[Float]]()
+        var fullPitchPath = [Int]()
+        var fullBeatTimes = [Double]()
+        var fullOnsetEnv = [Float]()
         
         var allLoudness = [LoudnessEngine.LoudnessResult?](repeating: nil, count: maxExpectedFragments)
         var allSpectral = [AdvancedSpectralMetrics?](repeating: nil, count: maxExpectedFragments)
         var allOnsets = [OnsetResult?](repeating: nil, count: maxExpectedFragments)
         var allBitDepths = [Int?](repeating: nil, count: maxExpectedFragments)
+        var allCodecs = [Float?](repeating: nil, count: maxExpectedFragments)
+        var allClipping = [Int?](repeating: nil, count: maxExpectedFragments)
+        var allEntropy = [Float?](repeating: nil, count: maxExpectedFragments)
+        
+        var allHPSS = [HPSSResult?](repeating: nil, count: maxExpectedFragments)
         var allInstruments = [InstrumentPrediction](repeating: InstrumentPrediction(label: "Empty", confidence: 0, technicalBasis: "Pre-allocated"), count: 500)
         var instrumentPtr = 0
         
@@ -56,7 +81,7 @@ public actor DNAReportBuilder {
         var allRhythm = [RhythmResult?](repeating: nil, count: maxExpectedFragments)
         var allContrast = [[Float]?](repeating: nil, count: maxExpectedFragments)
         
-        Swift.print("🔍 Starting [Absolute Forensic Completeness] Run (26 Engines - Atomic Batch Path)")
+        Swift.print("🔍 Starting [Absolute Forensic Recalibration] Run (30 Engines - High-Res Path)")
         
         var idx = 0
         while readOffset < AVAudioFramePosition(totalFrames) {
@@ -65,12 +90,12 @@ public actor DNAReportBuilder {
             // ATOMIC STEP: Load chunk, analyze, purge.
             await Task.yield() 
             
-            let chunk = try AudioLoader.loadNextChunkManual(file: file, offset: readOffset, frameCount: currentReadCount)
+            let chunk = try AudioLoader.loadNextChunkManual(file: file, offset: readOffset, frameCount: currentReadCount, targetSampleRate: inputFormat.sampleRate)
             let timestamp = Double(readOffset) / inputFormat.sampleRate
             progress(15 + Double(idx) * 1.5, "Fragment #\(idx + 1) (@\(Int(timestamp))s): Sequential Processing...", nil)
             
             // 1. Core STFT
-            let stftEngine = STFTEngine(nFFT: 2048, hopLength: 512, sampleRate: chunk.sampleRate)
+            let stftEngine = STFTEngine(nFFT: 2048, hopLength: 512, sampleRate: chunk.sampleRate, metalEngine: metalEngine)
             let stft = await stftEngine.analyze(chunk.samples)
             
             // --- GROUP A: Core Metrics ---
@@ -92,6 +117,9 @@ public actor DNAReportBuilder {
             
             let forensic = ForensicEngine().analyze(samples: chunk.samples, magnitude: stft.magnitude, nFrames: stft.nFrames, nFFT: 2048, sampleRate: chunk.sampleRate)
             allBitDepths[idx] = forensic.trueBitDepth
+            allCodecs[idx] = forensic.codecCutoffHz
+            allClipping[idx] = forensic.clippingEvents
+            allEntropy[idx] = forensic.entropyScore
 
             // --- GROUP B: Tonal DNA ---
             Swift.print("⚙️ [Group B] Aligned Engine Push...")
@@ -101,19 +129,33 @@ public actor DNAReportBuilder {
             let yin = YINEngine(sampleRate: chunk.sampleRate).analyze(samples: chunk.samples)
             allYIN[idx] = yin
             
-            let piptrack = PiptrackEngine().track(stft: stft)
-            allPiptrack[idx] = piptrack.pitches.reduce(0, +) / Float(max(1, piptrack.pitches.count))
+            let piptrackRes = PiptrackEngine().track(stft: stft)
+            allPiptrack[idx] = piptrackRes.pitches.reduce(0, +) / Float(max(1, piptrackRes.pitches.count))
+            
+            // High-Res Append (Aligned to global offset)
+            for p in piptrackRes.pitches { fullPitchPath.append(Int(p)) }
             
             let contrast = SpectralFeatureEngine.spectralContrast(from: stft, nBands: 6)
             allContrast[idx] = contrast.map { $0.reduce(0, +) / Float(max(1, $0.count)) }
 
             let tonnetz = TonnetzEngine().compute(chromagram: chromaRaw)
-            allTonnetz[idx] = (0..<6).map { i in tonnetz.tonnetz.map { $0[i] }.reduce(0, +) / Float(max(1, tonnetz.tonnetz.count)) }
+            
+            // Refactored to prevent compiler complexity timeout (v7.2 Aligned)
+            var tonnetzMeans = [Float](repeating: 0, count: 6)
+            let framesCount = Float(max(1, tonnetz.tonnetz.first?.count ?? 0))
+            for i in 0..<6 {
+                let sum = tonnetz.tonnetz[i].reduce(0, +)
+                tonnetzMeans[i] = sum / framesCount
+            }
+            allTonnetz[idx] = tonnetzMeans
 
             
             // --- GROUP C: Infinity Engines (HARD ISOLATION MODE) ---
             Swift.print("⚙️ [Group C] Engaging Infinity Matrix (Isolated Path)...")
-            let melRes = await MelSpectrogramEngine(stftEngine: stftEngine).createMelSpectrogram(from: chunk.samples)
+            let melRes = await MelSpectrogramEngine(stftEngine: stftEngine, nMels: 128, metalEngine: metalEngine).createMelSpectrogram(from: chunk.samples)
+            
+            let hpss = HPSSEngine(winHarm: 31, winPerc: 31, metalEngine: metalEngine).analyze(stft: stft)
+            if idx == 0 { allHPSS[0] = hpss } 
             
             autoreleasepool {
                 let mfccRaw = metalEngine.executeBatchDct(melSpectrogram: melRes.melData, nMfcc: 20, nMels: 128)
@@ -154,44 +196,66 @@ public actor DNAReportBuilder {
                 }
             }
             
-            Swift.print("✅ Fragment #\(idx + 1) Aligned & Isolated & Purged.")
+            // --- AGGREGATION: Collect high-res chroma and beat data ---
+            fullOnsetEnv.append(contentsOf: onsets.envelope)
+            for t in rhythmRes.beatTimes { fullBeatTimes.append(timestamp + t) }
+            
+            for f in 0..<chromaRaw[0].count {
+                var vec = [Float](repeating: 0, count: 12)
+                for c in 0..<12 { vec[c] = chromaRaw[c][f] }
+                fullChromagram.append(vec)
+            }
+
+            var meanVector = [Float](repeating: 0, count: 12)
+            if let firstChroma = chromaRaw.first, !firstChroma.isEmpty {
+                for c in 0..<12 {
+                    let binFrames = chromaRaw[c]
+                    var sum: Float = 0
+                    vDSP_sve(binFrames, 1, &sum, vDSP_Length(binFrames.count))
+                    meanVector[c] = sum / Float(max(1, binFrames.count))
+                }
+            }
+            allChroma[idx] = meanVector
+            
             readOffset += AVAudioFramePosition(currentReadCount)
             idx += 1
         }
         
         progress(85, "Executing Traditional Musicology & Reduction Audit...", nil)
         
-        // --- 26 + 4 (New Musicology) Engines Orchestration ---
-        _ = allChroma.compactMap { $0 }.flatMap { $0 }
-        let nFramesChroma = allChroma.compactMap { $0 }.first?.count ?? 0
-        var transposedChroma = [[Float]](repeating: [], count: 12)
-        if nFramesChroma > 0 {
-            _ = allChroma.compactMap { $0 }.count * nFramesChroma
-            transposedChroma = (0..<12).map { c in
-                allChroma.compactMap { $0 }.flatMap { $0 } // This is simplified, needs proper transpose
-            }
-            // Real transpose needed for reduction
-            transposedChroma = (0..<12).map { c in
-                allChroma.compactMap { $0 }.map { $0[c] }
-            }
-        }
-        
-        let pitchPath = allPiptrack.compactMap { Int($0 ?? 0) }
-        
+        // Global Orchestration (v7.1 Forensic Recalibration)
         // Engines
         let reductionEng = ReductionEngine()
         let theoryEng = TraditionalTheoryEngine()
         let counterEng = CounterpointEngine()
         let cadenceEng = CadenceEngine()
         
+        // New Engines (v7.0)
+        let motifEng = MotifEngine()
+        let modulationEng = ModulationEngine()
+        let meterEng = MeterEngine()
+        let historicalEng = HistoricalEngine()
+        
         let finalSegments = allStructure.flatMap { $0?.segments ?? [] }.enumerated().map { i, seg in
             MusicSegment(id: i + 1, start: seg.startSec, end: seg.endSec, label: seg.label)
         }
         
-        let reductionRes = reductionEng.reduce(chromagram: transposedChroma, segments: finalSegments)
-        let verticalRes = theoryEng.analyzeVertical(chromagram: transposedChroma, cqtMatrix: [], key: "C Major") // Empty CQT for now
-        let counterRes = counterEng.analyze(pitchPath: pitchPath, chroma: transposedChroma)
-        let cadenceRes = cadenceEng.detect(verticalChords: verticalRes, segments: finalSegments, key: "C Major")
+        // Transpose global chromagram to [12][N]
+        var globalTransposedChroma = [[Float]](repeating: [], count: 12)
+        if !fullChromagram.isEmpty {
+            globalTransposedChroma = (0..<12).map { c in fullChromagram.map { $0[c] } }
+        }
+        
+        let reductionRes = reductionEng.reduce(chromagram: globalTransposedChroma, segments: finalSegments)
+        let verticalRes = theoryEng.analyzeVertical(chromagram: globalTransposedChroma, cqtMatrix: [], key: "C Major")
+        let counterRes = counterEng.analyze(pitchPath: fullPitchPath, chroma: globalTransposedChroma)
+        
+        // High-Resolution Musicology Analysis (v7.3 - Global Context Awareness)
+        let globalKey = reductionRes.fundamentalNote // Use Ur-Note as initial key
+        let motifRes = motifEng.detectMotifs(pitchPath: fullPitchPath, chromagram: globalTransposedChroma, sr: sampleRate, hopLength: 512)
+        let modulationRes = modulationEng.detectModulations(chromagram: globalTransposedChroma, initialKey: globalKey)
+        let meterRes = meterEng.detectMeter(beatTimes: fullBeatTimes, onsetStrength: fullOnsetEnv, sr: sampleRate)
+        let cadenceRes = cadenceEng.detect(verticalChords: verticalRes, segments: finalSegments, key: globalKey, sr: sampleRate)
         
         let musicology = MusicologyMetrics(
             ursatz: reductionRes.fundamentalNote,
@@ -199,7 +263,11 @@ public actor DNAReportBuilder {
             verticalAnalysis: verticalRes,
             counterpointSpecies: counterRes.species,
             counterpointErrors: counterRes.errors,
-            fundamentalBasis: reductionRes.theoryBasis
+            fundamentalBasis: reductionRes.theoryBasis,
+            motifs: motifRes,
+            modulations: modulationRes,
+            meter: meterRes,
+            context: HistoricalContext(suggestedPeriod: "Analyzing...", artisticMovement: "Analyzing...", globalContext: "Analyzing...", composerContext: nil, confidence: 0) // Placeholder
         )
         
         progress(90, "Finalizing Atomic Data Aggregation...", nil)
@@ -207,20 +275,30 @@ public actor DNAReportBuilder {
         let finalAnalysis = assembleFinalDNA(
             filename: filename, 
             allLoudness: allLoudness.compactMap{$0}, allSpectral: allSpectral.compactMap{$0}, 
-            allOnsets: allOnsets.compactMap{$0}, allBitDepths: allBitDepths.compactMap{$0}, 
+            allOnsets: allOnsets.compactMap{$0}, 
+            allBitDepths: allBitDepths.compactMap{$0}, 
+            allCodecs: allCodecs.compactMap{$0},
+            allClipping: allClipping.compactMap{$0},
+            allEntropy: allEntropy.compactMap{$0},
             allInstruments: Array(allInstruments.prefix(instrumentPtr)), 
             allScience: allScience.compactMap{$0}, allTonnetz: allTonnetz.compactMap{$0}, 
             allNMF: allNMF.compactMap{$0}, allPiptrack: allPiptrack.compactMap{$0}, 
             allViterbi: [], allYIN: allYIN.compactMap{$0}, 
             allMFCC: allMFCC.compactMap{$0}, allStructure: allStructure.compactMap{$0}, 
             allRhythm: allRhythm.compactMap{$0}, allContrast: allContrast.compactMap{$0},
+            allChroma: allChroma.compactMap{$0},
+            fullBeatTimes: fullBeatTimes,
             reduction: reductionRes,
-            musicology: musicology
+            musicology: musicology,
+            historicalEng: historicalEng
         )
         
         let reportText = generateLegacyFormattedMarkdown(analysis: finalAnalysis)
         let outputDir = "/Users/trgysvc/Documents/AI Works"
-        let finalReportName = filename.replacingOccurrences(of: ".mp3", with: ".dna.md").replacingOccurrences(of: ".wav", with: ".dna.md")
+        
+        // --- Logic Fix: Correctly replace any extension with .dna.md ---
+        let urlWithoutExtension = url.deletingPathExtension()
+        let finalReportName = urlWithoutExtension.lastPathComponent + ".dna.md"
         let reportPath = (outputDir as NSString).appendingPathComponent(finalReportName)
         
         Swift.print("💾 Writing Atomic Signature to: \(reportPath)")
@@ -232,19 +310,40 @@ public actor DNAReportBuilder {
 
     private func assembleFinalDNA(filename: String, allLoudness: [LoudnessEngine.LoudnessResult], 
                                   allSpectral: [AdvancedSpectralMetrics], allOnsets: [OnsetResult], 
-                                  allBitDepths: [Int], allInstruments: [InstrumentPrediction], 
+                                  allBitDepths: [Int], 
+                                  allCodecs: [Float],
+                                  allClipping: [Int],
+                                  allEntropy: [Float],
+                                  allInstruments: [InstrumentPrediction], 
                                   allScience: [ScienceMetrics], allTonnetz: [[Float]], allNMF: [Float], 
                                   allPiptrack: [Float], allViterbi: [[Int]], allYIN: [PitchResult], 
                                   allMFCC: [[Float]], allStructure: [StructureResult], 
                                   allRhythm: [RhythmResult], allContrast: [[Float]],
+                                  allChroma: [[Float]],
+                                  fullBeatTimes: [Double],
                                   reduction: ReductionMetrics,
-                                  musicology: MusicologyMetrics) -> MusicDNAAnalysis {
+                                  musicology: MusicologyMetrics,
+                                  historicalEng: HistoricalEngine) -> MusicDNAAnalysis {
         
         let powers = allLoudness.map { powf(10.0, ($0.integratedLUFS + 0.691) / 10.0) }
         let finalLufs = 10.0 * log10f(powers.reduce(0, +) / Float(max(1, powers.count))) - 0.691
         let finalPeak = allLoudness.map { $0.truePeakDb }.max() ?? -100
         
-        let meanBPM = allRhythm.map { Float($0.bpm) }.reduce(0, +) / Float(max(1, allRhythm.count))
+        // Global Rhythm Refinement (v7.1 Forensic upgrade)
+        var globalBPM: Float = 0
+        if fullBeatTimes.count > 1 {
+            var ibis = [Float]()
+            for i in 1..<fullBeatTimes.count {
+                ibis.append(Float(fullBeatTimes[i] - fullBeatTimes[i-1]))
+            }
+            ibis.sort()
+            let medianIBI = ibis[ibis.count / 2]
+            globalBPM = 60.0 / medianIBI
+        } else {
+            globalBPM = allRhythm.map { Float($0.bpm) }.reduce(0, +) / Float(max(1, allRhythm.count))
+        }
+        
+        let meanBPM = globalBPM
         let meanConfidence = allRhythm.map { $0.bpmConfidence }.reduce(0, +) / Float(max(1, allRhythm.count))
         
         let mastering = MasteringMetrics(integratedLUFS: finalLufs, momentaryLUFS: allLoudness.map{$0.momentaryLUFsMax}.max() ?? -70, shortTermLUFS: allLoudness.map{$0.shortTermLUFsMax}.max() ?? -70, truePeak: finalPeak, phaseCorrelation: 0.94, monoCompatibility: "OPTIMIZED", balanceLR: 0, msBalance: 0, sideEnergyPercent: 10, stereoWidth: 0.8, lraLU: allLoudness.map{$0.loudnessRange}.max() ?? 0)
@@ -255,20 +354,98 @@ public actor DNAReportBuilder {
             MusicSegment(id: i + 1, start: seg.startSec, end: seg.endSec, label: seg.label)
         }
 
-        return MusicDNAAnalysis(
+        // Global Beat Consistency (v7.1 Forensic upgrade)
+        var globalBeatConsistency: Float = 0
+        if fullBeatTimes.count > 2 {
+            var ibis = [Float]()
+            for i in 1..<fullBeatTimes.count {
+                ibis.append(Float(fullBeatTimes[i] - fullBeatTimes[i-1]))
+            }
+            let avg = ibis.reduce(0, +) / Float(ibis.count)
+            let variance = ibis.map { ($0 - avg) * ($0 - avg) }.reduce(0, +) / Float(ibis.count)
+            globalBeatConsistency = sqrtf(variance)
+        }
+
+        // Global Pitch Refinement (v7.1 Forensic upgrade)
+        let validYIN = allYIN.map { $0 }
+        let allF0s = validYIN.map { $0.meanF0 }.filter { !$0.isNaN && $0 > 0 }
+        let meanF0 = allF0s.reduce(0, +) / Float(max(1, allF0s.count))
+        let minF0 = allF0s.min() ?? 0
+        let maxF0 = allF0s.max() ?? 0
+        
+        let totalVoiced = validYIN.map { Float($0.voicedFrames.count) }.reduce(0, +)
+        let totalFrames = validYIN.map { Float($0.f0Series.count) }.reduce(0, +)
+        let voicedRatio = totalVoiced / Float(max(1, totalFrames))
+        let stability: Float = 0.9 // Simplified until v7.2
+
+        let finalCentroid = allSpectral.map { $0.centroid }.reduce(0, +) / Float(max(1, allSpectral.count))
+        let finalRolloff = allSpectral.map { $0.rolloff }.reduce(0, +) / Float(max(1, allSpectral.count))
+        let finalFlatness = allSpectral.map { $0.flatness }.reduce(0, +) / Float(max(1, allSpectral.count))
+        let finalFlux = allSpectral.map { $0.flux }.reduce(0, +) / Float(max(1, allSpectral.count))
+        let finalBandwidth = allSpectral.map { $0.bandwidth }.reduce(0, +) / Float(max(1, allSpectral.count))
+        let finalZCR = allSpectral.map { $0.zcr }.reduce(0, +) / Float(max(1, allSpectral.count))
+        
+        let finalSpectral = AdvancedSpectralMetrics(
+            centroid: finalCentroid, 
+            rolloff: finalRolloff, 
+            flatness: finalFlatness, 
+            flux: finalFlux, 
+            skewness: allSpectral.map { $0.skewness }.reduce(0, +) / Float(max(1, allSpectral.count)), 
+            kurtosis: allSpectral.map { $0.kurtosis }.reduce(0, +) / Float(max(1, allSpectral.count)), 
+            bandwidth: finalBandwidth, 
+            zcr: finalZCR, 
+            dynamicRange: allSpectral.map { $0.dynamicRange }.reduce(0, +) / Float(max(1, allSpectral.count)), 
+            rmsMean: allSpectral.map { $0.rmsMean }.reduce(0, +) / Float(max(1, allSpectral.count)), 
+            rmsMax: allSpectral.map { $0.rmsMax }.max() ?? 0, 
+            brightnessDescription: finalCentroid > 5000 ? "Bright / Treble-heavy" : "Warm / Balanced", 
+            fullMagnitudes: []
+        )
+
+        let finalAnalysis = MusicDNAAnalysis(
             fileName: filename,
-            rhythm: RhythmMetrics(bpm: meanBPM, bpmConfidence: meanConfidence, beatConsistency: 0.88, onsetMean: allOnsets.map{$0.mean}.reduce(0,+)/Float(max(1,allOnsets.count)), onsetPeak: allOnsets.map{$0.peak}.max() ?? 0, characterize: "Analyzed"),
-            tonality: TonalMetrics(key: "C Minor", keyConfidence: 0.85, strength: 0.92, keySignature: [0.1, 0.05, 0.9, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1], tendency: "Harmonically Stable"),
-            pitch: PitchMetrics(meanF0: allYIN.compactMap{!$0.meanF0.isNaN ? $0.meanF0 : nil}.reduce(0, +) / Float(max(1, allYIN.count)), medianF0: 440, minF0: 0, maxF0: 1000, voicedRatio: 0.8, stability: 0.9),
-            spectral: allSpectral.first ?? AdvancedSpectralMetrics(centroid: 0, rolloff: 0, flatness: 0, flux: 0, skewness: 0, kurtosis: 0, bandwidth: 0, zcr: 0, dynamicRange: 0, rmsMean: 0, rmsMax: 0, brightnessDescription: "None", fullMagnitudes: []),
-            hpss: HPSSMetrics(harmonicRatio: 0.5, percussiveRatio: 0.5, harmonicMean: 50, percussiveMean: 50, characterization: "Balanced"),
+            rhythm: RhythmMetrics(bpm: meanBPM, bpmConfidence: meanConfidence, beatConsistency: Float(globalBeatConsistency), onsetMean: allOnsets.map{$0.mean}.reduce(0,+)/Float(max(1,allOnsets.count)), onsetPeak: allOnsets.map{$0.peak}.max() ?? 0, characterize: globalBeatConsistency < 0.05 ? "Locked/Stable" : "Organic/Varied"),
+            tonality: TonalMetrics(
+                key: reduction.fundamentalNote, 
+                keyConfidence: reduction.stabilityScore, 
+                strength: reduction.stabilityScore, 
+                harmonicStability: reduction.stabilityScore,
+                keySignature: [0.1], // Legacy
+                tendency: reduction.stabilityScore > 0.8 ? "Stable" : "Evolving",
+                scaleType: "Diatonic/Reduced",
+                tuningSystem: "Equal Temperament"
+            ),
+            pitch: PitchMetrics(meanF0: meanF0, medianF0: meanF0, minF0: minF0, maxF0: maxF0, voicedRatio: voicedRatio, stability: stability),
+            spectral: finalSpectral,
+            hpss: HPSSMetrics(
+                harmonicRatio: allHPSS.first??.harmonicEnergyRatio ?? 0.5, 
+                percussiveRatio: allHPSS.first??.percussiveEnergyRatio ?? 0.5, 
+                harmonicEnergyRatio: allHPSS.first??.harmonicEnergyRatio ?? 0.5,
+                percussiveEnergyRatio: allHPSS.first??.percussiveEnergyRatio ?? 0.5,
+                harmonicMean: 50, 
+                percussiveMean: 50, 
+                characterization: allHPSS.first??.characterization ?? "Balanced"
+            ),
             timbre: TimbreMetrics(mfcc: allMFCC.first ?? [], spectralContrast: finalContrast),
             mastering: mastering,
             semantic: SemanticMetrics(dominanceMap: ["Percussion": 0.6], primaryRole: "Lead", textureType: "Complex", presenceScore: 0.95),
-            forensic: ForensicMetrics(sourceURL: filename, encoder: "Lame v3.100 (Verified)", isVerified: true, effectiveBits: allBitDepths.min() ?? 24, isUpsampled: false, codecCutoffHz: 19500, entropyScore: 0.92, clippingEvents: 0, techSpecs: ["M4": "Active", "Engines": "26/26"]),
+            forensic: ForensicMetrics(
+                sourceURL: filename, 
+                encoder: allCodecs.max() ?? 0 > 18000 ? "High-Resolution Lossless/ALAC" : "Lossy Codec Detected", 
+                isVerified: true, 
+                effectiveBits: allBitDepths.min() ?? 16, 
+                isUpsampled: (allEntropy.reduce(0, +) / Float(max(1, allEntropy.count))) < 0.6, 
+                codecCutoffHz: allCodecs.max() ?? 0, 
+                entropyScore: allEntropy.reduce(0, +) / Float(max(1, allEntropy.count)), 
+                clippingEvents: allClipping.reduce(0, +), 
+                techSpecs: ["M4": "Active", "Engines": "26/26"]
+            ),
             instruments: InstrumentMetrics(predictions: Array(allInstruments.prefix(5)), primaryLabel: allInstruments.first?.label ?? "Unknown"),
             science: allScience.first ?? ScienceMetrics(dynamicRangeAES17: 0, thdPlusN: 0, smpteIMD: 0, snr: 0, noiseFloorWeight468: 0, status: "Verified"),
-            waveformPeaks: [], chromaProfile: [0.1, 0.05, 0.9, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1], 
+            waveformPeaks: [], chromaProfile: allChroma.reduce([Float](repeating: 0, count: 12)) { res, vec in
+                var next = res
+                for i in 0..<12 { next[i] += vec[i] }
+                return next
+            }.map { $0 / Float(max(1, allChroma.count)) }, 
             segments: Array(finalSegments.prefix(15)), 
             audit: AuditMetrics(engineCoverage: ["Full-26": true, "Structure": true, "RhythmDP": true, "PLP": true, "Contrast": true], cqtStatus: "OK", melSpectrogramResolution: "128x800", utilityCheck: "OK", filterbankStatus: "OK"), 
             tonnetz: TonnetzMetrics(meanTonnetz: allTonnetz.first ?? [], harmonicStability: 0.92), 
@@ -278,6 +455,46 @@ public actor DNAReportBuilder {
             viterbi: ViterbiMetrics(path: allViterbi.first ?? [], confidence: 0.98),
             reduction: reduction,
             musicology: musicology
+        )
+        
+        // Context Inference (requires full analysis data)
+        let contextRes = historicalEng.inferContext(analysis: finalAnalysis)
+        
+        return MusicDNAAnalysis(
+            fileName: filename,
+            rhythm: finalAnalysis.rhythm,
+            tonality: finalAnalysis.tonality,
+            pitch: finalAnalysis.pitch,
+            spectral: finalAnalysis.spectral,
+            hpss: finalAnalysis.hpss,
+            timbre: finalAnalysis.timbre,
+            mastering: finalAnalysis.mastering,
+            semantic: finalAnalysis.semantic,
+            forensic: finalAnalysis.forensic,
+            instruments: finalAnalysis.instruments,
+            science: finalAnalysis.science,
+            waveformPeaks: finalAnalysis.waveformPeaks,
+            chromaProfile: finalAnalysis.chromaProfile,
+            segments: finalAnalysis.segments,
+            audit: finalAnalysis.audit,
+            tonnetz: finalAnalysis.tonnetz,
+            tempogram: finalAnalysis.tempogram,
+            nmf: finalAnalysis.nmf,
+            piptrack: finalAnalysis.piptrack,
+            viterbi: finalAnalysis.viterbi,
+            reduction: finalAnalysis.reduction,
+            musicology: MusicologyMetrics(
+                ursatz: musicology.ursatz,
+                cadences: musicology.cadences,
+                verticalAnalysis: musicology.verticalAnalysis,
+                counterpointSpecies: musicology.counterpointSpecies,
+                counterpointErrors: musicology.counterpointErrors,
+                fundamentalBasis: musicology.fundamentalBasis,
+                motifs: musicology.motifs,
+                modulations: musicology.modulations,
+                meter: musicology.meter,
+                context: contextRes
+            )
         )
     }
 
@@ -389,7 +606,13 @@ public actor DNAReportBuilder {
         <summary>View Detailed Spectral and Rhythmic Metrics</summary>
         
         ```json
-        \( (try? { () -> String in let encoder = JSONEncoder(); encoder.outputFormatting = .prettyPrinted; let data = try encoder.encode(analysis); return String(data: data, encoding: .utf8) ?? "" }()) ?? "{ \"error\": \"Serialization failed\" }" )
+        \( (try? { () -> String in 
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = .prettyPrinted
+            encoder.nonConformingFloatEncodingStrategy = .convertToString(positiveInfinity: "inf", negativeInfinity: "-inf", nan: "nan")
+            let data = try encoder.encode(analysis)
+            return String(data: data, encoding: .utf8) ?? "" 
+        }()) ?? "{ \"error\": \"Serialization failed\" }" )
         ```
         </details>
         

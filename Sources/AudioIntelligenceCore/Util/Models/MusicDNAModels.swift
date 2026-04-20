@@ -1,5 +1,19 @@
 import Foundation
 
+// MARK: - Hardware Preferences
+
+public enum Device: String, Codable, Sendable {
+    case automatic
+    case cpu
+    case appleSilicon // Metal/ANE
+}
+
+public enum Mode: String, Codable, Sendable {
+    case balanced
+    case efficiency
+    case performance
+}
+
 /// The "Infinity" Analysis model. 
 /// Exposes 100% of the AudioIntelligence DSP metrics without data stripping.
 public struct MusicDNAAnalysis: Codable, Sendable, Identifiable {
@@ -110,8 +124,11 @@ public struct TonalMetrics: Codable, Sendable {
     public let key: String
     public let keyConfidence: Float
     public let strength: Float
+    public let harmonicStability: Float // Chroma variance score
     public let keySignature: [Float] // 12 semitone key weights
     public let tendency: String
+    public let scaleType: String // e.g. "Diatonic", "Modal", "Atonal", "Jazz", "Makam"
+    public let tuningSystem: String // e.g. "Equal Temperament", "Microtonal (53-TET)"
 }
 
 public struct PitchMetrics: Codable, Sendable {
@@ -140,8 +157,10 @@ public struct AdvancedSpectralMetrics: Codable, Sendable {
 }
 
 public struct HPSSMetrics: Codable, Sendable {
-    public let harmonicRatio: Float
-    public let percussiveRatio: Float
+    public let harmonicRatio: Float     // Backward compatibility
+    public let percussiveRatio: Float   // Backward compatibility
+    public let harmonicEnergyRatio: Float
+    public let percussiveEnergyRatio: Float
     public let harmonicMean: Float
     public let percussiveMean: Float
     public let characterization: String // e.g., "Harmonic Dominant"
@@ -262,6 +281,48 @@ public struct MusicologyMetrics: Codable, Sendable {
     public let counterpointSpecies: String // "1:1", "1:2", "Aksak", etc.
     public let counterpointErrors: [String] // Parallel 5ths, etc.
     public let fundamentalBasis: String // General summary (Temel Harç)
+    
+    // v7.0 Absolute Forensic Additions
+    public let motifs: [MotifDNA]
+    public let modulations: [ModulationDNA]
+    public let meter: MeterDNA
+    public let context: HistoricalContext
+}
+
+public struct MotifDNA: Codable, Sendable {
+    public let id: String
+    public let startTime: Double
+    public let endTime: Double
+    public let label: String // e.g. "Leitmotif A"
+    public let type: String // "Original", "Transformation"
+    public let transformationType: String? // "Mirror", "Augmentation", "Rhythmic Shift", etc.
+    public let similarityScore: Float
+    public let technicalBasis: String
+}
+
+public struct ModulationDNA: Codable, Sendable {
+    public let timestamp: Double
+    public let fromKey: String
+    public let toKey: String
+    public let technique: String // "Passing", "Pedal", "Structural Pivot", etc.
+    public let pivotNotes: [String]
+    public let description: String
+}
+
+public struct MeterDNA: Codable, Sendable {
+    public let timeSignature: String // "4/4", "9/8 (Aksak)", etc.
+    public let meterType: String // "Simple", "Compound", "Aksak", "Sebare"
+    public let isAnacrusis: Bool // Eksik vuruş
+    public let polyrhythmRatio: String? // e.g. "3:2"
+    public let measures: Int
+}
+
+public struct HistoricalContext: Codable, Sendable {
+    public let suggestedPeriod: String // "Baroque", "Jazz Age", "Modernism", etc.
+    public let artisticMovement: String
+    public let globalContext: String
+    public let composerContext: String?
+    public let confidence: Float
 }
 
 public struct VerticalChord: Codable, Sendable {

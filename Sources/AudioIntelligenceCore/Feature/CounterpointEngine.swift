@@ -23,6 +23,9 @@ public final class CounterpointEngine: @unchecked Sendable {
             if leadMidi > 0 { leadNotes.append(leadMidi) }
             
             // Bass from Chroma (Lowest 12-bin profile)
+            // Safety Check: Ensure chroma has the frame index t
+            guard chroma.indices.contains(0), chroma[0].indices.contains(t) else { continue }
+            
             let frameChroma = (0..<12).map { chroma[$0][t] }
             let bassBin = frameChroma.enumerated().max(by: { $0.element < $1.element })?.offset ?? 0
             // Assume bass is in the 3rd octave for MIDI comparison
@@ -41,12 +44,12 @@ public final class CounterpointEngine: @unchecked Sendable {
     private func detectSpecies(lead: [Int], bass: [Int]) -> String {
         let ratio = Float(lead.count) / Float(max(1, bass.count))
         
-        if ratio > 0.9 && ratio < 1.1 { return "1:1 (Bire Bir)" }
-        if ratio >= 1.8 && ratio <= 2.2 { return "1:2 (Bire İki)" }
-        if ratio >= 3.5 && ratio <= 4.5 { return "1:4 (Bire Dört)" }
-        if ratio > 2.5 && ratio < 3.5 { return "AKSÂK (Düzensiz/Hızlı)" }
+        if ratio > 0.9 && ratio < 1.1 { return "1:1 (One-to-One)" }
+        if ratio >= 1.8 && ratio <= 2.2 { return "1:2 (One-to-Two)" }
+        if ratio >= 3.5 && ratio <= 4.5 { return "1:4 (One-to-Four)" }
+        if ratio > 2.5 && ratio < 3.5 { return "AKSÂK (Irregular/Complex)" }
         
-        return "Florid / Serbest Stil"
+        return "Florid / Free Style"
     }
     
     private func detectParallelErrors(lead: [Int], bass: [Int]) -> [String] {
@@ -64,14 +67,14 @@ public final class CounterpointEngine: @unchecked Sendable {
             // Parallel 5ths (7 semitones)
             if interval == 7 && lastInterval == 7 && (leadMove != 0 || bassMove != 0) {
                 if (leadMove > 0 && bassMove > 0) || (leadMove < 0 && bassMove < 0) {
-                    errors.append("HATA: Paralel Beşli (Akor geçişinde her iki ses aynı yönde 5'li aralığı korumuştur)")
+                    errors.append("ERROR: Parallel Fifths (Voices moving in parallel perfect fifths detected)")
                 }
             }
             
             // Parallel Octaves (0 or 12 semitones)
             if (interval == 0 || interval == 12) && (lastInterval == 0 || lastInterval == 12) && (leadMove != 0 || bassMove != 0) {
                 if (leadMove > 0 && bassMove > 0) || (leadMove < 0 && bassMove < 0) {
-                    errors.append("HATA: Paralel Oktav (İki ses arasında bağımsızlık kaybolmuştur)")
+                    errors.append("ERROR: Parallel Octaves (Voices moving in parallel octaves detected)")
                 }
             }
             

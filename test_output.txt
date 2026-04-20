@@ -1,0 +1,31 @@
+[1/1] Compiling plugin GenerateManual
+[2/2] Compiling plugin GenerateDoccReference
+Building for debugging...
+[2/13] Write sources
+[3/13] Write swift-version--58304C5D6DBC2206.txt
+[5/8] Compiling AudioIntelligenceTests STFTParityTests.swift
+[6/8] Compiling AudioIntelligenceTests ScientificValidationTests.swift
+[7/8] Emitting module AudioIntelligenceTests
+[7/9] Write Objects.LinkFileList
+[8/9] Linking AudioIntelligencePackageTests
+Build complete! (0.89s)
+Test Suite 'Selected tests' started at 2026-04-20 11:43:45.271.
+Test Suite 'AudioIntelligencePackageTests.xctest' started at 2026-04-20 11:43:45.272.
+Test Suite 'STFTParityTests' started at 2026-04-20 11:43:45.272.
+Test Case '-[AudioIntelligenceTests.STFTParityTests testM4SiliconExecutionLock]' started.
+Test Case '-[AudioIntelligenceTests.STFTParityTests testM4SiliconExecutionLock]' passed (0.031 seconds).
+Test Case '-[AudioIntelligenceTests.STFTParityTests testM4SiliconMathematicalParity]' started.
+Test Case '-[AudioIntelligenceTests.STFTParityTests testM4SiliconMathematicalParity]' passed (0.243 seconds).
+Test Suite 'STFTParityTests' passed at 2026-04-20 11:43:45.546.
+	 Executed 2 tests, with 0 failures (0 unexpected) in 0.274 (0.274) seconds
+Test Suite 'AudioIntelligencePackageTests.xctest' passed at 2026-04-20 11:43:45.546.
+	 Executed 2 tests, with 0 failures (0 unexpected) in 0.274 (0.274) seconds
+Test Suite 'Selected tests' passed at 2026-04-20 11:43:45.546.
+	 Executed 2 tests, with 0 failures (0 unexpected) in 0.274 (0.275) seconds
+✅ Metal Engine: GPU Discovery Success — [Apple M4] Engaged.
+✅ Metal Engine: GPU Discovery Success — [Apple M4] Engaged.
+✅ [M4 SEALED] Mathematical Parity Confirmed (Epsilon: 0.0001)
+􀟈  Test run started.
+􀄵  Testing Library Version: 1743
+􀄵  Target Platform: arm64e-apple-macos14.0
+􁁛  Test run with 0 tests in 0 suites passed after 0.001 seconds.

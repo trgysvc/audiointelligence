@@ -47,12 +47,29 @@ public final class RhythmEngine: Sendable {
         
         let beatTimes = beatFrames.map { Double($0 * hopLength) / sampleRate }
         
+        // 3. Calculate Beat Consistency (StdDev of IBIs)
+        var interBeatIntervals = [Double]()
+        if beatTimes.count > 1 {
+            for i in 1..<beatTimes.count {
+                interBeatIntervals.append(beatTimes[i] - beatTimes[i-1])
+            }
+        }
+        
+        let ibiStdDev: Double
+        if interBeatIntervals.isEmpty {
+            ibiStdDev = 0.0
+        } else {
+            let mean = interBeatIntervals.reduce(0, +) / Double(interBeatIntervals.count)
+            let variance = interBeatIntervals.map { pow($0 - mean, 2.0) }.reduce(0, +) / Double(interBeatIntervals.count)
+            ibiStdDev = sqrt(variance)
+        }
+        
         return RhythmResult(
             bpm: Double(bpm),
             bpmConfidence: tempoResult.confidence,
             beatFrames: beatFrames,
             beatTimes: beatTimes,
-            gridStdSec: Double(onsetResult.mean),
+            gridStdSec: ibiStdDev,
             onsetMean: onsetResult.mean,
             onsetPeak: onsetResult.peak
         )
@@ -217,7 +234,6 @@ public final class RhythmEngine: Sendable {
     // MARK: - Tempo Tracking
     
     /// Estimates BPM using autocorrelation of the onset strength.
-    /// Includes v6.4 Tempo Octave Guard to prevent 'double-time' errors in polyrhythmic music.
     public static func estimateTempo(onsetStrength: [Float], sr: Double, hopLength: Int) -> (bpm: Float, confidence: Float) {
         let n = onsetStrength.count
         guard n > 0 else { return (120.0, 0.0) }
@@ -235,26 +251,19 @@ public final class RhythmEngine: Sendable {
         for lag in max(1, minLag)...min(n-1, maxLag) {
             let val = acorr[lag]
             
-            // v6.4 Gaussian Prior: Favor human-centric tempos (120 BPM +- 40)
-            // Weight = exp(-0.5 * ((bpm - 120) / 60)^2)
-            let currentBPM = 60.0 * Float(sr) / (Float(hopLength) * Float(lag))
-            let prior = expf(-0.5 * powf((currentBPM - 120.0) / 60.0, 2.0))
-            let weightedVal = val * (0.7 + 0.3 * prior)
-            
-            if weightedVal > maxVal {
-                maxVal = weightedVal
-                bestBPM = currentBPM
+            // v7.3 Forensic Mode: Pure mathematical peak picking without 120BPM bias
+            if val > maxVal {
+                maxVal = val
+                bestBPM = 60.0 * Float(sr) / (Float(hopLength) * Float(lag))
             }
         }
         
         // 3. Tempo Octave Guard: Check if half-time peak is almost as strong
-        // If bestBPM > 180, check if bestBPM/2 has a significant peak
         if bestBPM > 180.0 {
             let halfTimeLag = Int(roundf(Float(60.0 * sr) / (Float(hopLength) * (bestBPM / 2.0))))
             if halfTimeLag < acorr.count {
                 let halfVal = acorr[halfTimeLag]
-                // If half-time peak is > 85% of double-time peak, it's likely the real tempo
-                if halfVal > (maxVal * 0.85) {
+                if halfVal > (maxVal * 0.9) { // Stringent 90% threshold for primary pulse
                     bestBPM = bestBPM / 2.0
                 }
             }
@@ -264,7 +273,7 @@ public final class RhythmEngine: Sendable {
         var meanVal: Float = 0
         acorr.withUnsafeBufferPointer { ptr in
             if let base = ptr.baseAddress {
-                vDSP_meanv(base + minLag, 1, &meanVal, vDSP_Length(maxLag - minLag + 1))
+                vDSP_meanv(base + minLag, 1, &meanVal, vDSP_Length(min(acorr.count - minLag, maxLag - minLag + 1)))
             }
         }
         let confidence = maxVal > 0 ? min(1.0, (maxVal - meanVal) / maxVal) : 0.0

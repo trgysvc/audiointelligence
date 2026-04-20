@@ -6,6 +6,7 @@
 
 import Foundation
 import Accelerate
+import AudioIntelligenceMetal
 
 public struct MelSpectrogramResult: Sendable {
     /// nMels × nFrames flat matrix (Row-Major)
@@ -20,12 +21,14 @@ public final class MelSpectrogramEngine: @unchecked Sendable {
     
     private let stftEngine: STFTEngine
     private let melFilterbank: [Float]
+    private let metalEngine: MetalEngine?
     public let nMels: Int
     private let nFreqs: Int
     
-    public init(stftEngine: STFTEngine, nMels: Int = 128) {
+    public init(stftEngine: STFTEngine, nMels: Int = 128, metalEngine: MetalEngine? = nil) {
         self.stftEngine = stftEngine
         self.nMels = nMels
+        self.metalEngine = metalEngine
         self.nFreqs = stftEngine.nFFT / 2 + 1
         
         // Pre-compute filterbank once

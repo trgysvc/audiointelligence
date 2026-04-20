@@ -69,31 +69,26 @@ public enum DSPHelpers {
     /// Full autocorrelation via vDSP_conv with strict Bound-Checks.
     /// YIN algorithm: acf = autocorrelate(y, max_size)
     /// Output includes only lags [0...maxSize-1]
+    /// Full autocorrelation via vDSP_conv.
+    /// Industry Standard: returns only lags [0...maxSize-1]
     public static func autocorrelate(_ signal: [Float], maxSize: Int) -> [Float] {
         let n = signal.count
         guard n > 0 && maxSize > 0 else { return [] }
         
-        let nResult = 2 * n - 1
-        var fullAcorr = [Float](repeating: 0, count: nResult)
-        
-        // vDSP_conv requires reversed window for cross-correlation logic
-        let reversed = Array(signal.reversed())
-        
-        // Bound-Check: vDSP_conv needs SignalLength >= FilterLength
-        // Here both N, so it's OK.
-        vDSP_conv(signal, 1, reversed, 1, &fullAcorr, 1, vDSP_Length(n), vDSP_Length(n))
-        
-        // vDSP_conv(signal, reversed) results are centered at (n-1).
-        // lag 0 is at fullAcorr[n-1]
-        let offset = n - 1
         let outSize = min(maxSize, n)
         var result = [Float](repeating: 0, count: outSize)
         
-        // Safe access to fullAcorr
-        for lag in 0..<outSize {
-            let idx = offset + lag
-            if idx >= 0 && idx < nResult {
-                result[lag] = fullAcorr[idx]
+        // vDSP_conv logic:
+        // Result[k] = Sum_{j=0}^{SignalLength - FilterLength} Signal[k+j] * Filter[j]
+        // To get autocorrelation at lag k, we want: Sum_{j} Signal[j] * Signal[j+k]
+        // We use 'signal' as the filter and a zero-padded 'signal' as the base.
+        
+        let paddedSignal = signal + [Float](repeating: 0, count: outSize)
+        let reversedSignal = Array(signal.reversed())
+        
+        paddedSignal.withUnsafeBufferPointer { pBuff in
+            reversedSignal.withUnsafeBufferPointer { rBuff in
+                vDSP_conv(pBuff.baseAddress!, 1, rBuff.baseAddress!, 1, &result, 1, vDSP_Length(outSize), vDSP_Length(n))
             }
         }
         

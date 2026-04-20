@@ -1,0 +1,68 @@
+[1/1] Compiling plugin GenerateManual
+[2/2] Compiling plugin GenerateDoccReference
+Building for production...
+[2/12] Write sources
+[3/12] Write swift-version--58304C5D6DBC2206.txt
+[5/13] Compiling AudioIntelligenceCore AudioIntelligenceCore.swift
+/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Feature/MeterEngine.swift:26:13: warning: variable 'groupings' was never mutated; consider changing to 'let' constant
+24 |         // 2. Pulse grouping analysis (looking for accents every N beats)
+25 |         // We look for higher onset energy at beat positions
+26 |         var groupings = [2, 3, 4, 5, 7, 9]
+   |             `- warning: variable 'groupings' was never mutated; consider changing to 'let' constant
+27 |         var scores = [Int: Float]()
+28 |         
+
+/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Feature/TonnetzEngine.swift:67:17: warning: initialization of immutable value 'angleM3' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+65 |             matrix[1][k] = r1 * cosf(angleFifth)
+66 |             
+67 |             let angleM3 = Float(k) * 3.0 * .pi / 2.0 // Actually it's 2*pi*(k*3)/12? No, Industry Standard uses specific constants.
+   |                 `- warning: initialization of immutable value 'angleM3' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+68 |             // Industry Standard defaults:
+69 |             // d1 = 7 (fifth), d2 = 3 (m3), d3 = 4 (M3)
+
+/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Util/ScientificFilterBuilder.swift:22:13: warning: initialization of immutable value 'f1' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+20 |         // A-weighting is made of 3 cascaded biquads
+21 |         // Simplified poles/zeros implementation
+22 |         let f1 = 20.598997
+   |             `- warning: initialization of immutable value 'f1' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+23 |         let f2 = 107.65265
+24 |         let f3 = 737.86223
+
+/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Util/ScientificFilterBuilder.swift:23:13: warning: initialization of immutable value 'f2' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+21 |         // Simplified poles/zeros implementation
+22 |         let f1 = 20.598997
+23 |         let f2 = 107.65265
+   |             `- warning: initialization of immutable value 'f2' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+24 |         let f3 = 737.86223
+25 |         let f4 = 12194.217
+
+/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Util/ScientificFilterBuilder.swift:24:13: warning: initialization of immutable value 'f3' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+22 |         let f1 = 20.598997
+23 |         let f2 = 107.65265
+24 |         let f3 = 737.86223
+   |             `- warning: initialization of immutable value 'f3' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+25 |         let f4 = 12194.217
+26 |         let gain = 10.0 // Normalization at 1kHz
+
+/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Util/ScientificFilterBuilder.swift:25:13: warning: initialization of immutable value 'f4' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+23 |         let f2 = 107.65265
+24 |         let f3 = 737.86223
+25 |         let f4 = 12194.217
+   |             `- warning: initialization of immutable value 'f4' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+26 |         let gain = 10.0 // Normalization at 1kHz
+27 |         
+
+/Users/trgysvc/Developer/audiointelligence/Sources/AudioIntelligenceCore/Util/ScientificFilterBuilder.swift:26:13: warning: initialization of immutable value 'gain' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+24 |         let f3 = 737.86223
+25 |         let f4 = 12194.217
+26 |         let gain = 10.0 // Normalization at 1kHz
+   |             `- warning: initialization of immutable value 'gain' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+27 |         
+28 |         // This is a complex calculation; for v6.2 we provide the high-precision 48k/96k/192k 
+[6/14] Compiling AudioIntelligence AudioIntelligence.swift
+[6/14] Write Objects.LinkFileList
+[10/14] Linking CLIExample
+[10/14] Linking InfinityAudit
+[12/14] Linking AIBenchmark
+[13/14] Linking AudioIntelligenceApp
+Build complete! (12.37s)
