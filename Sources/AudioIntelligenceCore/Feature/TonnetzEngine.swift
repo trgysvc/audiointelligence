@@ -55,32 +55,20 @@ public final class TonnetzEngine: Sendable {
     private func createTonnetzMatrix() -> [[Float]] {
         var matrix = [[Float]](repeating: [Float](repeating: 0, count: 12), count: 6)
         
-        let r1: Float = 1.0 // Radius for Perfect Fifth
-        let r2: Float = 1.0 // Radius for Major Third
-        let r3: Float = 0.5 // Radius for Minor Third
+        let scales: [Float] = [7.0/6.0, 7.0/6.0, 3.0/2.0, 3.0/2.0, 2.0/3.0, 2.0/3.0]
+        let radii: [Float]  = [1.0, 1.0, 1.0, 1.0, 0.5, 0.5] // Fifths, Minor, Major
         
-        for k in 0..<12 {
-            let angleFifth = Float(k) * 7.0 * .pi / 6.0
-            matrix[0][k] = r1 * sinf(angleFifth)
-            matrix[1][k] = r1 * cosf(angleFifth)
+        for i in 0..<6 {
+            let scale = scales[i]
+            let r = radii[i]
+            let shift: Float = (i % 2 == 0) ? 0.5 : 0.0
             
-            let angleM3 = Float(k) * 3.0 * .pi / 2.0 // Actually it's 2*pi*(k*3)/12? No, Industry Standard uses specific constants.
-            // Industry Standard defaults:
-            // d1 = 7 (fifth), d2 = 3 (m3), d3 = 4 (M3)
-            // Industry Standard uses: 
-            // Phi(k, d) = [sin(2*pi*k*d/12), cos(2*pi*k*d/12)]
-            
-            // Fifth (d=7)
-            matrix[0][k] = r1 * sinf(2.0 * .pi * Float(k) * 7.0 / 12.0)
-            matrix[1][k] = r1 * cosf(2.0 * .pi * Float(k) * 7.0 / 12.0)
-            
-            // Minor Third (d=3)
-            matrix[2][k] = r2 * sinf(2.0 * .pi * Float(k) * 3.0 / 12.0)
-            matrix[3][k] = r2 * cosf(2.0 * .pi * Float(k) * 3.0 / 12.0)
-            
-            // Major Third (d=4)
-            matrix[4][k] = r3 * sinf(2.0 * .pi * Float(k) * 4.0 / 12.0)
-            matrix[5][k] = r3 * cosf(2.0 * .pi * Float(k) * 4.0 / 12.0)
+            for k in 0..<12 {
+                // phi = R * cos(pi * (scale * k - shift))
+                // Note: cos(pi * (x - 0.5)) = sin(pi * x)
+                let val = scale * Float(k) - shift
+                matrix[i][k] = r * cosf(.pi * val)
+            }
         }
         
         return matrix

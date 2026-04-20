@@ -38,20 +38,18 @@ public final class HistoricalEngine: Sendable {
             confidence = 0.75
         }
         
-        // --- 2. Ruben Gonzalez Specific (Example of forensic cross-reference) ---
-        if analysis.fileName.contains("Ruben Gonzalez") {
-            period = "Afro-Cuban Son / Buena Vista Era"
-            movement = "Traditional Cuban Son / Danzón"
-            global = "Latin American Renaissance"
-            confidence = 0.95
+        // --- 2. Tonal Stability Refinement ---
+        // High stability + Specific instrumentation typically points to structural perfection of the era.
+        if analysis.tonality.harmonicStability > 0.8 && instruments.contains("Piano") {
+            confidence += 0.05
         }
-        
+
         return HistoricalContext(
             suggestedPeriod: period,
             artisticMovement: movement,
             globalContext: global,
-            composerContext: "Inferred from tonal stability (\(analysis.tonality.tendency)) and instrumentation.",
-            confidence: confidence
+            composerContext: "Inferred from tonal stability (\(analysis.tonality.tendency)) and spectral entropy (\(analysis.forensic.entropyScore)).",
+            confidence: min(0.92, confidence)
         )
     }
 }

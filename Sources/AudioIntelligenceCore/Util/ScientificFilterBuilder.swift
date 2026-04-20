@@ -19,11 +19,12 @@ public struct ScientificFilterBuilder {
     public static func aWeightingCoefficients(sampleRate: Double) -> [BiquadCoeffs] {
         // A-weighting is made of 3 cascaded biquads
         // Simplified poles/zeros implementation
-        let f1 = 20.598997
-        let f2 = 107.65265
-        let f3 = 737.86223
-        let f4 = 12194.217
-        let gain = 10.0 // Normalization at 1kHz
+        // A-weighting constants (IEC 61672-1)
+        _ = 20.598997  // f1
+        _ = 107.65265  // f2
+        _ = 737.86223  // f3
+        _ = 12194.217  // f4
+        _ = 10.0       // gain at 1kHz
         
         // This is a complex calculation; for v6.2 we provide the high-precision 48k/96k/192k 
         // fallback or a bilinear approximation.

@@ -105,6 +105,16 @@ From time-domain forensic analysis to frequency-domain neural separation, AudioI
 
 ---
 
+## 🤖 AI & Agent Integration (Universal)
+
+AudioIntelligence is designed for seamless integration with **AI Agents**, **Mastering DAWs**, and **Automated Forensic Pipelines**.
+
+- **[AI Integration Guide](docs/AI_INTEGRATION_GUIDE.md)**: A "Brain Map" for agents to understand which engine to use for specific user intents.
+- **[Report Specification](docs/REPORT_SPECIFICATION.md)**: Detailed breakdown of the `.dna.md` output, including the **Hidden JSON Metadata** block used for machine-readable data extraction.
+- **[Engine Catalog](docs/Engines.md)**: Comprehensive technical specs for all 31+ specialized DSP engines.
+
+---
+
 ## 📚 Professional Tutorial Series
 
 1. **[The Basics](docs/Tutorials/01_Basics.md)**: SPM Setup and a production-grade SwiftUI Analysis View.

@@ -12,7 +12,7 @@ public final class AudioScienceEngine: Sendable {
     }
     
     public struct ScienceResult: Codable, Sendable {
-        public let dynamicRangeAES17: Float
+        public let dynamicRangeLRA: Float
         public let thdPlusN: Float
         public let smpteIMD: Float
         public let snr: Float
@@ -20,60 +20,98 @@ public final class AudioScienceEngine: Sendable {
     }
     
     public func analyze(samples: [Float]) -> ScienceResult {
-        let dr = measureAES17DynamicRange(samples: samples)
+        let lra = measureLoudnessRangeLRA(samples: samples)
         let imd = measureSMPTEIMD(samples: samples)
         let thdn = measureTHDPlusN(samples: samples)
         let noiseRel = measureITU468NoiseFloor(samples: samples)
         
-        // SNR = Total Power / Noise Floor Power
-        var totalMS: Float = 0
-        vDSP_measqv(samples, 1, &totalMS, vDSP_Length(samples.count))
-        let noiseMS = powf(10.0, (noiseRel / 10.0))
+        // SNR Calculation (Signal-to-Noise Ratio)
+        // Divide into Active (> -40dBFS) and Silent segments
+        var activeRMS: Float = 0
+        var noiseRMS: Float = 1e-9
         
-        // v6.4 Physics Guard: Clamp and prevent infinity
-        let rawSNR = 10 * log10f(max(1e-12, totalMS / max(1e-14, noiseMS)))
-        let snr = min(144.0, max(0.0, rawSNR))
+        let windowSize = Int(0.05 * sampleRate) // 50ms window
+        var signalSum: Float = 0
+        var signalCount = 0
+        var noiseSum: Float = 0
+        var noiseCount = 0
+        
+        for i in stride(from: 0, to: samples.count - windowSize, by: windowSize) {
+            var ms: Float = 0
+            vDSP_measqv(Array(samples[i..<i+windowSize]), 1, &ms, vDSP_Length(windowSize))
+            let rms = sqrtf(max(1e-12, ms))
+            
+            if rms > 0.01 { // -40 dBFS
+                signalSum += ms
+                signalCount += 1
+            } else {
+                noiseSum += ms
+                noiseCount += 1
+            }
+        }
+        
+        activeRMS = signalCount > 0 ? sqrtf(signalSum / Float(signalCount)) : 0.0
+        noiseRMS = noiseCount > 0 ? sqrtf(noiseSum / Float(noiseCount)) : 1e-9
+        
+        let snr = (activeRMS > 0) ? 20 * log10f(activeRMS / noiseRMS) : 0.0
+        let clampedSNR = max(0.0, min(96.0, snr))
         
         func safe(_ val: Float) -> Float {
-            return val.isNaN || val.isInfinite ? 0.0 : val
+            return val.isNaN || val.isInfinite ? Float.nan : val
         }
 
         return ScienceResult(
-            dynamicRangeAES17: min(144.0, safe(dr)),
+            dynamicRangeLRA: safe(lra),
             thdPlusN: safe(thdn),
             smpteIMD: safe(imd),
-            snr: snr,
+            snr: clampedSNR,
             noiseFloorWeight468: safe(noiseRel)
         )
     }
     
-    // MARK: - AES17 Dynamic Range
+    // MARK: - EBU R128 Loudness Range (LRA)
     
-    /// AES17 Dynamic Range: Measures noise + distortion in presence of -60dBFS 997Hz tone.
-    private func measureAES17DynamicRange(samples: [Float]) -> Float {
-        // 1. Apply Notch Filter at 997Hz to remove the stimulus
-        let notched = applyNotchFilter(samples: samples, frequency: 997.0)
+    private func measureLoudnessRangeLRA(samples: [Float]) -> Float {
+        // 1. K-Weighting
+        let weighted = applyITU468Weighting(samples: samples) // Simplified K-approximation for LRA
         
-        // 2. Apply ITU-R 468 Weighting to the residual noise
-        let weightedNoise = applyITU468Weighting(samples: notched)
+        // 2. 400ms Windows (Short-term)
+        let windowSize = Int(0.4 * sampleRate)
+        let hopSize = Int(0.1 * sampleRate)
+        var loudnessLevels = [Float]()
         
-        // 3. Calculate Power of Weighted Noise
-        var noisePower: Float = 0
-        vDSP_measqv(weightedNoise, 1, &noisePower, vDSP_Length(weightedNoise.count))
-        let noiseDB = 10 * log10f(max(1e-15, noisePower))
+        for i in stride(from: 0, to: weighted.count - windowSize, by: hopSize) {
+            var ms: Float = 0
+            vDSP_measqv(Array(weighted[i..<i+windowSize]), 1, &ms, vDSP_Length(windowSize))
+            let lufs = -0.691 + 10 * log10f(max(1e-12, ms))
+            
+            // 3. Absolute Gate (-70 LUFS)
+            if lufs > -70.0 {
+                loudnessLevels.append(lufs)
+            }
+        }
         
-        // Formula: DR = noiseDB (relative to stimulus) + 60
-        // On a real recording without a -60dB stimulus, this reflects the absolute noise floor depth.
-        return abs(noiseDB)
+        guard !loudnessLevels.isEmpty else { return 0.0 }
+        
+        // 4. Relative Gate (-20 LU)
+        let meanLoudness = loudnessLevels.reduce(0, +) / Float(loudnessLevels.count)
+        let relThreshold = meanLoudness - 20.0
+        let gated = loudnessLevels.filter { $0 >= relThreshold }.sorted()
+        
+        guard !gated.isEmpty else { return 0.0 }
+        
+        // 5. Percentile Difference (95th - 10th)
+        let lowIdx = Int(Float(gated.count - 1) * 0.10)
+        let highIdx = Int(Float(gated.count - 1) * 0.95)
+        
+        return gated[highIdx] - gated[lowIdx]
     }
     
     // MARK: - SMPTE IMD (Inter-modulation Distortion)
     
     /// SMPTE IMD: Analysis of 60Hz and 7kHz interaction.
     private func measureSMPTEIMD(samples: [Float]) -> Float {
-        // High-level Logic for v52.1:
-        // Detect energy in the intermodulation sidebands (7kHz +/- 60Hz) relative to 7kHz carrier.
-        // We use a bandpass at 7kHz and check variance.
+        guard detectTestTone(samples: samples, frequency: 7000.0) else { return Float.nan }
         
         var carrierPower: Float = 0
         vDSP_measqv(samples, 1, &carrierPower, vDSP_Length(samples.count))
@@ -112,9 +150,8 @@ public final class AudioScienceEngine: Sendable {
         return output
     }
     
-    // MARK: - THD+N
-    
     private func measureTHDPlusN(samples: [Float]) -> Float {
+        guard detectTestTone(samples: samples, frequency: 997.0) else { return Float.nan }
         // 1. Measure Total Power
         var totalPower: Float = 0
         vDSP_measqv(samples, 1, &totalPower, vDSP_Length(samples.count))
@@ -174,5 +211,32 @@ public final class AudioScienceEngine: Sendable {
         
         var delay = [Float](repeating: 0, count: 2)
         vDSP_biquad(setup, &delay, input, 1, &output, 1, vDSP_Length(n))
+    }
+    
+    private func detectTestTone(samples: [Float], frequency: Float) -> Bool {
+        let n = min(samples.count, 4096)
+        guard n >= 1024 else { return false }
+        
+        var real = samples.prefix(n).map { Double($0) }
+        var imag = [Double](repeating: 0.0, count: n)
+        
+        let log2n = UInt(log2(Double(n)))
+        guard let fftSetup = vDSP_create_fftsetupD(log2n, FFTRadix(kFFTRadix2)) else { return false }
+        defer { vDSP_destroy_fftsetupD(fftSetup) }
+        
+        real.withUnsafeMutableBufferPointer { realPtr in
+            imag.withUnsafeMutableBufferPointer { imagPtr in
+                var splitComplex = DSPDoubleSplitComplex(realp: realPtr.baseAddress!, imagp: imagPtr.baseAddress!)
+                vDSP_fft_zipD(fftSetup, &splitComplex, 1, log2n, FFTDirection(kFFTDirection_Forward))
+            }
+        }
+        
+        let bin = Int(roundf(frequency * Float(n) / Float(sampleRate)))
+        guard bin < n/2 else { return false }
+        
+        let mag = sqrt(real[bin]*real[bin] + imag[bin]*imag[bin]) / Double(n)
+        let db = 20 * log10(max(1e-12, mag))
+        
+        return db > -40.0 // Stimulus detected if > -40 dBFS
     }
 }

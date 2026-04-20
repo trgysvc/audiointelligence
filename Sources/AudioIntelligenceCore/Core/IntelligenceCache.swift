@@ -45,7 +45,9 @@ public actor IntelligenceCache {
         memoryCache.setObject(value as AnyObject, forKey: key as NSString)
         
         do {
-            let data = try JSONEncoder().encode(value)
+            let plistEncoder = PropertyListEncoder()
+            plistEncoder.outputFormat = .binary
+            let data = try plistEncoder.encode(value)
             
             // Capture necessary values to avoid actor isolation issues in detached task
             let fileURL = self.cacheDirectory.appendingPathComponent(key)
@@ -76,7 +78,7 @@ public actor IntelligenceCache {
         
         do {
             let data = try Data(contentsOf: fileURL)
-            let value = try JSONDecoder().decode(T.self, from: data)
+            let value = try PropertyListDecoder().decode(T.self, from: data)
             
             // Promote to memory
             memoryCache.setObject(value as AnyObject, forKey: key as NSString)

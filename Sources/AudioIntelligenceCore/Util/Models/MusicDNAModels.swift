@@ -223,7 +223,7 @@ public struct MusicSegment: Codable, Sendable, Identifiable {
 }
 
 public struct ScienceMetrics: Codable, Sendable {
-    public let dynamicRangeAES17: Float
+    public let dynamicRangeLRA: Float
     public let thdPlusN: Float
     public let smpteIMD: Float
     public let snr: Float

@@ -97,7 +97,7 @@ public final class RhythmEngine: Sendable {
         
         // DP: Forward pass
         for i in 0..<n {
-            var bestScore = onsetStrength[i]
+            var bestScore: Float = -Float.infinity
             var bestJ = -1
             
             // Search range: [0.5*period, 2.0*period]
@@ -248,28 +248,40 @@ public final class RhythmEngine: Sendable {
         var bestBPM = Float(120.0)
         var maxVal: Float = -1.0
         
+        let referenceLag = 60.0 * Float(sr) / (Float(hopLength) * 120.0)
+        
         for lag in max(1, minLag)...min(n-1, maxLag) {
-            let val = acorr[lag]
+            // Apply Librosa-style log-normal prior (weighted at 120 BPM)
+            let prior = expf(-0.5 * powf(log2f(Float(lag) / Float(referenceLag)), 2.0) / (0.5 * 0.5))
+            let val = acorr[lag] * prior
             
-            // v7.3 Forensic Mode: Pure mathematical peak picking without 120BPM bias
             if val > maxVal {
                 maxVal = val
                 bestBPM = 60.0 * Float(sr) / (Float(hopLength) * Float(lag))
             }
         }
         
-        // 3. Tempo Octave Guard: Check if half-time peak is almost as strong
+        // 3. Tempo Octave Guard: Check if half-time or double-time peaks are strong
         if bestBPM > 180.0 {
             let halfTimeLag = Int(roundf(Float(60.0 * sr) / (Float(hopLength) * (bestBPM / 2.0))))
             if halfTimeLag < acorr.count {
                 let halfVal = acorr[halfTimeLag]
-                if halfVal > (maxVal * 0.9) { // Stringent 90% threshold for primary pulse
+                if halfVal > (maxVal * 0.8) { 
                     bestBPM = bestBPM / 2.0
+                }
+            }
+        } else if bestBPM < 60.0 {
+            let doubleTimeLag = Int(roundf(Float(60.0 * sr) / (Float(hopLength) * (bestBPM * 2.0))))
+            if doubleTimeLag < acorr.count {
+                let doubleVal = acorr[doubleTimeLag]
+                if doubleVal > (maxVal * 0.8) {
+                    bestBPM = bestBPM * 2.0
                 }
             }
         }
         
-        // 4. Confidence calculation
+        // 4. BPM Clipping & Confidence
+        bestBPM = max(40.0, min(320.0, bestBPM))
         var meanVal: Float = 0
         acorr.withUnsafeBufferPointer { ptr in
             if let base = ptr.baseAddress {
