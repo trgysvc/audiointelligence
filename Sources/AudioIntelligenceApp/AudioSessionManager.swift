@@ -11,7 +11,7 @@ public final class AudioSessionManager: ObservableObject {
     @Published public var isAnalyzing: Bool = false
     @Published public var progress: Double = 0.0
     @Published public var statusMessage: String = ""
-    @Published public var currentAnalysis: MusicDNAAnalysis?
+    @Published public var currentAnalysis: AudioReport?
     
     private let metalEngine = MetalEngine()
     private lazy var builder = DNAReportBuilder(metalEngine: metalEngine)
@@ -32,7 +32,7 @@ public final class AudioSessionManager: ObservableObject {
             }
             
             withAnimation(.spring()) {
-                self.currentAnalysis = result.analysis
+                self.currentAnalysis = result
                 self.isAnalyzing = false
             }
         } catch {

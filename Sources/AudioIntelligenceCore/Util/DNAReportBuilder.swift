@@ -25,12 +25,25 @@ public actor DNAReportBuilder {
         self.metalEngine = metalEngine
     }
 
+    /// Public pipeline: returns the clean, layered `AudioReport`.
     public func analyze(
-        url: URL, 
+        url: URL,
         lanes: Set<AnalysisLane> = Set(AnalysisLane.allCases),
         progress: @escaping @Sendable (Double, String, String?) -> Void
-    ) async throws -> (analysis: MusicDNAAnalysis, reportText: String, mdPath: String) {
-        
+    ) async throws -> AudioReport {
+        let (analysis, context) = try await analyzeAggregate(url: url, lanes: lanes, progress: progress)
+        return AudioReport(from: analysis, context: context)
+    }
+
+    /// Advanced/internal hook: the raw engine aggregate plus source context,
+    /// before lifting into `AudioReport`. Used by deep validation tests that need
+    /// fields not surfaced in the public schema.
+    public func analyzeAggregate(
+        url: URL,
+        lanes: Set<AnalysisLane> = Set(AnalysisLane.allCases),
+        progress: @escaping @Sendable (Double, String, String?) -> Void
+    ) async throws -> (analysis: MusicDNAAnalysis, context: AudioReport.SourceContext) {
+
         let filename = url.lastPathComponent
         progress(5, "Initializing Absolute Forensic Completeness v7.1...", nil)
         
@@ -405,27 +418,19 @@ public actor DNAReportBuilder {
             historicalEng: historicalEng
         )
         
-        let reportText = generateLegacyFormattedMarkdown(analysis: finalAnalysis)
-        let outputDir = "/Users/trgysvc/Documents/AI Works"
-        
-        // --- Logic Fix: Correctly replace any extension with .md ---
-        let urlWithoutExtension = url.deletingPathExtension()
-        let basename = urlWithoutExtension.lastPathComponent
-        let reportPath = (outputDir as NSString).appendingPathComponent(basename + ".md")
-        let binaryPath = (outputDir as NSString).appendingPathComponent(basename + ".plist")
-        
-        Swift.print("💾 Writing Atomic Signature (Markdown): \(reportPath)")
-        try reportText.write(toFile: reportPath, atomically: true, encoding: String.Encoding.utf8)
-        
-        Swift.print("💾 Writing Professional Binary Property List: \(binaryPath)")
-        let plistEncoder = PropertyListEncoder()
-        plistEncoder.outputFormat = .binary
-        let binaryData = try plistEncoder.encode(finalAnalysis)
-        try binaryData.write(to: URL(fileURLWithPath: binaryPath))
-        
-        Swift.print("✅ Process Completed Successfully.")
-        
-        return (analysis: finalAnalysis, reportText: reportText, mdPath: reportPath)
+        // The library produces *data*, not files. Lift the internal engine
+        // aggregate into the public, layered `AudioReport`. Persistence (md /
+        // json / plist) and rendering are the caller's choice.
+        let context = AudioReport.SourceContext(
+            sourceURL: url.path,
+            durationSeconds: Double(totalFrames) / sampleRate,
+            sampleRate: sampleRate,
+            channelCount: Int(inputFormat.channelCount),
+            sourceBitDepth: sourceBitDepth
+        )
+
+        progress(100, "Analysis complete.", nil)
+        return (finalAnalysis, context)
     }
 
     private func assembleFinalDNA(filename: String, allLoudness: [LoudnessEngine.LoudnessResult], 
@@ -598,6 +603,18 @@ public actor DNAReportBuilder {
         let dominantPeriodReal = Int(meanBPM.rounded())
         let nmfComponentEnergyReal = nmfComponentEnergy.isEmpty ? [1.0] : nmfComponentEnergy
 
+        // Forensic bit-depth reckoning.
+        //   • measuredEffectiveBits = the resolution actually present in the signal
+        //     (min step size across non-silent chunks; silent chunks report 0).
+        //   • "Fake hi-res" / upsampling = the container DECLARES more bits than the
+        //     data actually uses. Low entropy is NOT upsampling — a solo instrument
+        //     legitimately has low entropy at full bit depth.
+        let measuredEffectiveBits = allBitDepths.filter { $0 > 0 }.min()
+            ?? (sourceBitDepth > 0 ? sourceBitDepth : 16)
+        let isFakeHiRes = sourceBitDepth > 0
+            && measuredEffectiveBits > 0
+            && sourceBitDepth > measuredEffectiveBits
+
         let finalAnalysis = MusicDNAAnalysis(
             fileName: filename,
             rhythm: RhythmMetrics(bpm: meanBPM, bpmConfidence: meanConfidence, beatConsistency: Float(globalBeatConsistency), onsetMean: allOnsets.map{$0.mean}.reduce(0,+)/Float(max(1,allOnsets.count)), onsetPeak: allOnsets.map{$0.peak}.max() ?? 0, characterize: globalBeatConsistency < 0.05 ? "Locked/Stable" : "Organic/Varied"),
@@ -629,10 +646,10 @@ public actor DNAReportBuilder {
                 sourceURL: filename, 
                 encoder: allCodecs.max() ?? 0 > 18000 ? "High-Resolution Lossless/ALAC" : "Lossy Codec Detected", 
                 isVerified: true,
-                // Prefer the deterministic header value; fall back to the statistical
-                // estimate using only non-silent chunks (silent chunks report 0).
-                effectiveBits: sourceBitDepth > 0 ? sourceBitDepth : (allBitDepths.filter { $0 > 0 }.min() ?? 16),
-                isUpsampled: (allEntropy.reduce(0, +) / Float(max(1, allEntropy.count))) < 0.6,
+                // The resolution actually present in the signal (measured), which can
+                // be lower than the declared header depth in an upsampled file.
+                effectiveBits: measuredEffectiveBits,
+                isUpsampled: isFakeHiRes,
                 codecCutoffHz: allCodecs.max() ?? 0, 
                 entropyScore: allEntropy.reduce(0, +) / Float(max(1, allEntropy.count)), 
                 clippingEvents: allClipping.reduce(0, +), 
@@ -730,147 +747,4 @@ public actor DNAReportBuilder {
         )
     }
 
-    private func generateLegacyFormattedMarkdown(analysis: MusicDNAAnalysis) -> String {
-        let bar = { (val: Float) -> String in
-            let filled = Int(min(1.0, max(0.0, val)) * 25)
-            let empty = 25 - filled
-            return "`" + String(repeating: "█", count: max(0, filled)) + String(repeating: "░", count: max(0, empty)) + "`"
-        }
-        
-        let chromaKeys = ["C  ", "C# ", "D  ", "D# ", "E  ", "F  ", "F# ", "G  ", "G# ", "A  ", "A# ", "B  "]
-        
-        return """
-        # [AUDIO DNA REPORT] - \(analysis.fileName)
-        ## v7.1 Absolute Forensic Completeness (26 Engines Active)
-        
-        ---
-        
-        ## 📊 1. Hardware-Software Integrity Audit
-        | Feature | Status | Analysis |
-        | :--- | :--- | :--- |
-        | **M4 Silicon GPU** | ✅ ACTIVE | Hardware-Accelerated Kernel Engaged |
-        | **Unified Pipeline** | ✅ ACTIVE | Non-lossy 26-Engine Aggregation (Full-Verify) |
-        | **Stateless Verify** | ✅ PASS | 100% Data Integrity Guaranteed |
-        | **Engine Range** | 26 / 26 | All forensic tools engaged per fragment |
-        
-        ## 🔊 2. Mastering & Loudness DNA (R128 / Tech 3342)
-        | Metric | Value | Reference State |
-        | :--- | :--- | :--- |
-        | **Integrated LUFS** | \(analysis.mastering.integratedLUFS) | ✅ EBU Standards Compliant |
-        | **Momentary Max** | \(analysis.mastering.momentaryLUFS) | 🔒 Verified |
-        | **True Peak (dBTP)** | \(analysis.mastering.truePeak) | 🔒 Verified |
-        | **LRA (Range)** | \(analysis.mastering.lraLU) LU | 🔒 Verified |
-        | **Phase Correlation** | \(analysis.mastering.phaseCorrelation) | ✅ STEREO PHASE ALIGNED |
-        
-        ## 🥁 3. Rhythmic DNA & Temporal Accuracy
-        - **Calculated Tempo**: \(analysis.rhythm.bpm) BPM
-        - **BPM Confidence**: \(analysis.rhythm.bpmConfidence * 100)%
-        - **Beat Consistency**: \(analysis.rhythm.beatConsistency * 100)%
-        - **Tempogram DNA**: \(analysis.tempogram.dominantPeriod) bins dominant
-        - **PLP Pulse Strength**: \(bar(0.85)) (Engaged)
-        - **Characterization**: \(analysis.rhythm.characterize)
-        
-        ## 🎹 4. Tonal DNA & Chromagram Analysis
-        - **Scale / Key**: **\(analysis.tonality.key)** (Confidence: \(analysis.tonality.keyConfidence * 100)%)
-        - **Tonal Center Stability**: \(analysis.tonality.strength * 100)%
-        
-        \(chromaKeys.enumerated().map { i, key in "- **\(key)**: \(bar(analysis.chromaProfile[i])) \(String(format: "%.3f", analysis.chromaProfile[i]))" }.joined(separator: "\n"))
-        
-        ## 📈 5. Spectral DNA (Absolute Fidelity)
-        - **Centroid**: \(analysis.spectral.centroid) Hz
-        - **Rolloff**: \(analysis.spectral.rolloff) Hz
-        - **Flatness**: \(analysis.spectral.flatness)
-        - **ZCR**: \(analysis.spectral.zcr)
-        - **Spectral Contrast (7-Band)**: `\(analysis.timbre.spectralContrast)`
-        
-        ## 🎸 6. Source Separation DNA (HPSS)
-        - **Harmonic Ratio**: \(analysis.hpss.harmonicRatio) \(bar(analysis.hpss.harmonicRatio))
-        - **Percussive Ratio**: \(analysis.hpss.percussiveRatio) \(bar(analysis.hpss.percussiveRatio))
-        - **Classification**: \(analysis.hpss.characterization)
-        
-        ## 🔍 7. Forensic Analysis & Integrity (Laboratory Grade)
-        | Feature | Status | Analysis |
-        | :--- | :--- | :--- |
-        | **Bit-Depth Integrity** | \(analysis.forensic.effectiveBits)-bit | ✅ NATIVE BIT-DEPTH |
-        | **Entropy Score** | \(analysis.forensic.entropyScore) | Data uniqueness density |
-        | **Codec Cutoff** | \(analysis.forensic.codecCutoffHz) Hz | Compression footprint |
-        | **Clipping Events** | \(analysis.forensic.clippingEvents) | Digital saturation count |
-        | **DNA Signature** | ✅ AUTHENTIC | Forensic validation status |
-        
-        ## 🧩 8. Structural Segmentation (StructureEngine)
-        | ID | START | END | DURATION | LABEL |
-        | :-- | :--- | :--- | :--- | :--- |
-        \(analysis.segments.map { "| \($0.id) | \(String(format: "%.1f", $0.start))s | \(String(format: "%.1f", $0.end))s | \(String(format: "%.1f", $0.end - $0.start))s | **\($0.label)** |" }.joined(separator: "\n"))
-        
-        ## 9. ⚙️ Engine Registry Checklist (100% Coverage)
-        | Engine | Status | Technical Basis |
-        | :--- | :--- | :--- |
-        | **StructureEngine** | ✅ ACTIVE | Foote Novelty / SSM |
-        | **RhythmEngine (DP)** | ✅ ACTIVE | Dynamic Programming Track |
-        | **SpectralContrast** | ✅ ACTIVE | Octopus-style Band Mapping |
-        | **PLP Tracker** | ✅ ACTIVE | Predominant Local Pulse |
-        | **NMF Engine** | ✅ ACTIVE | Matrix Factorization |
-        | **Viterbi Decoding**| ✅ ACTIVE | Pitch Sequence Optimization |
-        \(analysis.audit.engineCoverage.map { "| **\($0.key)** | ✅ ACTIVE | - |" }.joined(separator: "\n"))
-        
-        ## 🏆 9.5 Extended Infinity Analytics (New Engines)
-        ### 🎹 Tonnetz DNA (Harmonic Centroids)
-        - **Harmonic Stability**: \(analysis.tonnetz.harmonicStability * 100)%
-        | Dimension | Mapping | Mean Strength | Bar |
-        | :--- | :--- | :--- | :--- |
-        \(analysis.tonnetz.meanTonnetz.enumerated().map { i, val in "| dim_\(i) | Mapping_\(i) | \(String(format: "%.3f", val)) | \(bar(abs(val))) |" }.joined(separator: "\n"))
-        
-        ## 🧪 10. Laboratory Science & Standards (AES17 / IMD / 468)
-        | Metric | Value | Technical Context |
-        | :--- | :--- | :--- |
-        | **Loudness Range (LRA)** | \(analysis.science.dynamicRangeLRA) LU | Gated 95th-10th percentile |
-        | **SMPTE IMD** | \(analysis.science.smpteIMD.isNaN ? "No Stimulus Detected" : String(format: "%.3f", analysis.science.smpteIMD) + "%") | 60Hz/7kHz interaction ratio |
-        | **THD+N** | \(analysis.science.thdPlusN.isNaN ? "No Stimulus Detected" : String(format: "%.3f", analysis.science.thdPlusN) + "%") | Total Harmonic Distortion + Noise |
-        | **Signal-to-Noise Ratio** | \(analysis.science.snr) dB | Broad-spectrum integrity |
-        | **Validation Status** | Verified Compliance | 100% Scientific Baseline |
-        
-        ## 🎻 11. Instrument DNA & Predictions
-        | Instrument | Confidence | Bar |
-        | :--- | :--- | :--- |
-        \(analysis.instruments.predictions.map { "| **\($0.label)** | \(String(format: "%.1f", $0.confidence * 100))% | \(bar($0.confidence)) |" }.joined(separator: "\n"))
-        
-        ## 🏰 13. Traditional Musicology & Tonal Reduction
-        - **Ur-Note (Fundamental)**: **\(analysis.reduction.fundamentalNote)**
-        - **Theory Basis**: \(analysis.reduction.theoryBasis)
-        - **Meter Detection**: \(analysis.musicology.meter.timeSignature) (\(analysis.musicology.meter.meterType))
-        - **Counterpoint Species**: \(analysis.musicology.counterpointSpecies)
-        
-        ### 🎼 Vertical Harmonic Analysis (Complete Chord Sequence)
-        | Frame | Symbol | Function | Reasoning |
-        | :--- | :--- | :--- | :--- |
-        \(analysis.musicology.verticalAnalysis.map { "| \($0.frame) | **\($0.symbol)** | \($0.function) | \($0.reasoning) |" }.joined(separator: "\n"))
-        
-        ### 🎹 Structural Cadences
-        | Position | Type | Description |
-        | :--- | :--- | :--- |
-        \(analysis.musicology.cadences.map { "| \($0.frame) | **\($0.type)** | \($0.description) |" }.joined(separator: "\n"))
-        
-        ### 🔄 Tonal Modulations
-        | Time | Transition | Technique | Description |
-        | :--- | :--- | :--- | :--- |
-        \(analysis.musicology.modulations.map { "| \(String(format: "%.1f", $0.timestamp))s | \($0.fromKey) → **\($0.toKey)** | \($0.technique) | \($0.description) |" }.joined(separator: "\n"))
-        
-        ### 🏺 Motif & Theme DNA (Forensic Fragments)
-        | Motif | Range | Type | Similarity |
-        | :--- | :--- | :--- | :--- |
-        \(analysis.musicology.motifs.map { "| \($0.label) | \(String(format: "%.1f", $0.startTime))s - \(String(format: "%.1f", $0.endTime))s | \($0.transformationType ?? $0.type) | \(String(format: "%.1f", $0.similarityScore * 100))% |" }.joined(separator: "\n"))
-        
-        ## 📊 14. Professional Binary Data (Apple Property List Standard)
-        > [!IMPORTANT]
-        > Machine-readable raw metrics are now stored in **Apple Binary Property List (.plist)** format for 1000x faster integration and lower memory footprint.
-        - **Binary File**: `\( (analysis.fileName as NSString).deletingPathExtension ).plist`
-        - **Standard**: Apple Forensic DNA v7.3 (Binary Plist / Zero-Loss)
-        - **Integration**: `let data = try Data(contentsOf: url); let dna = try PropertyListDecoder().decode(MusicDNAAnalysis.self, from: data)`
-        
-        ---
-        **[FINAL AUDIT VERDICT]**: This report represents the complete, non-lossy forensic signature of the audio file. All 26 analysis engines have successfully processed the bitstream via the M4 Silicon Unified Pipeline.
-        
-        Report Generated: \(Date())
-        """
-    }
 }

@@ -16,8 +16,8 @@ struct AudioIntelligenceApp: App {
             ZStack {
                 AITheme.Colors.background.ignoresSafeArea()
                 
-                if let analysis = session.currentAnalysis {
-                    MainDashboardView(analysis: analysis)
+                if let report = session.currentAnalysis {
+                    MainDashboardView(report: report)
                 } else {
                     landingView
                 }

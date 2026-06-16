@@ -31,7 +31,7 @@ final class InstrumentBaselineTests: XCTestCase {
         for c in cases {
             let url = URL(fileURLWithPath: "\(sqamDir)/\(c.file)")
             guard FileManager.default.fileExists(atPath: url.path) else { continue }
-            let a = try await AudioIntelligence().analyze(url: url).rawAnalysis
+            let a = try await AudioIntelligence().analyzeRawAggregate(url: url)
             total += 1
             let preds = a.instruments.predictions
             let primary = a.instruments.primaryLabel

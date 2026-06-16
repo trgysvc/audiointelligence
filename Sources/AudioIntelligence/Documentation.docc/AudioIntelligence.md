@@ -22,24 +22,37 @@ downloads, no network. Reference tools are used only at test time.
 import AudioIntelligence
 
 let engine = AudioIntelligence()                     // thread-safe actor
-let report = try await engine.analyze(url: audioURL)
-let dna = report.rawAnalysis
+let report = try await engine.analyze(url: audioURL) // -> AudioReport
 
-print(dna.mastering.integratedLUFS)  // measurement: EBU R128 LUFS
-print(dna.rhythm.bpm)                // estimation: tempo
+// Measurement: validated, standards-traceable
+let lufs = report.measurements.loudness.integrated
+print(lufs.value, lufs.unit.rawValue, lufs.standard?.rawValue ?? "")  // EBU R128 LUFS
+
+// Estimation: statistical, carries a confidence
+let tempo = report.estimations.tempo
+print(tempo.value, "BPM", tempo.confidence)          // never 100% certain
+
+// Transport: the consumer renders/persists as it wishes
+let json = try report.jsonData()                     // universal
+let plist = try report.plistData()                   // Apple-native, compact
+let markdown = MarkdownRenderer.render(report)        // optional reference renderer
 ```
 
 > Important: `AudioIntelligence` is an `actor`; call its methods with `await`.
 
-### Result types
+### Result type
 
-`analyze(url:features:progress:)` returns an `AudioReport` whose `rawAnalysis` is a
-`MusicDNAAnalysis`. Its fields group the analysis:
+`analyze(url:features:progress:)` returns an ``AudioReport`` — the canonical, typed
+product. A markdown/JSON/PDF document is just one *rendering* of it; the library
+itself writes no files.
 
-- **Measurement:** `mastering` (`MasteringMetrics` — LUFS, true peak, LRA),
-  `forensic` (`ForensicMetrics` — bit depth, codec, clipping), `science` (THD+N, IMD, SNR).
-- **Estimation:** `rhythm` (`RhythmMetrics` — tempo), `tonality` (`TonalMetrics` — key),
-  `spectral`, `timbre`, `instruments`.
+- **`measurements`** — certifiable figures wrapped in `Measured<T>` (value + unit +
+  standard + `validated`): loudness (EBU R128 / BS.1770), fidelity (THD+N/IMD/SNR per
+  AES17/SMPTE/468), stereo field, forensic integrity, spectral descriptors, separation.
+- **`estimations`** — statistical results wrapped in `Estimated<T>` (value + confidence
+  + method): tempo, key, time signature, structure, instruments, musicology.
+- **`features`** — heavy low-level series (chromagram, MFCC, spectrogram); always in
+  memory, optionally excluded from serialization via `jsonData(includingFeatures:)`.
 
 These value types live in the `AudioIntelligenceCore` module (re-exported by
 `AudioIntelligence`), so `import AudioIntelligence` brings them into scope.

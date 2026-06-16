@@ -6,18 +6,20 @@ import AudioIntelligence
  * The premium, standalone "Engineering Station" dashboard.
  */
 public struct MainDashboardView: View {
-    let analysis: MusicDNAAnalysis
-    
-    public init(analysis: MusicDNAAnalysis) {
-        self.analysis = analysis
+    let report: AudioReport
+
+    public init(report: AudioReport) {
+        self.report = report
     }
+
+    private func fmt(_ v: Double, _ d: Int = 2) -> String { String(format: "%.\(d)f", v) }
     
     public var body: some View {
         NavigationSplitView {
             // HIG: Sidebar for session management
             List {
                 Section("Recent Audits") {
-                    Label(analysis.fileName, systemImage: "waveform.path")
+                    Label(report.metadata.fileName, systemImage: "waveform.path")
                         .font(AITheme.Typography.caption())
                 }
             }
@@ -36,7 +38,10 @@ public struct MainDashboardView: View {
                             Text("INSTRUMENT DNA")
                                 .font(AITheme.Typography.headline())
                                 .foregroundColor(AITheme.Colors.accentCyan)
-                            InstrumentDNARing(dominanceMap: analysis.semantic.dominanceMap)
+                            InstrumentDNARing(dominanceMap: [
+                                "Harmonic": Float(report.measurements.separation.harmonicRatio.value),
+                                "Percussive": Float(report.measurements.separation.percussiveRatio.value)
+                            ])
                         }
                         .padding()
                         .glassCard()
@@ -47,10 +52,10 @@ public struct MainDashboardView: View {
                                 .font(AITheme.Typography.headline())
                                 .foregroundColor(AITheme.Colors.accentOrange)
                             
-                            MetricRow(label: "Integrated LUFS", value: "\(analysis.mastering.integratedLUFS)", unit: "LUFS")
-                            MetricRow(label: "True Peak", value: "\(analysis.mastering.truePeak)", unit: "dBTP")
-                            MetricRow(label: "Correlation", value: "\(analysis.mastering.phaseCorrelation)", unit: "Indx")
-                            MetricRow(label: "Bit Depth", value: "\(analysis.forensic.effectiveBits)", unit: "bits")
+                            MetricRow(label: "Integrated LUFS", value: fmt(report.measurements.loudness.integrated.value, 1), unit: "LUFS")
+                            MetricRow(label: "True Peak", value: fmt(report.measurements.loudness.truePeak.value, 1), unit: "dBTP")
+                            MetricRow(label: "Correlation", value: fmt(report.measurements.stereo.phaseCorrelation.value, 3), unit: "Indx")
+                            MetricRow(label: "Bit Depth", value: "\(report.measurements.forensic.effectiveBits.value)", unit: "bits")
                         }
                         .padding()
                         .glassCard()
@@ -61,7 +66,7 @@ public struct MainDashboardView: View {
                         Text("3D SPECTRAL TOPOGRAPHY")
                             .font(AITheme.Typography.headline())
                             .foregroundColor(.white)
-                        SpectralLandscapeView(magnitudes: analysis.spectral.fullMagnitudes)
+                        SpectralLandscapeView(magnitudes: report.features?.magnitudeSpectrogram ?? [])
                             .frame(height: 300)
                     }
                 }
@@ -81,9 +86,9 @@ public struct MainDashboardView: View {
     private var headerView: some View {
         HStack {
             VStack(alignment: .leading) {
-                Text(analysis.fileName)
+                Text(report.metadata.fileName)
                     .font(AITheme.Typography.headline(32))
-                Text("v56.0 Forensic Audit | Apple M4 Accelerated")
+                Text("AudioIntelligence \(report.libraryVersion) · schema \(report.schemaVersion)")
                     .font(AITheme.Typography.caption())
                     .foregroundColor(AITheme.Colors.mutedText)
             }

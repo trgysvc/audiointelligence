@@ -21,16 +21,18 @@ let result = try await sdk.analyze(url: audioURL, features: requestedFeatures)
 
 ## 📊 2. Deep Dive: Spectral Features
 
-The spectral domain provides the most insight into the "texture" of the audio. Through the `rawAnalysis`, you have access to:
-- **MFCC (Mel-Frequency Cepstral Coefficients)**: The "fingerprint" used for instrument and speech recognition.
-- **Spectral Centroid**: The "brightness" of the sound.
-- **Roll-off**: The frequency below which a specific percentage (typ. 85%) of the total spectral energy lies.
+Spectral descriptors live under `report.measurements.spectral` (each a `Measured<Double>`,
+validated for librosa parity). Heavier series like MFCC are under `report.features`.
+- **Spectral Centroid**: the "brightness" of the sound.
+- **Roll-off**: the frequency below which ~85% of the spectral energy lies.
+- **MFCC**: the cepstral "fingerprint" (in `features.mfcc`).
 
 ```swift
-let spectral = report.rawAnalysis.spectral
+let spectral = report.measurements.spectral
 
-print("Spectral Centroid: \(spectral.centroid) Hz")
-print("Spectral Flux: \(spectral.flux)")
+print("Spectral Centroid: \(spectral.centroid.value) Hz")   // .unit == .hertz
+print("Spectral Flux: \(spectral.flux.value)")
+print("MFCC coeffs: \(report.features?.mfcc.count ?? 0)")
 ```
 
 ---
@@ -44,20 +46,17 @@ import SwiftUI
 import AudioIntelligence
 import AudioIntelligenceUI
 
-struct SpectrogramView: View {
-    let matrix: STFTMatrix // Extracted from the report
-    
+struct SpectrogramCard: View {
+    let report: AudioReport
+
     var body: some View {
         VStack {
-            Text("Spectral Power Distribution")
-                .font(.headline)
-            
-            // Industrial-grade spectrogram renderer
-            // Supports multiple color palettes: .magma, .viridis, .plasma
-            SpectrogramPlot(matrix: matrix, palette: .magma)
+            Text("Spectral Power Distribution").font(.headline)
+
+            // Metal-accelerated renderer fed by the heavy magnitude spectrogram
+            SpectralLandscapeView(magnitudes: report.features?.magnitudeSpectrogram ?? [])
                 .frame(height: 300)
                 .cornerRadius(8)
-                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.primary.opacity(0.1)))
         }
     }
 }
@@ -70,7 +69,7 @@ struct SpectrogramView: View {
 To understand the musical content, we use **Chroma Features**. This represents the energy distribution across the 12 semi-tones of the chromatic scale (C, C#, D, etc.), regardless of octave.
 
 ```swift
-let chroma = report.rawAnalysis.harmonic.chroma
+let chroma = report.features?.chromaProfile ?? []   // 12 semitone means
 
 // Identify the dominant note in the current frame
 if let dominantNoteIndex = chroma.indices.max(by: { chroma[$0] < chroma[$1] }) {

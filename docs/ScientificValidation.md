@@ -1,6 +1,11 @@
 # 🔬 Scientific Validation: Diagnostic Protocol (v6.3)
 
-This protocol serves as the official diagnostic manifest for the **AudioIntelligence Infinity Suite**. It ensures 100% mathematical integrity and broadcast compliance via automated and manual audit scenarios.
+This protocol is the diagnostic manifest for the **measurement** engines of the AudioIntelligence
+suite. Each scenario below is backed by a reference signal or a reference implementation; "PASS"
+means high-precision agreement on the *tested* scenario, not exhaustive coverage of every
+channel / sample-rate / edge case. It applies to the deterministic measurement layer
+(loudness, true peak, THD+N, IMD, noise) — **not** to the statistical estimation layer
+(tempo/key/instrument), whose accuracy is reported separately in the README Validation Status.
 
 ---
 
@@ -42,12 +47,14 @@ To ensure that real-world file artifacts don't interfere with DSP accuracy, ever
 ### 🧪 Viterbi Path Verification
 - **Input**: Synthetic state transition matrix with known "Maximum Likelihood Path."
 - **Audit**: Engine must decode the exact path index-for-index without smoothing artifacts.
-- **Status**: ✅ ACCREDITED.
+- **Status**: ✅ pass.
 
-### 🧬 Shannon Entropy Validation
-- **Input**: Native 24-bit noise vs. 16-bit zero-padded upscale.
-- **Audit**: Engine must return a confidence score > 98% for the authentic signal.
-- **Status**: ✅ ACCREDITED.
+### 🧬 Upsampling (fake hi-res) detection
+- **Input**: A native 24-bit signal vs. 16-bit content padded into a 24-bit container.
+- **Audit**: The engine must flag `isUpsampled` only when the declared bit depth exceeds the
+  *measured* effective depth (`sourceBitDepth > effectiveBits`) — it must **not** key off entropy
+  (a low-entropy authentic recording must read `upsampled: no`).
+- **Status**: ✅ pass.
 
 ---
 
@@ -56,11 +63,14 @@ To ensure that real-world file artifacts don't interfere with DSP accuracy, ever
 Professional engineers can verify these metrics at any time using the automated diagnostic suite:
 
 ```bash
-# Option 1: Execute the full scientific validation suite via tests
-swift test --filter ScientificValidationTests.testDiagnosticAuditReport
+# Option 1: Execute the measurement-validation suites via tests
+swift test --filter EBUReferenceValidationTests    # loudness vs ffmpeg ebur128
+swift test --filter ScientificAuditorTests         # EBU 3341/3342 calibration
 
-# Option 2: Run a live forensic audit via the InfinityAudit CLI
-.build/release/InfinityAudit "path/to/audio/file.mp3" --output-dir "./Reports"
+# Option 2: Run a live audit via the InfinityAudit CLI. It prints the rendered report and
+# writes <input>.md + <input>.plist next to the source file (the library itself writes nothing;
+# this is the example app persisting the AudioReport).
+swift run InfinityAudit "path/to/audio/file.wav"
 ```
 
-*Verified Archive: 2026-04-18 — AudioIntelligence Infinity Release*
+*Last reviewed: 2026-06-16 — AudioIntelligence 8.2.0*

@@ -7,28 +7,31 @@ AudioIntelligence is designed for mission-critical industrial audio engineering.
 We use a domain-specific, hierarchical error system built on the `AudioIntelligenceError` protocol. This allows you to catch errors at the specific level of granularity your application needs.
 
 ```swift
-public enum AudioIntelligenceError: Error, Sendable {
-    case io(IOError)          // File reading, permissions, disk space
-    case dsp(DSPError)        // Buffer overflows, mathematical instability
-    case forensic(ForensicError) // Integrity violations, bit-depth forgery
-    case setup(SetupError)    // Metal setup failures, hardware mismatch
+public enum AudioIntelligenceError: LocalizedError, Sendable {
+    case io(IOError)              // File reading, permissions, decode, format
+    case dsp(DSPError)            // FFT setup, dimension/rate mismatch, overflow
+    case gpu(GPUError)            // Metal device/queue/kernel/shader failures
+    case neural(NeuralError)      // Core ML separation model issues
+    case forensic(ForensicError)  // Provenance / bit-depth resolution
+    case logic(LogicError)        // Invalid parameters, state violations
+    case caching(CacheError)      // Cache read/write failures
 }
 ```
 
 ### 📁 1. IOError (I/O & Format)
-- `.fileNotFound`: The requested URL does not exist.
-- `.unsupportedFormat`: The encoder/decoder does not recognize the bitstream.
-- `.insufficientCapacity`: The `IntelligenceCache` is full and cannot be pruned.
+- `.fileNotFound(URL)`, `.permissionDenied(URL)`: the source can't be accessed.
+- `.decodeFailed(URL)`, `.formatNotSupported(String)`: the bitstream can't be decoded.
+- `.streamInterrupted`: the input stream ended unexpectedly.
 
 ### 🧪 2. DSPError (Signal Processing)
-- `.bufferMismatch`: Incompatible frame counts between engines.
-- `.unstableOutput`: Mathematical anomaly (NaN/Inf) detected in feedback loops.
-- `.frequencyOverflow`: Requested bins exceed Nyquist frequency.
+- `.fftSetupFailed`, `.invalidWindowSize(Int)`: transform configuration problems.
+- `.dimensionMismatch(expected:actual:)`, `.sampleRateMismatch(expected:actual:)`: incompatible buffers between engines.
+- `.calculationOverflow`: a numerical overflow was detected.
 
 ### 🧬 3. ForensicError (Integrity)
-- `.integrityViolation`: SHA-256 fingerprint mismatch detected.
-- `.bitDepthForgery`: LSB entropy suggests a fake upsampled file (e.g., 16-bit padded to 24-bit).
-- `.invalidSignature`: Codec signature does not match file metadata.
+- `.bitDepthResolutionFailure`: the effective bit depth could not be measured.
+- `.codecSignatureMismatch`: the codec signature is inconsistent with the metadata.
+- `.entropyCalculationFailed`: the entropy statistic could not be computed.
 
 ---
 
@@ -38,12 +41,15 @@ public enum AudioIntelligenceError: Error, Sendable {
 For non-critical analysis, we recommend the `try?` or localized `do-catch` recovery:
 ```swift
 do {
-    let samples = try await AudioLoader.load(url: url)
-    let dna = await ForensicEngine().analyze(samples)
-} catch AudioIntelligenceError.forensic(.bitDepthForgery) {
-    print("⚠️ High-bit depth requested but source is forensicly 16-bit only.")
+    let report = try await AudioIntelligence().analyze(url: url)
+    if report.measurements.forensic.isUpsampled {
+        print("⚠️ Declared \(report.measurements.forensic.sourceBitDepth.value)-bit, "
+            + "but effective resolution is only \(report.measurements.forensic.effectiveBits.value)-bit.")
+    }
+} catch AudioIntelligenceError.io(.fileNotFound(let url)) {
+    print("❌ Not found: \(url.lastPathComponent)")
 } catch {
-    print("❌ Fatal Error: \(error)")
+    print("❌ Error: \(error.localizedDescription)")
 }
 ```
 

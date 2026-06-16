@@ -1,60 +1,60 @@
-# Tutorial 04: Source Separation & Neural Isolation
+# Tutorial 04: Source Separation
 
-Source separation is the art and science of "unmixing" a recording into its constituent parts. AudioIntelligence provides two professional-grade methodologies for this task: **HPSS** (Classical DSP) and **Neural Isolation** (Deep Learning).
-
----
-
-## 🎻 1. Harmonic-Percussive Separation (HPSS)
-
-HPSS is a "Mathematical Scalpel" that separates a mix into tonal elements (Harmonic) and transient elements (Percussive). 
-
-- **Harmonic**: Sustained notes, vocals, piano, pad textures.
-- **Percussive**: Drum hits, cymbals, percussive plucks.
-
-### Why use HPSS?
-HPSS is incredibly efficient on Apple Silicon (vDSP-accelerated) and doesn't require a neural model. It is perfect for real-time applications where you need to track a drummer or a melodic lead separately.
-
-### Usage
-```swift
-let results = try await sdk.analyze(url: audioURL, features: [.separation])
-let hpss = results.rawAnalysis.separation.hpss
-
-print("Mix Characterization: \(hpss.characterization)")
-print("Percussive Ratio: \(Int(hpss.percussiveEnergyRatio * 100))%")
-```
+AudioIntelligence offers two separation paths: **HPSS** (classical DSP, built in) and an optional
+**Core ML separation interface** (you supply the model).
 
 ---
 
-## 🧠 2. Neural Stem Isolation (ANE)
+## 🎻 1. Harmonic / Percussive content (HPSS)
 
-For professional isolation (Vocals vs. Drums vs. Bass), we use our **Neural Isolation Engine**. This leverages the **Apple Neural Engine (ANE)** to provide world-class isolation with zero impact on your CPU thermals.
-
-> [!IMPORTANT]
-> **Hardware Support**: Neural Isolation automatically falls back to the GPU (Metal) if an ANE is not available on older hardware.
+HPSS splits a mix into tonal (harmonic) and transient (percussive) energy. It is vDSP-accelerated
+and needs no model. The `analyze()` pipeline surfaces the **energy ratios** in the report:
 
 ```swift
-// Start isolation task
-let stems = try await sdk.isolateStems(url: audioURL)
+let report = try await sdk.analyze(url: audioURL, features: [.separation])
+let sep = report.measurements.separation
 
-// Access individual stems as AudioBuffers or URLs
-let vocals = stems.vocals
-let drums = stems.drums
-let bass = stems.bass
+print("Harmonic ratio: \(Int(sep.harmonicRatio.value * 100))%")
+print("Percussive ratio: \(Int(sep.percussiveRatio.value * 100))%")
 ```
+
+> These are **measurements** (deterministic energy ratios), not separated audio. To obtain the
+> actual harmonic/percussive *signals*, use `HPSSEngine` directly on an STFT — that is a lower-level
+> API, not part of `analyze()`.
 
 ---
 
-## 🖼️ 3. SwiftUI Integration: Multi-Stem Mixer
+## 🧩 2. Stem isolation (optional, bring-your-own model)
 
-Building a professional "Stem Player" is easy with AudioIntelligence. Here is a UI pattern for a 4-channel stem mixer.
+Isolating Vocals / Drums / Bass / Other is **not** part of `analyze()` and **no model ships** with
+the library. AudioIntelligence provides an *interface*, `NeuralSeparationEngine`, that applies the
+spectral masks produced by a `SeparationModel` you supply (e.g. a Core ML model running on the ANE):
+
+```swift
+// You implement SeparationModel around your own Core ML model.
+let engine = NeuralSeparationEngine()
+let stems = try await engine.separate(samples: samples,
+                                      using: myModel,        // your SeparationModel
+                                      stftEngine: STFTEngine())
+let vocals = stems["vocals"]
+```
+
+> If you don't provide a model, there is no neural stem separation — only the HPSS ratios above.
+
+---
+
+## 🖼️ 3. SwiftUI pattern: a stem mixer
+
+If you have produced stems (via your own model + `NeuralSeparationEngine`, or your own audio
+graph), a mixer UI is straightforward. This is a pure UI pattern — it does not depend on any
+specific separation backend:
 
 ```swift
 import SwiftUI
-import AudioIntelligence
 
 struct StemMixer: View {
-    @StateObject var mixer = StemMixerManager() // Custom AudioEngine wrapper
-    
+    @StateObject var mixer = StemMixerManager()   // your AVAudioEngine wrapper
+
     var body: some View {
         HStack(spacing: 30) {
             StemChannel(name: "Vocals", icon: "mic", volume: $mixer.vocalVolume)
@@ -62,38 +62,23 @@ struct StemMixer: View {
             StemChannel(name: "Bass", icon: "guitars", volume: $mixer.bassVolume)
             StemChannel(name: "Other", icon: "music.note", volume: $mixer.otherVolume)
         }
-        .padding()
-        .background(Color.black.opacity(0.8))
-        .cornerRadius(20)
+        .padding().background(Color.black.opacity(0.8)).cornerRadius(20)
     }
 }
 
 struct StemChannel: View {
-    let name: String
-    let icon: String
+    let name: String, icon: String
     @Binding var volume: Double
-    
     var body: some View {
         VStack {
             Slider(value: $volume, in: 0...1)
-                .rotationEffect(.degrees(-90))
-                .frame(width: 40, height: 150)
-            
-            Image(systemName: icon)
-                .font(.title2)
-            Text(name)
-                .font(.caption2.bold())
+                .rotationEffect(.degrees(-90)).frame(width: 40, height: 150)
+            Image(systemName: icon).font(.title2)
+            Text(name).font(.caption2.bold())
         }
     }
 }
 ```
 
 ---
-
-## 🚀 4. Performance Considerations: AMX vs. ANE
-
-- **HPSS (AMX)**: Optimized via `vDSP_medfilt`. Performance is linear with file duration. A 5-minute track is separated in ~200ms on an M2 chip.
-- **Neural (ANE)**: Optimized for batch inference. A 5-minute track typically takes 2-3 seconds to isolate all 4 stems in high-quality mode.
-
----
-*Next Step: Explore [Tutorial 05: Forensic Auditing](05_Forensics.md) to evaluate signal integrity and detect bit-depth forgery.*
+*Next Step: Explore [Tutorial 05: Forensic Auditing](05_Forensics.md) to evaluate signal integrity and detect upsampling.*

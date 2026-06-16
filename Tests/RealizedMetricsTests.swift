@@ -12,7 +12,7 @@ final class RealizedMetricsTests: XCTestCase {
             try? FileManager.default.createDirectory(atPath: outDir, withIntermediateDirectories: true)
         }
         let url = URL(fileURLWithPath: "Tests/Resources/SQAM/trpt21_2.wav")
-        let a = try await AudioIntelligence().analyze(url: url).rawAnalysis
+        let a = try await AudioIntelligence().analyzeRawAggregate(url: url)
 
         print("""
         \n── REALIZED METRICS (trpt21_2) ──

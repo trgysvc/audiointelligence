@@ -21,33 +21,56 @@ When an AI agent receives a user prompt, it should map the "Intent" to the corre
 
 ---
 
-## 2. Decision Matrix: Analysis Depth
+## 2. Scoping the analysis with `features`
 
-Agents should choose the analysis mode based on the user's urgency and required precision.
+`analyze(url:features:)` takes a `Set<AudioFeature>`; pass only the domains you need to keep
+latency down. Agents should map intent → the minimal feature set:
 
-| Mode | Use Case | Latency |
-| :--- | :--- | :--- |
-| **`.summary`** | Quick metadata check, BPM, basic Key. | < 1s |
-| **`.balanced`** | Standard production work, source separation. | 2-5s |
-| **`.forensic`** | Absolute truth verification, AES17 audit. | 10s+ |
+| Intent | `features` |
+| :--- | :--- |
+| Quick BPM / key check | `[.rhythm, .harmonic]` |
+| Loudness / mastering check | `[.mastering]` |
+| Forensic / authenticity audit | `[.forensic, .mastering, .spectral]` |
+| Full analysis (default) | omit the argument → all features |
 
 ---
 
 ## 3. Handling Output (The Agent's Role)
 
-AudioIntelligence generates a structured result. As an agent, your role is to:
-1.  **Orchestrate**: Call the `AudioIntelligence.analyze()` method with the correct flags.
-2.  **Verify**: Check the `report.reportPath` to ensure the `.dna.md` file was successfully written.
-3.  **Present**: Read the **Hidden JSON block** from the report (see [Report Specification](REPORT_SPECIFICATION.md)) to populate your own UI widgets or generate a custom narrative response.
+`analyze()` returns a typed **`AudioReport`** — there is no file on disk to look for, and no
+hidden JSON block to scrape. Your role:
+
+1.  **Orchestrate**: Call `AudioIntelligence.analyze(url:features:)` with the minimal feature set.
+2.  **Read the typed value directly**, respecting the two layers:
+    ```swift
+    let report = try await ai.analyze(url: url, features: [.mastering, .rhythm])
+
+    // Measurement → treat as fact (and you can check it):
+    let lufs = report.measurements.loudness.integrated
+    if lufs.validated { use(lufs.value, lufs.standard) }   // EBU R128
+
+    // Estimation → treat as a hypothesis, threshold the confidence:
+    let tempo = report.estimations.tempo
+    if tempo.confidence > 0.7 { suggest(tempo.value) }
+    ```
+3.  **Serialize if you need to hand data off**: `report.jsonData()` (universal) or
+    `report.plistData()` (Apple-native). Persisting is *your* choice — the library writes nothing.
+
+See the [Report Specification](REPORT_SPECIFICATION.md) for the full schema.
 
 ---
 
 ## 4. Anti-Patterns for AI Agents
 
 > [!CAUTION]
-> - **Don't Hallucinate Specs**: If the user asks for "THD+N", check the `science` lane first. If it wasn't requested in the `features` set, don't invent a value.
-> - **Don't ignore the Offset**: Analysis is fragment-based. Ensure you are looking at the global aggregation in the final report.
-> - **Safety First**: Always use the "Copy-on-Process" pattern (cloning the original file to a temp directory) to prevent accidental mutation of user assets.
+> - **Don't present estimates as facts.** Gate on `measurements.*.validated` and
+>   `estimations.*.confidence`. A key/tempo/instrument estimate can be wrong.
+> - **Don't request features you won't use.** If the user didn't ask for THD+N, don't include
+>   `.forensic`/`.mastering` just to read a number you'll ignore.
+> - **Don't assume capabilities we don't have.** The instrument layer is a placeholder today;
+>   `estimations.instruments` is best-effort and may be `nil`.
+> - **Safety First**: Use a "copy-on-process" pattern (clone the source to a temp directory)
+>   so analysis never risks mutating the user's original asset.
 
 ---
-*Generated for: Professional AI Integrations — v7.1 Aligned*
+*Generated for: Professional AI Integrations — AudioIntelligence 8.2.0*

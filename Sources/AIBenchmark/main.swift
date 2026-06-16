@@ -40,14 +40,14 @@ struct AIBenchmark: AsyncParsableCommand {
         let timeInterval = Double(nanoTime) / 1_000_000_000
 
         print("⏱️  Execution Time: \(String(format: "%.4f", timeInterval)) seconds")
-        print("💻 Performance: \(String(format: "%.2f", result.rawAnalysis.rhythm.bpm)) BPM detected")
+        print("💻 Performance: \(String(format: "%.2f", result.estimations.tempo.value)) BPM detected")
         print("🔥 Apple Silicon Optimization: Active (AMX/ANE)")
         print("--------------------------------------------------")
 
         // Parity Checks
         if let path = refPrimary {
             print("📊 Comparing with Primary Reference...")
-            try compare(result: result.rawAnalysis, truthPath: path, referenceName: "Primary")
+            try compare(result: result, truthPath: path, referenceName: "Primary")
         }
         
         if refSecondary != nil {
@@ -66,17 +66,17 @@ struct AIBenchmark: AsyncParsableCommand {
         print("✅ Benchmark Complete.")
     }
 
-    private func compare(result: MusicDNAAnalysis, truthPath: String, referenceName: String) throws {
+    private func compare(result: AudioReport, truthPath: String, referenceName: String) throws {
         let truthData = try Data(contentsOf: URL(fileURLWithPath: truthPath))
-        let truth = try PropertyListDecoder().decode(MusicDNAAnalysis.self, from: truthData)
-        
+        let truth = try AudioReport.decoded(fromPlist: truthData)
+
         print("📊 Comparing with \(referenceName) Ground Truth...")
-        
-        let bpmDelta = abs(result.rhythm.bpm - truth.rhythm.bpm)
-        let keyMatch = result.tonality.key == truth.tonality.key
-        
+
+        let bpmDelta = abs(result.estimations.tempo.value - truth.estimations.tempo.value)
+        let keyMatch = result.estimations.key.value == truth.estimations.key.value
+
         print("   - BPM Delta: \(String(format: "%.4f", bpmDelta)) (Tolerance: 1.0)")
-        print("   - Key Match: \(keyMatch ? "✅ YES" : "❌ NO") (\(result.tonality.key) vs \(truth.tonality.key))")
+        print("   - Key Match: \(keyMatch ? "✅ YES" : "❌ NO") (\(result.estimations.key.value) vs \(truth.estimations.key.value))")
         
         if bpmDelta > 1.0 {
             print("⚠️ WARNING: BPM deviation exceeds scientific threshold.")

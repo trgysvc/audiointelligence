@@ -59,10 +59,19 @@ struct InfinityAudit {
             print("   - Önbellek Kullanımı: \(stats.cacheUsageMB) MB")
             
             print("------------------------------------------")
-            print("📝 Rapor Oluşturuldu: \(result.reportPath ?? "Disk kaydı yapılmadı")")
-            print("📊 Özet: \(result.summary)")
+
+            // The library returns *data*; the caller renders & persists.
+            let markdown = MarkdownRenderer.render(result)
+            let outURL = url.deletingPathExtension().appendingPathExtension("md")
+            try markdown.write(to: outURL, atomically: true, encoding: .utf8)
+            // Machine-readable export (binary plist) alongside the markdown.
+            let plistURL = url.deletingPathExtension().appendingPathExtension("plist")
+            try result.plistData(includingFeatures: false).write(to: plistURL)
+
+            print("📝 Markdown raporu yazıldı: \(outURL.path)")
+            print("📦 Binary plist (özet) yazıldı: \(plistURL.path)")
             print("\n--- RAPOR ÖNİZLEME ---\n")
-            print(result.reportText)
+            print(markdown)
             
         } catch {
             print("\n❌ Analiz sırasında hata oluştu: \(error.localizedDescription)")

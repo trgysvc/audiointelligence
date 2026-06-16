@@ -1,10 +1,10 @@
-# 🌌 AudioIntelligence: Infinity Engine (v8.1.5)
+# 🌌 AudioIntelligence: Infinity Engine (v8.2.0)
 
-[![Swift 6.1](https://img.shields.io/badge/Swift-6.1-orange.svg)](https://swift.org)
+[![Swift 6.3](https://img.shields.io/badge/Swift-6.3-orange.svg)](https://swift.org)
 [![macOS 15](https://img.shields.io/badge/macOS-15-blue.svg)](https://apple.com)
 [![EBU R128](https://img.shields.io/badge/EBU-R128-green.svg)](https://tech.ebu.ch)
 [![Loudness](https://img.shields.io/badge/Loudness-%E2%89%A40.08%20LU%20vs%20ffmpeg-green.svg)](https://tech.ebu.ch/publications/sqamcd)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
 AudioIntelligence is a Music Information Retrieval (MIR) and DSP framework for **Swift 6** and **Apple Silicon**. Its loudness/forensic layer is validated against authoritative references (EBU SQAM via ffmpeg/ebur128, EBU R128/ITU-R BS.1770); its musical-interpretation layer (tempo, key, instrument) is under active accuracy work. See [Validation Status](#-validation-status-honest) for exactly what is verified.
 
@@ -18,7 +18,7 @@ While legacy libraries like Librosa are excellent for research, AudioIntelligenc
 - **🎨 Native SwiftUI UI**: Includes `AudioIntelligenceUI` for hardware-accelerated, real-time spectrograms, waveforms, and meters.
 - **🛡️ Swift 6 Actor Isolation**: The world's first MIR library with compile-time thread safety and zero data races.
 - **💿 Professional Format Support**: Mastery of ALL native Apple codecs including AAC, MP3, ALAC, and FLAC via `AVAudioConverter`.
-- **🍏 Apple Binary Standard**: Zero JSON artifacts. All forensic DNA signatures are exported in high-performance **.plist** format.
+- **📤 Codable-first output**: `analyze()` returns a typed `AudioReport`; the *caller* serializes it to **JSON** (universal) or **binary `.plist`** (Apple-native) and renders it however it wants. The library writes no files.
 - **♻️ In-Memory STFT Reuse**: A bounded RAM LRU lets the onset/mel/spectral engines share a chunk's spectrogram without disk I/O (no per-file cache bloat on batch runs).
 
 ---
@@ -30,7 +30,7 @@ While legacy libraries like Librosa are excellent for research, AudioIntelligenc
 Add the package to your `Package.swift`:
 ```swift
 dependencies: [
-    .package(url: "https://github.com/trgysvc/audiointelligence.git", from: "8.1.5")
+    .package(url: "https://github.com/trgysvc/audiointelligence.git", from: "8.2.0")
 ],
 targets: [
     .target(name: "YourApp", dependencies: [
@@ -39,22 +39,29 @@ targets: [
 ]
 ```
 
-Analyze a file:
+Analyze a file — `analyze()` returns a typed **`AudioReport`** whose schema separates
+measurements from estimations:
 ```swift
 import AudioIntelligence
 
 let engine = AudioIntelligence()                       // thread-safe actor
-let report = try await engine.analyze(url: audioURL)   // full DNA analysis
-let dna = report.rawAnalysis
+let report = try await engine.analyze(url: audioURL)   // -> AudioReport
 
-// Measurement layer (standards-validated):
-print(dna.mastering.integratedLUFS)   // EBU R128 LUFS
-print(dna.mastering.truePeak)         // BS.1770 true peak (dBTP)
-print(dna.forensic.effectiveBits)     // source bit depth
+// Measurement layer — objective, standards-traceable (Measured<T>):
+let lufs = report.measurements.loudness.integrated
+print(lufs.value, lufs.unit.rawValue, lufs.standard?.rawValue ?? "")  // EBU R128 LUFS
+print(report.measurements.loudness.truePeak.value)     // BS.1770 true peak (dBTP)
+print(report.measurements.forensic.sourceBitDepth.value)
 
-// Estimation layer (best-effort — treat as estimates, not measurements):
-print(dna.rhythm.bpm)                 // tempo
-print(dna.tonality.key)               // key
+// Estimation layer — statistical, carries a confidence (Estimated<T>):
+let tempo = report.estimations.tempo
+print(tempo.value, "BPM @", tempo.confidence)          // never 100% certain
+print(report.estimations.key.value)                    // key
+
+// Transport & rendering are the caller's choice — the library writes no files:
+let json = try report.jsonData()                       // universal
+let plist = try report.plistData()                     // Apple-native, compact
+let markdown = MarkdownRenderer.render(report)          // optional reference renderer
 ```
 
 > `AudioIntelligence` is an `actor`; call its methods with `await` from an async context.
@@ -171,17 +178,19 @@ AudioIntelligence is organized into specialized domains for maximum performance 
 
 ```text
 Sources/AudioIntelligenceCore/
-├── Core/       # Foundation (Loading, Caching, Phase Vocoding)
-├── Feature/    # Analysis (Spectral, Rhythm, Pitch, Harmonic, Mastering)
-├── Effects/    # Transformation (HPSS, Stem Separation, NMF)
-├── Display/    # Visualization (Metal Spectrograms, Waveforms)
-└── Util/       # Governance (DNA Reporting, Calibration, DSP Helpers)
+├── Core/       # Foundation (Loading, Caching, Errors)
+├── Feature/    # Analysis engines (Spectral, Rhythm, Pitch, Harmonic, Mastering, Forensic)
+├── Effects/    # Transformation (HPSS, Stem Separation, NMF, Manipulation)
+├── Report/     # AudioReport schema (Measured/Estimated), mapping, MarkdownRenderer
+├── Display/    # Visualization data (Spectrograms, Waveforms)
+├── Models/     # Public value types (AudioReport, AudioFeature)
+└── Util/       # Pipeline (DNAReportBuilder), DSP helpers, calibration, auditing
 ```
 
 ---
 
-## 🧪 The Infinity Suite: 26 Forensic Engines
-From time-domain forensic analysis to frequency-domain neural separation, AudioIntelligence provides a comprehensive toolkit for professional audio engineering:
+## 🧪 The Infinity Suite: 30+ Analysis Engines
+From time-domain forensic analysis to frequency-domain source separation, AudioIntelligence provides a comprehensive toolkit for professional audio engineering. Note the honest split: the **measurement** engines below are validated; the **estimation** engines (key/tempo/instrument/musicology) are statistical and still improving (see Validation Status).
 
 ### Core Analysis
 - **STFT / ISTFT**: Frame-major, vDSP-optimized spectral foundations.
@@ -190,7 +199,7 @@ From time-domain forensic analysis to frequency-domain neural separation, AudioI
 - **Forensic DNA**: Bit-depth integrity and forgery audit.
 
 ### Music Information Retrieval (MIR)
-- **Mel / Chroma / CQT / VQT**: High-resolution pitch and timbral transforms.
+- **Mel / Chroma**: High-resolution timbral and tonal transforms (key uses a high-res STFT chromagram; the bundled CQT engine has a known complex-FFT limitation and is **not** used in the pipeline).
 - **Viterbi Decoder**: Professional sequence modeling for state analysis.
 - **Onsets & Rhythm**: Multi-band rhythmic mapping and tempograms.
 - **Harmony & Tonnetz**: 6D Harmonic relationship mapping on the tonnetz grid.
@@ -202,7 +211,7 @@ From time-domain forensic analysis to frequency-domain neural separation, AudioI
 - **HPSS**: Median-filter based Harmonic-Percussive source separation.
 - **Pitch Audits**: YIN, Piptrack (parabolic), and Viterbi sequence tracking.
 - **AudioScience**: AES17 dynamic range, SMPTE IMD, and ITU-R 468-4 weighting.
-- **Instrument DNA**: Neural-assisted instrument fingerprinting and predictions.
+- **Instrument DNA**: Placeholder per-instrument predictions today (clearly tagged as estimates). A measurement-driven instrument/genre layer is the next milestone — see DEVLOG.
 
 ---
 
@@ -210,9 +219,9 @@ From time-domain forensic analysis to frequency-domain neural separation, AudioI
 
 AudioIntelligence is designed for seamless integration with **AI Agents**, **Mastering DAWs**, and **Automated Forensic Pipelines**.
 
-- **[Development Log](DEVLOG.md)**: Phase 6 documents the accuracy audit, root-cause fixes, and the honest measured-status matrix.
-- **[Report Specification](docs/REPORT_SPECIFICATION.md)**: Detailed breakdown of the forensic output, now utilizing the **Apple Binary Property List (.plist)** standard.
-- **[Engine Catalog](docs/Engines.md)**: Comprehensive technical specs for all 31+ specialized DSP engines.
+- **[Development Log](DEVLOG.md)**: Phase 6–7 document the accuracy audit and root-cause fixes; **Phase 8** documents the `AudioReport` rewrite and the forensic upsampling fix.
+- **[Report Specification](docs/REPORT_SPECIFICATION.md)**: The `AudioReport` schema (Measured/Estimated layers) and its JSON / binary-plist transport.
+- **[Engine Catalog](docs/Engines.md)**: Technical specs for the analysis engines.
 
 ---
 
@@ -221,18 +230,19 @@ AudioIntelligence is designed for seamless integration with **AI Agents**, **Mas
 1. **[The Basics](docs/Tutorials/01_Basics.md)**: SPM Setup and a production-grade SwiftUI Analysis View.
 2. **[MIR DNA](docs/Tutorials/02_MIR_DNA.md)**: Feature extraction and Metal-accelerated spectrograms.
 3. **[Rhythm & Pulse](docs/Tutorials/03_Rhythm.md)**: Implementing beat-perfect synchronization and metronomes.
-4. **[Source Separation](docs/Tutorials/04_Separation.md)**: Real-time instrumental isolation using HPSS and Neural Stems.
-5. **[Scientific Forensics](docs/Tutorials/05_Forensics.md)**: Integrity auditing, EBU R128 compliance, and DNA Reporting.
+4. **[Source Separation](docs/Tutorials/04_Separation.md)**: Instrumental isolation using HPSS and NMF.
+5. **[Scientific Forensics](docs/Tutorials/05_Forensics.md)**: Integrity auditing, EBU R128 compliance, and the `AudioReport` output.
 
 ---
 
 ## 📖 Deep Technical Manuals
 
-- **[Engine Manual](docs/Engines.md)**: Technical specs for the complete 26-engine suite.
+- **[Engine Manual](docs/Engines.md)**: Technical specs for the analysis engines.
 - **[Integration Guide](docs/Integration.md)**: Swift 6 Actor-model and SwiftUI UI patterns.
+- **[Report Specification](docs/REPORT_SPECIFICATION.md)**: The `AudioReport` schema and transport.
 - **[Calibration Manifest](docs/Calibration.md)**: Verified parity vs EBU/AES reference vectors.
-- **[Project Structure](ProjectStructure.md)**: Global module map.
-- **[Risk Management](RiskManagement.md)**: Strategic migration and industrial risk guide.
+- **[Project Structure](docs/ProjectStructure.md)**: Global module map.
+- **[Risk Management](docs/RiskManagement.md)**: Strategic migration and industrial risk guide.
 
 ---
 *© 2026 trgysvc — Engineered for Professional Excellence.*

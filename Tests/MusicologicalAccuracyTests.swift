@@ -59,17 +59,17 @@ final class MusicologicalAccuracyTests: XCTestCase {
     
     private func analyzeAndSave(url: URL, name: String) async throws -> MusicDNAAnalysis {
         let intelligence = AudioIntelligence()
-        let result = try await intelligence.analyze(url: url)
-        
+        let analysis = try await intelligence.analyzeRawAggregate(url: url)
+
         // Save to Plist for user inspection
         let encoder = PropertyListEncoder()
         encoder.outputFormat = .binary
-        let data = try encoder.encode(result.rawAnalysis)
-        
+        let data = try encoder.encode(analysis)
+
         let outURL = URL(fileURLWithPath: "\(outputDir)/\(name)_VERIFY.plist")
         try data.write(to: outURL)
-        
+
         print("💾 Verification Data Saved: \(outURL.path)")
-        return result.rawAnalysis
+        return analysis
     }
 }

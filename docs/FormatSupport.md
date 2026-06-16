@@ -10,11 +10,13 @@ Through our `AudioLoader` orchestrator, we support any format recognized by the 
 | :--- | :--- | :--- | :--- |
 | **PCM (Wave)** | `.wav` | 16, 24, 32-bit | ✅ Bit-exact passthrough |
 | **FLAC** | `.flac` | Up to 24-bit | ✅ vDSP Optimized |
-| **ALAC** | `.m4a` | Lossless | ✅ ANE/AMX Accelerated |
+| **ALAC** | `.m4a` | Lossless | ✅ Core Audio decoder |
 | **MP3** | `.mp3` | Variable/Fixed | ✅ Core Audio Hardware Decoder |
-| **AAC** | `.m4a`, `.aac` | Mastering Grade | ✅ Core Audio Hardware Decoder |
-| **AIFF** | `.aiff` | Professional | ✅ Native |
-| **OGG** | `.ogg`, `.oga` | Opus/Vorbis | ✅ Modern AVFoundation support |
+| **AAC** | `.m4a`, `.aac` | Lossy | ✅ Core Audio Hardware Decoder |
+| **AIFF** | `.aiff` | 16/24/32-bit | ✅ Native |
+
+> Support follows whatever the host's AVFoundation/Core Audio can decode. Container formats that
+> the Apple stack does not natively decode (e.g. Ogg Vorbis/Opus) are not supported.
 
 ---
 
@@ -23,7 +25,8 @@ Through our `AudioLoader` orchestrator, we support any format recognized by the 
 Unlike general-purpose research libraries, AudioIntelligence is engineered for **Industrial Forensic Fidelity**:
 
 1.  **32-bit Floating Point Foundation**: All internal engines process data in `Float32` or `Float64` to prevent rounding errors.
-2.  **Bit-Deep Entropy Audit**: Our `ForensicEngine` can detect if a 24-bit file is actually a 16-bit upscale by analyzing the LSB (Least Significant Bit) entropy.
+2.  **Upsampling audit**: the `ForensicEngine` detects "fake hi-res" by comparing the declared
+    container bit depth against the *measured* effective bit depth (not by entropy).
 3.  **SQAM Parity**: Validated against the EBU Sound Quality Assessment Material.
 4.  **AES17 Compliance**: Dynamic range and frequency response metrics adhere to AES17-2020 standards.
 

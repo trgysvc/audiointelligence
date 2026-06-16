@@ -4,19 +4,26 @@ AudioIntelligence provides a forensic laboratory for the digital audio signal ch
 
 ---
 
-## 1. Bit-Depth Entropy (Validation)
+## 1. Upsampling / "fake hi-res" detection
 
-The primary indicator of audio "forgery" (upsampling) is the distribution of randomness in the Least Significant Bits (LSB).
+"Fake hi-res" is a file whose container **declares** a high bit depth while the actual signal
+only carries the information of a lower one (e.g. 16-bit content padded into a 24-bit container).
 
-### Mathematical Basis: Shannon Entropy
-We calculate the entropy ($H$) of the lower bit-planes using:
-$$H(X) = -\sum_{i=1}^{n} P(x_i) \log_2 P(x_i)$$
+### How we detect it: declared vs measured bit depth
+The detection compares two numbers:
 
-- **Authentic 24-bit Audio**: Contains thermal and quantization noise in the LSBs, resulting in high entropy.
-- **Upsampled 16-bit Audio**: Even when stored in a 24-bit container, the lower 8 bits remain zero-padded or follow a predictable pattern, resulting in **Zero Entropy**.
+- **`sourceBitDepth`** — the bit depth *declared* by the container header (read deterministically).
+- **`effectiveBits`** — the bit depth actually *present* in the signal, measured from the minimum
+  quantization step between sample values across non-silent regions.
 
-### Forensic Thresholds
-AudioIntelligence uses a **Confidence Gradient** rather than a binary flag. We analyze bit-density over the entire file duration to ensure that dither or noise-shaping isn't incorrectly flagged as native resolution.
+A file is flagged `isUpsampled = true` **only when `sourceBitDepth > effectiveBits`** — the
+container claims more resolution than the data uses.
+
+> ⚠️ **Entropy alone is not a forgery signal.** An earlier version keyed this on Shannon entropy
+> (`entropy < 0.6 ⇒ upsampled`). That is wrong: a solo instrument or a quiet passage legitimately
+> has low entropy at full bit depth, so the heuristic false-flagged authentic recordings. The
+> entropy score is still reported (`measurements.forensic.entropyScore`) as a descriptive
+> statistic, but it does **not** drive the upsampling verdict.
 
 ---
 
@@ -32,19 +39,19 @@ If a lossless file (WAV/FLAC) exhibits these spectral bracketing characteristics
 
 ---
 
-## 3. Digital DNA Signature Matching
+## 3. Forensic output
 
-Every professional encoder (LAME, Fraunhofer, CoreAudio) leaves distinct "DNA" in the signal.
+The forensic results are part of the typed **`AudioReport`** (see
+[Report Specification](REPORT_SPECIFICATION.md)), under `measurements.forensic`:
 
-### Frame Offsets & Padding
-We detect non-musical padding at the start and end of files. Specific lossy-to-lossless transcode cycles leave unique zero-padding offsets and "alias" spectral artifacts that can be used to identify the historical encoding path of the file.
+- `sourceBitDepth` (declared) and `effectiveBits` (measured)
+- `isUpsampled` — the fake-hi-res verdict from §1
+- `codecCutoff` (Hz) — the spectral cutoff used for transcode bracketing (§2)
+- `clippingEvents`, `entropyScore` — descriptive integrity statistics
 
-### Forensic DNA Reports (.dna.md)
-The ultimate output of the forensic pipeline is the **DNA Report**. This document provides:
-- **Forensic Signature**: A non-lossy digital thumbprint of the audio file.
-- **Tonnetz DNA Grid**: High-resolution harmonic stability maps.
-- **Scientific Baseline**: Laboratory-grade metrics (AES17, IMD, 468).
-- **Infinity Data Dump**: A raw JSON payload containing the complete 26-engine telemetry.
+Alongside it, `measurements.fidelity` carries the laboratory metrics (AES17 THD+N, SMPTE IMD,
+ITU-R 468 noise floor, SNR). The library writes no report file itself — serialize the
+`AudioReport` to JSON or binary plist, or render it with `MarkdownRenderer`, as you prefer.
 
 ---
 

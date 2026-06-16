@@ -11,8 +11,11 @@ AudioIntelligence is built from the ground up for the ARM architecture, specific
 ### AMX (Apple Matrix Extension)
 The majority of our heavy DSP operations (vDSP_DFT, vDSP_conv, Matrix Multiplication) are executed on the AMX. By utilizing the **Accelerate Framework**, we achieve computational throughput that is orders of magnitude faster than standard C++ implementations on ARM.
 
-### ANE (Apple Neural Engine)
-Our stem-separation and neural isolation models are explicitly compiled for the ANE. This ensures that while you isolate vocals or instruments, the CPU and GPU remain free for other engineering tasks (e.g., rendering video or processing Plug-ins).
+### Optional Core ML separation interface
+A `NeuralSeparationEngine` interface can host a Core ML stem-separation model (running on the ANE
+when available). **No model ships with the library and it is not part of `analyze()`** — the
+analysis pipeline itself performs no Core ML / ANE inference. Provide your own `SeparationModel`
+to use it.
 
 ### Unified Memory Architecture (UMA)
 We leverage UMA by using "Zero-copy" data structures. Audio samples loaded into RAM are shared between the CPU and GPU without costly bus-transfer penalties, enabling real-time complex spectral rendering.
@@ -33,7 +36,8 @@ A collection of 30+ discrete analysis modules. This layer is mathematically isol
 Custom Metal Shaders written in MSL (Metal Shading Language) for massive parallel signal decomposition tasks that exceed the throughput of the AMX.
 
 ### IV. The UI Foundation (`AudioIntelligenceUI`)
-A library of engineering-grade visualization components that directly consume the internal DNA models (e.g., `STFTMatrix`, `DNAAnalysis`) for bit-perfect rendering.
+A library of engineering-grade SwiftUI components (`MainDashboardView`, `SpectralLandscapeView`)
+that consume the public `AudioReport` value for rendering.
 
 ---
 
@@ -42,8 +46,12 @@ A library of engineering-grade visualization components that directly consume th
 ### The "No-Lie" Policy
 Every meter in AudioIntelligence is calibrated against **EBU Tech 3341/3342** test vectors. We do not use "estimated" values; we use the exact mathematical integrals specified by the ITU-R.
 
-### Shannon Entropy Logic
-For provenance validation, we implement raw bit-stream scanning. By analyzing the entropy of the Least Significant Bits (LSB), we can mathematically prove if a file is an authentic 24-bit recording or a zero-padded upscale.
+### Upsampling detection
+For provenance, the `ForensicEngine` compares the **declared** container bit depth against the
+**measured** effective bit depth (minimum quantization step across non-silent regions) and flags
+"fake hi-res" only when the declaration exceeds what the signal actually carries. Entropy is
+reported as a descriptive statistic but does **not** drive the verdict (see
+[Forensics.md](Forensics.md)).
 
 ---
 

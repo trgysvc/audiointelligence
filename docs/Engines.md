@@ -1,6 +1,12 @@
-# ⚙️ Engines: The Infinity Suite Catalog (v7.1)
+# ⚙️ Engines: The Analysis Suite Catalog
 
-This document provides a comprehensive technical reference for all analysis engines integrated into the **AudioIntelligence Infinity Suite**.
+This document is a technical reference for the analysis engines in **AudioIntelligence**. The
+suite spans two layers of trust (see the README Validation Status):
+
+- **Measurement engines** (loudness, true peak, AudioScience, forensic, spectral descriptors) —
+  deterministic and validated against reference implementations.
+- **Estimation engines** (rhythm/key/structure/instrument/musicology) — statistical, best-effort,
+  and still improving. Treat their output as estimates with a confidence, not facts.
 
 ---
 
@@ -23,8 +29,8 @@ This document provides a comprehensive technical reference for all analysis engi
 ## 3. Harmonic, Tonal & Pitch DNA
 | Engine | Purpose | Technical Basis |
 | :--- | :--- | :--- |
-| **CQTEngine/VQTEngine** | Musical Pitch | Constant-Q/Variable-Q transforms. |
-| **ChromaEngine** | Tonal Distribution | 12-bin musical energy mapping. |
+| **CQTEngine** | Musical Pitch | Constant-Q transform. **Known limitation:** a complex-FFT bug makes it unreliable; it is **not** used in the pipeline. Key/chroma use a high-resolution STFT chromagram instead. |
+| **ChromaEngine** | Tonal Distribution | 12-bin musical energy mapping (high-res STFT chromagram). |
 | **TonnetzEngine** | Harmonic Centroids | 6D hexagonal tonal relationship mapping. |
 | **YINEngine** | Pitch Tracking | Time-domain autocorrelation for F0 detection. |
 | **PiptrackEngine** | Res. Fundamental | Parabolic Interpolation for ultra-precise pitch. |
@@ -50,7 +56,7 @@ This document provides a comprehensive technical reference for all analysis engi
 ## 6. Forensic & Scientific Auditing
 | Engine | Purpose | Standard/Logic |
 | :--- | :--- | :--- |
-| **ForensicEngine** | Truth Detection | Entropy analysis and Codec bracketing. |
+| **ForensicEngine** | Provenance | Upsampling detection via declared-vs-measured bit depth; codec-cutoff bracketing; clipping & entropy statistics. |
 | **LoudnessEngine** | Metering | EBU R128 / ITU-R BS.1770-4 compliance. |
 | **TruePeakEngine** | Inter-sample Peak | 4x Sinc-interpolation for TP detection. |
 | **AudioScienceEngine**| Lab Metrics | AES17 Dynamic Range, THD+N, SNR, IMD. |
@@ -58,9 +64,9 @@ This document provides a comprehensive technical reference for all analysis engi
 ## 7. Advanced Timbral & Semantic Analysis
 | Engine | Purpose | Technical Basis |
 | :--- | :--- | :--- |
-| **InstrumentEngine**| Labeling | Neural-assisted prediction using MFCCs. |
+| **InstrumentEngine**| Labeling (estimation) | **Placeholder** today — emits best-effort instrument labels tagged as estimates. A measurement-driven instrument/genre layer (own features + transparent classifiers, no Core ML) is the next milestone. *Not* neural/ANE. |
 | **WaveletEngine** | Multi-Res Analysis | Multi-level discrete wavelet transforms (DWT). |
 | **SpectralZoneEngine**| Energy Budgeting | Detailed sub-band energy distribution. |
 
 ---
-*Last Updated: 2026-04-20 — Total Engines: 31+*
+*Engines live under `Sources/AudioIntelligenceCore/Feature/`. Last reviewed: 2026-06-16 — AudioIntelligence 8.2.0.*

@@ -1,45 +1,42 @@
-# AudioIntelligence Professional Calibration Manifest (v6.2)
+# AudioIntelligence Calibration Manifest
 
-This document serves as the official scientific record for the `AudioIntelligence` Infinity Engine. All measurements are verified against **EBU Tech 3341/3342** and **ITU-R BS.1770-4** standards.
+The official record of what the **measurement** layer is calibrated and verified against. Each
+row is backed by a test in `Tests/`. "Verified" means high-precision agreement with a reference
+on the *tested* scenario — not exhaustive coverage, and not the statistical estimation layer
+(tempo/key/instrument), which is reported separately in the README Validation Status.
 
-## 🧪 Scientific Truth Table
+## 🧪 Verified scenarios
 
-| Scenario | Target | Measure | Tolerance | Status |
-| :--- | :--- | :--- | :--- | :--- |
+| Scenario | Reference | Result | Source of truth |
+| :--- | :--- | :--- | :--- |
+| Integrated loudness (EBU SQAM) | ffmpeg `ebur128` | Δ ≤ 0.08 LU (18/18) | reference meter |
+| True peak | ITU-R BS.1770 | Δ ≤ 0.27 dB | reference meter |
+| Loudness range (LRA) | EBU Tech 3342 | Δ ≤ 0.21 LU | reference meter |
+| Reference calibration (1 kHz @ −23 dBFS) | EBU Tech 3341 | −22.994 LUFS | reference signal |
+| Gating / silence rejection | EBU Tech 3341 | pass | reference signal |
+| AES17 THD+N / SMPTE IMD | known-distortion signals | exact | synthetic references |
+| ITU-R 468 noise weighting | the standard curve | ±0.03 dB | analytic reference |
+| STFT / mel | librosa 0.11 | corr 1.00000, 0% residual | librosa parity |
+| Bit depth / sample rate / duration | container header | exact | header read |
 
-## 2. Methodology: Synthetic Ground Truth
+## 2. Methodology
 
-Unlike consumer-grade libraries, we do not verify accuracy against real-world songs (which contain unquantifiable artifacts). Instead, we use **Mathematically Perfect Digital Twins**:
-- **Reference Stimulus**: 1000 Hz Sine Wave generated at -23.0 dBFS (32-bit Float).
-- **Control**: All analysis is performed directly in memory to eliminate I/O jitter.
-- **Verification**: Output is compared against the EBU official reference vectors.
+The measurement engines are verified two ways:
 
----
+- **Reference signals ("digital twins")** — synthetic stimuli with a known answer (e.g. a 1 kHz
+  sine at −23 dBFS for loudness calibration), analyzed in-memory to remove I/O variance.
+- **Reference implementations** — `ffmpeg ebur128` for loudness, `librosa 0.11` for STFT/mel/MFCC
+  parity (used only at test time; the library ships zero dependencies).
 
-## 3. Advanced Engine Parity
+The **estimation** engines (tempo, key) are additionally benchmarked on *real music* (GiantSteps,
+MIREX-annotated) — there we report measured accuracy, not perfection (see README).
 
-### Higher-Order Spectral Analysis
-- **Standard**: Statistical Skewness & Kurtosis.
-- **Audit**: Distributional moment verification against synthetic noise.
-- **Result**: < 0.01% Error (Resolved compiled shadowing).
+## 3. Known limitations
 
-### CQT Frequency-Domain Architecture
-- **Standard**: 100% Complex Domain Convolution.
-- **Audit**: Constant-Q spacing accuracy vs. Log-periodicity.
-- **Result**: Zero Spectral Leakage (Mathematical Parity).
-
-### Neural Ratio Masking
-- **Standard**: Phase-preserving Masking Infrastructure.
-- **Audit**: Continuity of original complex STFT phase.
-- **Result**: High-Fidelity Signal Reconstruction (Verified).
-
----
-
-## 4. Hardware Transparency Report
-
-Every analysis on Apple Silicon is monitored for hardware-level precision:
-- **vDSP Parity**: Our 1D and 2D arrays are verified against double-precision reference sets.
-- **Actor Isolation**: Thread-safety is enforced at the compiler level (Swift 6), ensuring that no race-condition artifacts enter the signal chain.
+- **CQT engine**: the bundled Constant-Q transform has a complex-FFT bug and is **not** used; key
+  and chroma rely on a high-resolution STFT chromagram instead.
+- **Neural stem separation**: the `NeuralSeparationEngine` is an interface only — no Core ML model
+  ships, and it is not part of `analyze()`.
 
 ---
-*For a professional guide on integrating this engine into your product, see [Integration.md](Integration.md).*
+*Last reviewed: 2026-06-16 — AudioIntelligence 8.2.0. See [Integration.md](Integration.md).*

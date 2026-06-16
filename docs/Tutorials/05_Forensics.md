@@ -13,13 +13,14 @@ The most common "forgery" in digital audio is upsampling a 16-bit (CD) file to 2
 - **Upsampled 16-bit**: Zero entropy (all zeros or static padding) in the lower 8 bits.
 
 ```swift
-let results = try await sdk.analyze(url: audioURL, features: [.forensic])
-let forensic = results.rawAnalysis.forensic
+let results = try await sdk.analyze(url: audioURL)
+let forensic = results.measurements.forensic
 
 if forensic.isUpsampled {
     print("⚠️ FAKE HI-RES detected.")
-    print("Effective Resolution: 16-bit")
-    print("Shannon Entropy: \(forensic.lsbEntropy) (Expected > 0.8)")
+    print("Declared Resolution: \(forensic.sourceBitDepth.value)-bit")
+    print("Effective Resolution: \(forensic.effectiveBits.value)-bit")
+    print("Shannon Entropy: \(forensic.entropyScore.value) (Expected > 0.8)")
 }
 ```
 
@@ -31,10 +32,13 @@ Every lossy codec (MP3, AAC, Vorbis) leaves a "Spectral Bracketing" signature. I
 
 ```swift
 let report = try await sdk.analyze(url: audioURL)
+let forensic = report.measurements.forensic
 
-if let signature = report.rawAnalysis.forensic.detectedSourceCodec {
-    print("Historical Provenance: \(signature)")
-    print("Cutoff Frequency: \(report.rawAnalysis.forensic.cutoffFrequency) Hz")
+if forensic.codecCutoff.value < 20000 {
+    print("Historical Provenance: Likely compressed (Cutoff at \(Int(forensic.codecCutoff.value)) Hz)")
+}
+if let encoder = report.metadata.encoder {
+    print("Container Encoder: \(encoder)")
 }
 ```
 
@@ -45,13 +49,13 @@ if let signature = report.rawAnalysis.forensic.detectedSourceCodec {
 For professional distribution, meeting the -23 LUFS (Integrated) loudness standard is mandatory. Our `MasteringEngine` is calibrated against **EBU Tech 3341** test vectors with ±0.1 LU precision.
 
 ```swift
-let mastering = report.rawAnalysis.mastering
+let loudness = report.measurements.loudness
 
-print("Integrated Loudness: \(mastering.integratedLUFS) LUFS")
-print("Loudness Range (LRA): \(mastering.lra) LU")
-print("True Peak (dBTP): \(mastering.truePeak) dB")
+print("Integrated Loudness: \(loudness.integrated.value) LUFS")
+print("Loudness Range (LRA): \(loudness.range.value) LU")
+print("True Peak (dBTP): \(loudness.truePeak.value) dB")
 
-if mastering.integratedLUFS > -22.0 {
+if loudness.integrated.value > -22.0 {
     print("🚨 Loudness exceeds EBU R128 target of -23 LUFS.")
 }
 ```
@@ -67,7 +71,8 @@ import SwiftUI
 import AudioIntelligence
 
 struct ForensicAuditView: View {
-    let forensic: ForensicResult
+    let forensic: ForensicMeasurements
+    let metadata: ReportMetadata
     
     var body: some View {
         List {
@@ -80,13 +85,13 @@ struct ForensicAuditView: View {
                         .bold()
                 }
                 
-                LabeledContent("LSB Entropy", value: String(format: "%.3f", forensic.lsbEntropy))
-                LabeledContent("Bit Density", value: "\(forensic.activeBits)-bit")
+                LabeledContent("LSB Entropy", value: String(format: "%.3f", forensic.entropyScore.value))
+                LabeledContent("Bit Density", value: "\(forensic.effectiveBits.value)-bit")
             }
             
             Section("Codec Audit") {
-                LabeledContent("Detected History", value: forensic.detectedSourceCodec ?? "Original Lossless")
-                LabeledContent("Spectral Ceiling", value: "\(Int(forensic.cutoffFrequency)) Hz")
+                LabeledContent("Detected Encoder", value: metadata.encoder ?? "Unknown/Original Lossless")
+                LabeledContent("Spectral Ceiling", value: "\(Int(forensic.codecCutoff.value)) Hz")
             }
         }
         .headerProminence(.increased)
@@ -103,12 +108,14 @@ AudioIntelligence can generate a complete, formatted **Markdown DNA Report** tha
 ```swift
 let report = try await sdk.analyze(url: audioURL)
 
-// Access the human-readable forensic report
-let auditText = report.reportText
-print(auditText)
+// Serialize the report to JSON
+let json = try report.jsonData(prettyPrinted: true)
+if let jsonString = String(data: json, encoding: .utf8) {
+    print(jsonString)
+}
 
 // Save to disk for sharing
-try auditText.write(to: report.reportPath, atomically: true, encoding: .utf8)
+try json.write(to: URL(fileURLWithPath: "report.json"))
 ```
 
 ---

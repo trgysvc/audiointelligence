@@ -10,7 +10,7 @@ AudioIntelligence is a modular SDK optimized for the **Swift Package Manager**. 
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/trgysvc/AudioIntelligence.git", from: "6.1.0")
+    .package(url: "https://github.com/trgysvc/audiointelligence.git", from: "8.2.0")
 ]
 ```
 
@@ -27,8 +27,8 @@ The `AudioIntelligence` engine is implemented as a **Swift Actor**. This ensures
 
 ### Initialization
 ```swift
-// Create a shared instance. 
-// Uses automatic hardware selection (AMX/ANE) by default.
+// Create a shared instance.
+// Uses automatic hardware selection (Accelerate/AMX + Metal, CPU fallback) by default.
 let sdk = AudioIntelligence()
 ```
 
@@ -73,8 +73,9 @@ struct AnalysisDashboard: View {
                 VStack(alignment: .leading) {
                     Text("Analysis Results")
                         .font(.headline)
-                    Text("BPM: \(report.rawAnalysis.rhythm.bpm, specifier: "%.1f")")
-                    Text("Integrity: \(report.rawAnalysis.forensic.isUpsampled ? "⚠️ FAKE" : "✅ AUTHENTIC")")
+                    Text("Tempo: \(report.estimations.tempo.value, specifier: "%.1f") BPM (estimate)")
+                    Text("Loudness: \(report.measurements.loudness.integrated.value, specifier: "%.1f") LUFS")
+                    Text("Hi-res: \(report.measurements.forensic.isUpsampled ? "⚠️ upsampled" : "✅ native")")
                 }
                 .padding()
                 .background(Color.secondary.opacity(0.1))
@@ -115,9 +116,10 @@ Professional apps should monitor hardware utilization. AudioIntelligence provide
 
 ```swift
 Task {
-    let stats = await sdk.getHardwareStats()
-    print("Accelerator: \(stats["acceleration"] ?? "CPU")")
-    print("Core Count: \(stats["threads"] ?? 0)")
+    let stats = await sdk.getHardwareStats()   // -> HardwareStats
+    print("Accelerator: \(stats.acceleration)")
+    print("Active threads: \(stats.activeThreads)")
+    print("Cache: \(stats.cacheUsageMB) MB")
 }
 ```
 

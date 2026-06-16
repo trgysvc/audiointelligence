@@ -96,7 +96,7 @@ final class GroundTruthValidationTests: XCTestCase {
 
     private func analyze(_ url: URL) async throws -> MusicDNAAnalysis {
         let intelligence = AudioIntelligence()
-        return try await intelligence.analyze(url: url).rawAnalysis
+        return try await intelligence.analyzeRawAggregate(url: url)
     }
 
     // MARK: - Tests

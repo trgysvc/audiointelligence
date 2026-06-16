@@ -50,9 +50,9 @@ struct SQAMAuditTool {
                 let duration = Date().timeIntervalSince(start)
                 
                 // Extract metrics
-                let detectedInst = report.rawAnalysis.instruments.primaryLabel
-                let detectedKey = report.rawAnalysis.tonality.key
-                let lufs = report.rawAnalysis.mastering.integratedLUFS
+                let detectedInst = report.estimations.instruments?.first?.value ?? "Unclassified"
+                let detectedKey = report.estimations.key.value
+                let lufs = report.measurements.loudness.integrated.value
                 
                 // Fetch Ground Truth
                 let ref = referenceMap[trackID] ?? ("Unknown SQAM", "Unknown")

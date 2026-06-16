@@ -1,5 +1,44 @@
 ---
 
+## [8.2.0] - 2026-06-16
+### Added
+- **`AudioReport` — a typed, layered report product.** `analyze()` now returns a single
+  `AudioReport` value whose schema separates **measurements** (objective, `Measured<T>` with
+  unit + standard + `validated`) from **estimations** (statistical, `Estimated<T>` with
+  confidence + method + alternatives), plus optional heavy `features` series.
+- **Codable-first transport:** `report.jsonData(includingFeatures:)` (universal) and
+  `report.plistData(includingFeatures:)` (Apple-native binary). The consuming app converts/
+  renders as it wishes.
+- **`MarkdownRenderer`** — an optional, pure reference renderer over `AudioReport` (not invoked
+  by `analyze()`).
+- **`schemaVersion` (1.0.0)** so the schema can grow additively (e.g. the upcoming instrument
+  layer) without breaking consumers.
+- **`analyzeRawAggregate(url:)`** — advanced/diagnostic access to the internal engine aggregate
+  for deep validation.
+
+### Changed
+- **The library no longer writes files.** The previous pipeline wrote a `.md` + `.plist` to a
+  hardcoded `~/Documents/AI Works` path as a side effect of analysis (which threw on any machine
+  where that folder was absent). Persistence is now entirely the caller's choice.
+- Demo app, examples, benchmark and validation tests migrated to the `AudioReport` API.
+
+### Fixed
+- **Upsampling false positive (forensic):** "fake hi-res" detection was keyed on Shannon entropy
+  (`meanEntropy < 0.6`), which false-flagged legitimate low-entropy material (e.g. a solo
+  instrument) as upsampled. Now correctly defined as *declared bit depth exceeding the measured
+  effective bit depth*; `effectiveBits` reports the measured value.
+
+### Removed
+- Fabricated report claims (`✅ AUTHENTIC`, `100% Data Integrity Guaranteed`, `26 Engines
+  Active`, `M4 Silicon GPU ✅ ACTIVE`, `[FINAL AUDIT VERDICT]`) that were printed regardless of
+  the actual signal.
+- Dead, unused `MusicDNAReporter` (470 lines).
+
+### Documentation
+- Rewrote `docs/REPORT_SPECIFICATION.md`, `AI_INTEGRATION_GUIDE.md`, `Integration.md`,
+  `Forensics.md`, `ScientificValidation.md` and `Engines.md` against the real code; corrected the
+  project-structure tree; moved project manuals into `docs/`.
+
 ## [8.1.5] - 2026-04-20
 ### Added
 - **SQAM Forensic Audit**: Successfully completed the industry-standard 70-track EBU SQAM (Tech 3253) validation suite with 100% stability.

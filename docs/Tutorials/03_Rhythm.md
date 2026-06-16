@@ -8,41 +8,34 @@ Understanding the temporal structure of audio is vital for DJ applications, musi
 
 The `RhythmEngine` provides a global BPM estimate by analyzing the autocorrelation of the **Onset Strength Envelope**.
 
-```swift
-let rhythm = report.rawAnalysis.rhythm
+Tempo is an **estimation** — `report.estimations.tempo` carries the value, a confidence and the
+method.
 
-print("Estimated BPM: \(rhythm.bpm)")
-print("Confidence: \(Int(rhythm.bpmConfidence * 100))%")
+```swift
+let tempo = report.estimations.tempo
+
+print("Estimated BPM: \(tempo.value)")
+print("Confidence: \(Int(tempo.confidence * 100))%")
+print("Method: \(tempo.method)")
 ```
 
 > [!TIP]
-> **Confidence Metric**: A confidence score below 0.4 usually indicates complex polyphonic material (like ambient textures or free-jazz) where a steady pulse is difficult to identify mathematically.
+> **Confidence Metric**: A confidence below ~0.4 usually indicates complex polyphonic material
+> (ambient textures, free-jazz) where a steady pulse is hard to identify. Threshold it before
+> presenting BPM as fact.
 
 ---
 
-## 📍 2. Beat Tracking (The "Click Track")
+## 📍 2. Structure (sections)
 
-Identifying where each beat occurs in time is a much harder problem than just finding the average tempo. We use the **Ellis (2007) Dynamic Programming** approach to find the maximum-likelihood sequence of beats.
+The public `AudioReport` exposes the **section structure** (intro/verse/chorus…) under
+`estimations.structure`. (Per-beat timestamps and the raw onset envelope are internal to the
+pipeline and are not part of the public schema; use `analyzeRawAggregate(url:)` if you need them.)
 
 ```swift
-// Array of timestamps (in seconds) where each beat occurs
-let beats = rhythm.beatTimes
-
-for (index, timestamp) in beats.enumerated() {
-    print("Beat \(index + 1) at: \(timestamp) s")
+for seg in report.estimations.structure {
+    print("\(seg.label): \(seg.start)s – \(seg.end)s")
 }
-```
-
----
-
-## ⚡ 3. Onset Detection (Note Starts)
-
-If you need to know exactly when a new sound starts (a drum hit, a piano note, or a vocal transient), you can access the **Onsets**.
-
-```swift
-let onsets = report.rawAnalysis.onsets
-
-print("Detected \(onsets.count) discrete onsets.")
 ```
 
 ---
@@ -56,11 +49,13 @@ import SwiftUI
 import AudioIntelligence
 
 struct RhythmicMetronome: View {
-    let beats: [Double]
+    let bpm: Double                       // report.estimations.tempo.value
     @State private var currentBeatIndex = 0
-    let playbackTimer = Timer.publish(every: 0.01, on: .main, in: .common).autoconnect()
     @State private var currentTime: Double = 0
-    
+    let playbackTimer = Timer.publish(every: 0.01, on: .main, in: .common).autoconnect()
+
+    private var beatInterval: Double { 60.0 / max(bpm, 1) }
+
     var body: some View {
         HStack {
             ForEach(0..<4) { index in
@@ -73,8 +68,8 @@ struct RhythmicMetronome: View {
         }
         .onReceive(playbackTimer) { _ in
             currentTime += 0.01
-            // Check if we passed a beat timestamp
-            if currentBeatIndex < beats.count && currentTime >= beats[currentBeatIndex] {
+            // Even click grid derived from the estimated tempo
+            if currentTime >= Double(currentBeatIndex + 1) * beatInterval {
                 currentBeatIndex += 1
             }
         }
@@ -92,4 +87,4 @@ For tracks with changing tempos or "human" swing, we use **PLP Analysis**. This 
 - **Pulse Synthesis**: We synthesize a local pulse curve that represents the tracking "stability" of the engine.
 
 ---
-*Next Step: Explore [Tutorial 04: Source Separation](04_Separation.md) to isolate instruments using HPSS and ANE-optimized Neural models.*
+*Next Step: Explore [Tutorial 04: Source Separation](04_Separation.md) to work with HPSS harmonic/percussive content.*

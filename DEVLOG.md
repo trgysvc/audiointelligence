@@ -260,4 +260,86 @@ instrument/genre layer depends on. Gate satisfied → estimation layer may begin
 
 ---
 
+## Phase 8 — The reporting layer rebuilt as *data*, not a marketing document
+
+Before building the estimation (instrument/genre) layer, we audited the output side and found
+the report — not the DSP — was the weakest part of the library. Two classes of problem:
+
+**1. It produced a document, not data.** `analyze()` returned `(analysis, reportText, mdPath)`
+and, as a side effect, *wrote two files to a hardcoded `/Users/trgysvc/Documents/AI Works`
+path*. For any other user that directory doesn't exist, so the call threw on the file write —
+the library was literally unshippable to a second machine. A library must return data and let
+the caller decide whether/where to persist it.
+
+**2. The report text fabricated verdicts.** The markdown template hardcoded claims regardless
+of the actual signal: `✅ AUTHENTIC`, `100% Data Integrity Guaranteed`, `Verified Compliance |
+100% Scientific Baseline`, `M4 Silicon GPU | ✅ ACTIVE` (printed even on CPU fallback), `26
+Engines Active`, and a `[FINAL AUDIT VERDICT]`. This directly contradicts the
+measurement-vs-estimation honesty the whole project is built on. A second, *unused* reporter
+(`MusicDNAReporter`, 470 lines) sat dead in the tree — and was ironically the more honest one.
+
+### What we built: `AudioReport`
+
+The product is now a single typed value, `AudioReport` (`Sources/.../Report/`), with the
+measurement/estimation split encoded in the type system:
+
+- **`Measured<T>`** — `value` + `unit` + `standard` + `validated`. The certifiable layer
+  (loudness/EBU R128, true peak/BS.1770, THD+N/AES17, IMD/SMPTE, noise/468, bit depth, spectral
+  descriptors validated for librosa parity). A consumer can branch on `.validated` /
+  `.standard` instead of trusting a badge.
+- **`Estimated<T>`** — `value` + `confidence` + `method` + ranked `alternatives`. The
+  statistical layer (tempo, key, time signature, structure, instruments, musicology). Never an
+  "AUTHENTIC" stamp; always a confidence the consumer thresholds itself.
+- **`features`** — heavy low-level series (chromagram, MFCC, spectrogram). Always in memory;
+  optionally excluded from serialization via `jsonData(includingFeatures:)` for a lean export.
+
+**Why this shape.** The report has two audiences: humans (who want a rendered document) and
+*consuming software* (which wants typed data it can integrate). We made the data canonical and
+every document just a *rendering* of it. `analyze()` now returns `AudioReport` and **writes no
+files**. Transport is Codable-first: `report.jsonData()` (universal — any language) and
+`report.plistData()` (Apple-native, compact). `MarkdownRenderer.render(report)` is an
+*optional* pure reference renderer — the caller can ignore it and render however it likes. The
+validated DSP pipeline is untouched: engines still produce the internal `MusicDNAAnalysis`
+aggregate; a single mapper (`AudioReport(from:context:)`) lifts it into the public schema, so
+none of the Axis-A validation work was disturbed. `schemaVersion` (1.0.0) lets the upcoming
+instrument layer grow the schema additively rather than breaking consumers.
+
+Removed: the hardcoded output path, all fabricated badges, and the dead `MusicDNAReporter`.
+
+### Forensic fix: entropy is not upsampling
+
+Inspecting real output surfaced an engine bug the old report had been hiding behind its fake
+"AUTHENTIC" stamp. A genuine 16-bit SQAM recording was flagged **"Upsampled (fake hi-res):
+yes"**. Root cause (`DNAReportBuilder`): `isUpsampled` was computed as `meanEntropy < 0.6` —
+keyed purely on Shannon entropy, ignoring bit depth entirely. A solo instrument legitimately
+has low entropy at full resolution, so this false-positives on exactly the clean material we
+validate against. (The same threshold was even *documented* as a feature: "if entropy < 0.6,
+trigger FRAUD alert.")
+
+Fixed to the correct forensic definition: **fake hi-res = the container declares more bits than
+the signal actually uses.** We now compare the declared header depth (`sourceBitDepth`) against
+the *measured* effective depth (`measuredEffectiveBits`, the minimum quantization step across
+non-silent chunks) and flag upsampling only when `sourceBitDepth > measuredEffectiveBits`. The
+report's `effectiveBits` now shows the measured value (not an echo of the header), so a 24-bit
+container carrying real 16-bit data reads `source 24-bit / effective 16-bit / upsampled: yes`,
+while the genuine 16-bit file correctly reads `upsampled: no`.
+
+### Documentation reckoning
+
+The `docs/` set had drifted badly behind the code: it still described the old `.dna.md` report
+with a "hidden JSON" `MusicDNAAnalysis` dump, a "26-engine checklist", `report.reportPath`
+file-writing, the now-removed entropy-fraud logic, and capabilities we don't have (ANE
+instrument prediction, a "neural" InstrumentEngine — the instrument layer isn't built yet).
+Rewrote the report spec, integration, forensics, validation and engine-catalog docs against the
+real code; corrected the project-structure tree (the documented `Engines/`/`Forensic/`/`DSP/`
+folders never existed — engines live in `Feature/`); and moved project-level manuals into
+`docs/`.
+
+**Status:** `swift build` and `swift build --build-tests` green; sample report renders cleanly
+with measurements tagged `validated` + standard and estimations tagged with confidence + method;
+no files written by the library. **Gate to the instrument/genre layer is now genuinely clean —
+the foundation *and* its reporting are honest.**
+
+---
+
 > *"Measured, not claimed: AudioIntelligence reports what it can prove."*

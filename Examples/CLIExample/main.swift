@@ -20,12 +20,14 @@ struct CLIExample {
             
             print("\n✅ Analysis Complete:")
             print("-------------------------")
-            print("Summary: \(report.summary)")
-            
-            // v28.0 Infinity Access
-            print("BPM: \(report.rawAnalysis.rhythm.bpm)")
-            print("Encoder: \(report.rawAnalysis.forensic.encoder ?? "Unknown")")
-            print("Loudness: \(report.rawAnalysis.mastering.integratedLUFS) LUFS")
+            print("File: \(report.metadata.fileName)")
+
+            // Estimation (statistical) vs Measurement (validated)
+            let tempo = report.estimations.tempo
+            print("BPM (estimate, \(Int(tempo.confidence * 100))% conf): \(String(format: "%.1f", tempo.value))")
+            print("Encoder: \(report.metadata.encoder ?? "Unknown")")
+            let lufs = report.measurements.loudness.integrated
+            print("Loudness: \(String(format: "%.1f", lufs.value)) LUFS (\(lufs.standard?.rawValue ?? "—"))")
             print("-------------------------")
             
         } catch {

@@ -51,14 +51,31 @@ public actor AudioIntelligence {
         }
         
         let builder = DNAReportBuilder(device: device, mode: mode, metalEngine: metalEngine)
-        let result = try await builder.analyze(url: url, lanes: lanes, progress: progress)
-        
-        return AudioReport(
-            summary: "Analysis complete for \(url.lastPathComponent). Dynamic Domain breadth: \(features.count) features (\(lanes.count) optimized lanes).",
-            rawAnalysis: result.analysis,
-            reportText: result.reportText,
-            reportPath: result.mdPath
-        )
+        return try await builder.analyze(url: url, lanes: lanes, progress: progress)
+    }
+
+    /// Advanced/diagnostic access to the raw engine aggregate (`MusicDNAAnalysis`)
+    /// behind an `AudioReport`. Exposes internal fields not surfaced by the public
+    /// layered schema; intended for deep validation/benchmarking, not general use.
+    public func analyzeRawAggregate(
+        url: URL,
+        features: Set<AudioFeature> = Set(AudioFeature.allCases)
+    ) async throws -> MusicDNAAnalysis {
+        var lanes: Set<AnalysisLane> = []
+        for feat in features {
+            switch feat {
+            case .spectral:   lanes.insert(.spectral); lanes.insert(.timbre)
+            case .rhythm:     lanes.insert(.rhythm)
+            case .harmonic:   lanes.insert(.tonal); lanes.insert(.advanced)
+            case .pitch:      lanes.insert(.semantic)
+            case .separation: lanes.insert(.advanced)
+            case .semantic:   lanes.insert(.semantic)
+            case .forensic:   lanes.insert(.forensic)
+            case .mastering:  lanes.insert(.mastering)
+            }
+        }
+        let builder = DNAReportBuilder(device: device, mode: mode, metalEngine: metalEngine)
+        return try await builder.analyzeAggregate(url: url, lanes: lanes, progress: { _, _, _ in }).analysis
     }
     
     // MARK: - Granular Utility APIs

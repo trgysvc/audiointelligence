@@ -15,7 +15,7 @@ Update your `Package.swift` to include the Infinity Engine:
 let package = Package(
     name: "MyProAudioApp",
     dependencies: [
-        .package(url: "https://github.com/trgysvc/AudioIntelligence.git", from: "6.3.0")
+        .package(url: "https://github.com/trgysvc/audiointelligence.git", from: "8.2.0")
     ],
     targets: [
         .target(
@@ -49,10 +49,11 @@ Task {
         let report = try await sdk.analyze(url: songURL) { progress, stage, _ in
             print("[\(stage)] \(Int(progress * 100))%")
         }
-        
-        // Access 26-engine DNA results
-        print("Loudness: \(report.rawAnalysis.mastering.integratedLUFS) LUFS")
-        print("Structure: \(report.rawAnalysis.segments.count) sections detected")
+
+        // Measurement (validated) vs estimation (statistical):
+        print("Loudness: \(report.measurements.loudness.integrated.value) LUFS")  // EBU R128
+        print("Structure: \(report.estimations.structure.count) sections detected")
+        print("Tempo: \(report.estimations.tempo.value) BPM @ \(report.estimations.tempo.confidence)")
     } catch {
         print("Analysis Error: \(error)")
     }
@@ -65,26 +66,26 @@ Task {
 
 The **AudioIntelligenceUI** module provides high-performance, Metal-accelerated views for your dashboard.
 
-### Real-Time Spectrogram
-Render a professional, perceptually uniform spectrogram directly from your analysis results:
+### Dashboard & spectral views
+The module ships `MainDashboardView` (a full engineering dashboard) and the
+`SpectralLandscapeView` component. Both consume the typed `AudioReport`:
 
 ```swift
 import SwiftUI
 import AudioIntelligenceUI
 
 struct AnalysisDashboard: View {
-    @State private var analysis: MusicDNAAnalysis?
+    @State private var report: AudioReport?
 
     var body: some View {
         VStack {
-            if let results = analysis {
-                // High-throughput Metal Spectrogram
-                SpectrogramView(results: results)
+            if let report {
+                // Full engineering dashboard
+                MainDashboardView(report: report)
+
+                // Or drive an individual component from the heavy feature series
+                SpectralLandscapeView(magnitudes: report.features?.magnitudeSpectrogram ?? [])
                     .frame(height: 300)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                
-                // Standards-compliant Metering
-                LoudnessMeterView(lufs: results.mastering.integratedLUFS)
             }
         }
     }
@@ -109,11 +110,17 @@ await sdk.invalidateCache() // Clears the hybrid store
 
 ## 5. Hardware Optimization (Apple Silicon)
 
-AudioIntelligence is a **Multi-Engine Hybrid** that optimizes for the modern M-series SoC:
+AudioIntelligence optimizes for the modern M-series SoC:
 
-- **AMX (Accelerate)**: High-throughput matrix/vector math on Performance cores.
-- **ANE (Apple Neural Engine)**: Zero-CPU cost stem separation and instrument prediction.
-- **Metal GPU**: Parallelized FFT and UI rendering.
+- **Accelerate / vDSP (incl. AMX)**: High-throughput FFT and matrix/vector math.
+- **Metal GPU**: Parallelized DSP kernels and UI rendering, with a CPU fallback when Metal is
+  unavailable.
+
+> The **analysis pipeline** (`analyze()`) is pure Swift on Accelerate/AVFoundation/Metal — no
+> Core ML, no ANE inference, no network. (There is a separate `NeuralSeparationEngine` interface
+> that *can* host a Core ML model for stem separation, but no model ships and it is not part of
+> `analyze()`. The instrument layer is not yet built; today's instrument predictions are
+> placeholder estimates.)
 
 ---
 *For technical specs on specific analysis engines, see [Engines.md](Engines.md).*

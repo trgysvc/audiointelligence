@@ -16,8 +16,8 @@ This guide serves as a "Rosetta Stone" for developers transitioning from the Pyt
 | `librosa.segment.recurrence_matrix` | `StructureEngine.recurrenceMatrix()` | Cosine-similarity focused. |
 | `librosa.effects.time_stretch` | `ManipulationEngine.timeStretch()` | Phase vocoder implementation. |
 | `librosa.effects.pitch_shift` | `ManipulationEngine.pitchShift()` | HQ resampled pitch shifting. |
-| `librosa.decompose.hpss` | `HPSSEngine.separate()` | Median-filter harmonic-percussive separation. |
-| `librosa.display.specshow` | `SpectrogramView()` | SwiftUI + Metal real-time rendering. |
+| `librosa.decompose.hpss` | `HPSSEngine.analyze(stft:)` | Median-filter harmonic-percussive separation. |
+| `librosa.display.specshow` | `SpectralLandscapeView` | SwiftUI + Metal rendering. |
 
 ---
 
@@ -29,12 +29,14 @@ In Librosa, you call individual functions. In AudioIntelligence, we use **Engine
 ### 2. Thread Safety (Swift 6)
 AudioIntelligence is built for **Swift 6 Actor Isolation**. You can run multiple analysis engines in parallel without worrying about data races, which is a major pain point when using Librosa/NumPy in a multi-threaded Python environment.
 
-### 3. Real-time vs Batch
-Librosa is primarily for batch processing (offline). AudioIntelligence engines are optimized for **Sub-millisecond Latency**, making them suitable for real-time professional DAW plugins and live analysis apps.
+### 3. Native Swift, on-device
+Librosa is a Python/NumPy batch library. AudioIntelligence is native Swift on Apple Silicon,
+designed for on-device app integration with structured concurrency.
 
 ### 4. Hardware Acceleration
 - **Librosa**: Generic CPU (NumPy/OpenBLAS).
-- **AudioIntelligence**: Native **AMX (Apple Matrix Extension)**, **ANE (Apple Neural Engine)**, and **Metal GPU**.
+- **AudioIntelligence**: Native **Accelerate/vDSP (incl. AMX)** and **Metal GPU**, with a CPU
+  fallback. (The analysis pipeline does no ANE/Core ML inference.)
 
 ---
 
