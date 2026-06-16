@@ -10,6 +10,7 @@
 //
 
 @preconcurrency import AVFoundation
+import AudioToolbox
 import Accelerate
 
 // MARK: - Audio Metadata
@@ -20,6 +21,7 @@ public struct AudioMetadata: Sendable {
     public let sampleRate: Double      // Hz
     public let channels: Int
     public let frameCount: AVAudioFrameCount
+    public let sourceBitDepth: Int     // 0 = unknown (compressed source w/o reported depth)
 }
 
 // MARK: - Loaded Audio Buffer
@@ -66,8 +68,36 @@ public enum AudioLoader {
             duration: Double(frameCount) / format.sampleRate,
             sampleRate: format.sampleRate,
             channels: Int(format.channelCount),
-            frameCount: frameCount
+            frameCount: frameCount,
+            sourceBitDepth: sourceBitDepth(for: url)
         )
+    }
+
+    /// Reads the *source* bit depth straight from the container/codec header — the
+    /// same value `afinfo` reports as "source bit depth". This is deterministic and
+    /// immune to silence/resampling, unlike statistical estimation from decoded floats.
+    /// Returns 0 when the source does not report a fixed depth.
+    public static func sourceBitDepth(for url: URL) -> Int {
+        var fileID: AudioFileID?
+        guard AudioFileOpenURL(url as CFURL, .readPermission, 0, &fileID) == noErr,
+              let f = fileID else { return 0 }
+        defer { AudioFileClose(f) }
+
+        // Preferred: explicit source bit depth (works for FLAC/ALAC/AIFF/WAV).
+        var depth: Int32 = 0
+        var size = UInt32(MemoryLayout<Int32>.size)
+        if AudioFileGetProperty(f, kAudioFilePropertySourceBitDepth, &size, &depth) == noErr, depth != 0 {
+            return Int(abs(depth)) // negative encodes float; magnitude is the bit count
+        }
+
+        // Fallback: PCM stream description.
+        var asbd = AudioStreamBasicDescription()
+        var asbdSize = UInt32(MemoryLayout<AudioStreamBasicDescription>.size)
+        if AudioFileGetProperty(f, kAudioFilePropertyDataFormat, &asbdSize, &asbd) == noErr,
+           asbd.mBitsPerChannel > 0 {
+            return Int(asbd.mBitsPerChannel)
+        }
+        return 0
     }
 
     // MARK: Full Load (≤ ~5 dakika)
@@ -222,7 +252,61 @@ public enum AudioLoader {
         let frameLen = Int(outBuffer.frameLength)
         let samples = Array(UnsafeBufferPointer(start: ptr, count: frameLen))
         let duration = Double(frameLen) / targetSampleRate
-        
+
         return AudioBuffer(samples: samples, sampleRate: targetSampleRate, duration: duration)
+    }
+
+    /// Loads a slice as L/R channels (right == left for mono sources). The caller can
+    /// derive the mono mix as (L+R)/2, so this single decode serves both the mono
+    /// analysis path and the real stereo/phase metrics.
+    public static func loadNextChunkStereoManual(
+        file: AVAudioFile,
+        offset: AVAudioFramePosition,
+        frameCount: AVAudioFrameCount,
+        targetSampleRate: Double = defaultSampleRate
+    ) throws -> StereoAudioBuffer {
+        let inputFormat = file.processingFormat
+        let channelCount = Int(inputFormat.channelCount)
+
+        guard let outputFormat = AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: targetSampleRate,
+            channels: AVAudioChannelCount(channelCount),
+            interleaved: false
+        ) else {
+            throw AudioIntelligenceError.io(.formatNotSupported("PCM Float32"))
+        }
+
+        guard let chunkBuffer = AVAudioPCMBuffer(pcmFormat: inputFormat, frameCapacity: frameCount) else {
+            throw AudioIntelligenceError.io(.decodeFailed(file.url))
+        }
+        file.framePosition = offset
+        try file.read(into: chunkBuffer, frameCount: frameCount)
+
+        let converter = AVAudioConverter(from: inputFormat, to: outputFormat)
+        let outFrames = AVAudioFrameCount(Double(chunkBuffer.frameLength) * targetSampleRate / inputFormat.sampleRate) + 1
+
+        guard let outBuffer = AVAudioPCMBuffer(pcmFormat: outputFormat, frameCapacity: outFrames) else {
+            throw AudioIntelligenceError.io(.decodeFailed(file.url))
+        }
+
+        let state = ConversionState()
+        converter?.convert(to: outBuffer, error: nil) { _, outStatus in
+            if state.consumed { outStatus.pointee = .noDataNow; return nil }
+            outStatus.pointee = .haveData
+            state.consumed = true
+            return chunkBuffer
+        }
+
+        let frameLen = Int(outBuffer.frameLength)
+        guard let ch = outBuffer.floatChannelData else {
+            throw AudioIntelligenceError.io(.decodeFailed(file.url))
+        }
+        let left = Array(UnsafeBufferPointer(start: ch[0], count: frameLen))
+        let right = channelCount > 1
+            ? Array(UnsafeBufferPointer(start: ch[1], count: frameLen))
+            : left
+        let duration = Double(frameLen) / targetSampleRate
+        return StereoAudioBuffer(left: left, right: right, sampleRate: targetSampleRate, duration: duration)
     }
 }

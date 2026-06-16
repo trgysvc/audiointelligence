@@ -112,25 +112,85 @@ public final class AudioScienceEngine: Sendable {
     /// SMPTE IMD: Analysis of 60Hz and 7kHz interaction.
     private func measureSMPTEIMD(samples: [Float]) -> Float {
         guard detectTestTone(samples: samples, frequency: 7000.0) else { return Float.nan }
-        
-        var carrierPower: Float = 0
-        vDSP_measqv(samples, 1, &carrierPower, vDSP_Length(samples.count))
-        
-        let notched = applyNotchFilter(samples: samples, frequency: 60.0)
-        var notchedPower: Float = 0
-        vDSP_measqv(notched, 1, &notchedPower, vDSP_Length(notched.count))
-        
-        let diff = abs(carrierPower - notchedPower)
-        return (diff / max(1e-12, carrierPower)) * 0.1 // Scaled IMD approximation
+
+        // SMPTE/DIN IMD: a 60 Hz + 7 kHz (4:1) stimulus; nonlinearity amplitude-modulates the
+        // 7 kHz carrier, producing sidebands at 7000 ± k·60. IMD = RMS(sidebands)/carrier.
+        // The previous code measured the 60 Hz tone's energy and scaled by 0.1 — unrelated to
+        // intermodulation. This is a windowed-FFT measurement of the actual sideband structure.
+        let n = 1 << Int(log2(Double(samples.count)))
+        guard n >= 1024 else { return Float.nan }
+
+        var real = [Double](repeating: 0, count: n)
+        let a0 = 0.35875, a1 = 0.48829, a2 = 0.14128, a3 = 0.01168
+        for i in 0..<n {
+            let x = 2.0 * Double.pi * Double(i) / Double(n - 1)
+            real[i] = Double(samples[i]) * (a0 - a1 * cos(x) + a2 * cos(2 * x) - a3 * cos(3 * x))
+        }
+        var imag = [Double](repeating: 0, count: n)
+        let log2n = UInt(log2(Double(n)))
+        guard let setup = vDSP_create_fftsetupD(log2n, FFTRadix(kFFTRadix2)) else { return Float.nan }
+        defer { vDSP_destroy_fftsetupD(setup) }
+        real.withUnsafeMutableBufferPointer { rp in
+            imag.withUnsafeMutableBufferPointer { ip in
+                var sc = DSPDoubleSplitComplex(realp: rp.baseAddress!, imagp: ip.baseAddress!)
+                vDSP_fft_zipD(setup, &sc, 1, log2n, FFTDirection(kFFTDirection_Forward))
+            }
+        }
+
+        func powerAround(_ hz: Double, _ guardBins: Int = 6) -> Double {
+            let b = Int((hz * Double(n) / sampleRate).rounded())
+            guard b > guardBins, b < n / 2 - guardBins else { return 0 }
+            var p = 0.0
+            for k in (b - guardBins)...(b + guardBins) { p += real[k] * real[k] + imag[k] * imag[k] }
+            return p
+        }
+        let carrierP = powerAround(7000)
+        let sidebandP = [6940.0, 7060.0, 6880.0, 7120.0].map { powerAround($0) }.reduce(0, +)
+        return Float(sqrt(sidebandP / max(1e-20, carrierP)) * 100.0)
     }
     
     // MARK: - ITU-R 468 Noise Weighting
     
+    /// Exact ITU-R 468 linear response R(f), normalized so 1 kHz = unity gain (0 dB).
+    /// Standard analytic form; replaces the hardcoded biquad approximation that under-
+    /// responded ~6 dB at the 6.3 kHz peak.
+    private func itu468Response(_ f: Double) -> Double {
+        let h1 = -4.737338981378384e-24 * pow(f, 6) + 2.043828333606125e-15 * pow(f, 4)
+               - 1.363894795463638e-7 * f * f + 1.0
+        let h2 = 1.306612257412824e-19 * pow(f, 5) - 2.118150887518656e-11 * pow(f, 3)
+               + 5.559488023498642e-4 * f
+        let r = 1.246332637532143e-4 * f / sqrt(h1 * h1 + h2 * h2)
+        return r / 0.12246482731463624 // ÷ R(1000) → 1 kHz = 0 dB
+    }
+
     private func measureITU468NoiseFloor(samples: [Float]) -> Float {
-        let weighted = applyITU468Weighting(samples: samples)
-        var ms: Float = 0
-        vDSP_measqv(weighted, 1, &ms, vDSP_Length(weighted.count))
-        return 10 * log10f(max(1e-15, ms))
+        // Frequency-domain weighting with the exact analytic R(f), windowed FFT.
+        let n = 1 << Int(log2(Double(samples.count)))
+        guard n >= 1024 else { return -120 }
+        var real = [Double](repeating: 0, count: n)
+        let a0 = 0.35875, a1 = 0.48829, a2 = 0.14128, a3 = 0.01168
+        for i in 0..<n {
+            let x = 2.0 * Double.pi * Double(i) / Double(n - 1)
+            real[i] = Double(samples[i]) * (a0 - a1 * cos(x) + a2 * cos(2 * x) - a3 * cos(3 * x))
+        }
+        var imag = [Double](repeating: 0, count: n)
+        let log2n = UInt(log2(Double(n)))
+        guard let setup = vDSP_create_fftsetupD(log2n, FFTRadix(kFFTRadix2)) else { return -120 }
+        defer { vDSP_destroy_fftsetupD(setup) }
+        real.withUnsafeMutableBufferPointer { rp in
+            imag.withUnsafeMutableBufferPointer { ip in
+                var sc = DSPDoubleSplitComplex(realp: rp.baseAddress!, imagp: ip.baseAddress!)
+                vDSP_fft_zipD(setup, &sc, 1, log2n, FFTDirection(kFFTDirection_Forward))
+            }
+        }
+        var weightedMS = 0.0
+        for k in 1..<(n / 2) {
+            let f = Double(k) * sampleRate / Double(n)
+            let w = itu468Response(f)
+            weightedMS += (real[k] * real[k] + imag[k] * imag[k]) * w * w
+        }
+        // Consistent scale (FFT energy / window) → relative gains are exact 468 curve values.
+        return Float(10 * log10(max(1e-20, weightedMS) / (Double(n) * Double(n))))
     }
     
     private func applyITU468Weighting(samples: [Float]) -> [Float] {
@@ -152,17 +212,45 @@ public final class AudioScienceEngine: Sendable {
     
     private func measureTHDPlusN(samples: [Float]) -> Float {
         guard detectTestTone(samples: samples, frequency: 997.0) else { return Float.nan }
-        // 1. Measure Total Power
-        var totalPower: Float = 0
-        vDSP_measqv(samples, 1, &totalPower, vDSP_Length(samples.count))
-        
-        // 2. Remove Fundamental (Notch)
-        let residual = applyNotchFilter(samples: samples, frequency: 997.0)
-        var residualPower: Float = 0
-        vDSP_measqv(residual, 1, &residualPower, vDSP_Length(residual.count))
-        
-        // 3. Ratio
-        return (residualPower / max(1e-12, totalPower)) * 100.0 // Percentage
+
+        // Frequency-domain THD+N. A windowed FFT isolates the fundamental cleanly (a wide IIR
+        // notch leaked ~1% of the fundamental). THD+N is an RMS ratio, so we take the square
+        // root of the residual/total *power* ratio — the previous code returned the power
+        // ratio directly, under-reporting a 1% distortion as 0.02%.
+        let n = 1 << Int(log2(Double(samples.count)))   // largest power of two ≤ count
+        guard n >= 1024 else { return Float.nan }
+
+        // 4-term Blackman-Harris (−92 dB side lobes): a sine at a non-integer bin (997 Hz is
+        // deliberately not bin-aligned) leaks far less than under a Hann window, so a pure
+        // tone reads ~0% instead of a spurious ~0.7% from window skirts.
+        var real = [Double](repeating: 0, count: n)
+        let a0 = 0.35875, a1 = 0.48829, a2 = 0.14128, a3 = 0.01168
+        for i in 0..<n {
+            let x = 2.0 * Double.pi * Double(i) / Double(n - 1)
+            let w = a0 - a1 * cos(x) + a2 * cos(2 * x) - a3 * cos(3 * x)
+            real[i] = Double(samples[i]) * w
+        }
+        var imag = [Double](repeating: 0, count: n)
+        let log2n = UInt(log2(Double(n)))
+        guard let setup = vDSP_create_fftsetupD(log2n, FFTRadix(kFFTRadix2)) else { return Float.nan }
+        defer { vDSP_destroy_fftsetupD(setup) }
+        real.withUnsafeMutableBufferPointer { rp in
+            imag.withUnsafeMutableBufferPointer { ip in
+                var sc = DSPDoubleSplitComplex(realp: rp.baseAddress!, imagp: ip.baseAddress!)
+                vDSP_fft_zipD(setup, &sc, 1, log2n, FFTDirection(kFFTDirection_Forward))
+            }
+        }
+
+        let fundBin = Int((997.0 * Double(n) / sampleRate).rounded())
+        let guardBins = 6 // Blackman-Harris main lobe is ~±4 bins; ±6 captures it fully
+        var totalP = 0.0, fundP = 0.0
+        for k in 1..<(n / 2) {
+            let p = real[k] * real[k] + imag[k] * imag[k]
+            totalP += p
+            if abs(k - fundBin) <= guardBins { fundP += p }
+        }
+        let residual = max(0.0, totalP - fundP)
+        return Float(sqrt(residual / max(1e-20, totalP)) * 100.0)
     }
     
     // MARK: - DSP Helpers

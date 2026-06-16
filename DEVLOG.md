@@ -78,4 +78,186 @@ This document provides a meticulous, chronological record of the development of 
 
 ---
 
-> *"AudioIntelligence: Where bit-exact science meets Apple Silicon performance."*
+## 🔍 Phase 6: Ground-Truth Reckoning & Accuracy Audit (2026-06-15)
+**Focus**: Replacing claimed accuracy with *measured* accuracy. This phase was triggered by
+a real failure: the analysis of a full Rubén González album (single 45:59 FLAC) reported
+**1.33 BPM**, **0-bit depth**, a modulation timeline running to **42,750 s** (15× the real
+duration), and a "CALIBRATION DRIFT" flag. We stopped trusting claims and built a
+verification system with authoritative ground truth.
+
+### Methodology shift
+Built a tolerance-based validation harness *before* fixing anything, so every change is
+proven, not asserted:
+- **Synthetic fixtures** (deterministic WAV: click trains, quantized sines, known-key
+  chords, stereo phase) — mathematically exact expected values.
+- **EBU SQAM** real audio validated against the reference **ffmpeg/ebur128** tool.
+- **GiantSteps** (604 tracks, MIREX-annotated key + 43 with tempo) as the real-music
+  accuracy board.
+
+### Root-cause fixes (with how)
+- **`DSPHelpers.autocorrelate` computed convolution-with-reverse, not autocorrelation**
+  (the filter was reversed). Every tempo/periodicity result was corrupt. Fixed by using
+  the signal itself as the correlation filter. This is the true root of the "1.33 BPM".
+- **`OnsetEngine.computeSuperflux` returned an all-zero envelope for every input** — the
+  max-filter ran over time with a centred window that included the current frame, so the
+  positive flux was always zero. Rebuilt as proper Böck SuperFlux (frequency-axis
+  max-filter + temporal lag). Onset detection was previously non-functional.
+- **Bit-depth** estimated statistically from resampled floats (silence → 0). Now read
+  deterministically from the container header (`kAudioFilePropertySourceBitDepth`).
+- **Modulation timebase** used a hardcoded `0.18 s/frame`; replaced with the real
+  `hopLength / sampleRate`.
+- **Tempo aggregation** collapsed to `60 / medianIBI` (= 60/45 chunk size = 1.33 BPM);
+  replaced with the median of per-chunk autocorrelation BPMs.
+- **Structure/NMF** only ran on the first 45 s chunk; now span the whole track.
+- **Hardcoded placeholders made real**: phase correlation / stereo width / balance
+  (StereoEngine), pitch stability (YIN dispersion), HPSS means, semantic descriptors,
+  tonnetz stability, tempogram period, NMF reconstruction error + component energy,
+  piptrack/viterbi confidence. A latent shadowing bug (instance vs local `allHPSS`) that
+  pinned HPSS to 0.5/0.5 was also fixed.
+- **"CALIBRATION DRIFT"** was *not* an engine error: the ScientificAuditor generated
+  peak-amplitude reference sines but expected the peak value as LUFS (LUFS is RMS-based,
+  −3.01 dB lower). Corrected the reference signals; loudness is genuinely EBU-compliant.
+- **STFT cache**: the disk cache wrote ~42 MB per spectrogram that was never re-read across
+  files (bloating to ~3.9 GB and adding seconds/file on batch runs). Replaced with a
+  bounded in-memory LRU.
+
+### Measured status (honest)
+| Area | Result | Source |
+| :-- | :-- | :-- |
+| Synthetic ground truth | 8/8 pass | deterministic |
+| Loudness (LUFS/TP/LRA) | 18/18 within ±0.5 LU, Δ ≤ 0.08 LU | ffmpeg/ebur128 |
+| EBU 3341/3342 (SIR) | 4/4 pass | reference signals |
+| Bit-depth / duration / sample-rate | exact | container header |
+| Tempo (real music, EDM, 43 tracks) | **Acc1 53% / Acc2 70%** (librosa 0.11: 42% / 49%) | GiantSteps |
+| Key (real music, 599 tracks) | **41.9% exact / 57.7% MIREX** (librosa 0.11: 42.4% / 52.5%) | GiantSteps |
+| Instrument / chord / pitch / structure quality | **not yet validated** | — |
+
+### Benchmarked against librosa 0.11 (same files)
+Per the "use the reference" principle, tempo and key were run through `librosa` on the exact
+GiantSteps tracks. Findings:
+- **Tempo: we exceed librosa** (53/70 vs 42/49). The autocorrelate + SuperFlux fixes plus a
+  wide prior and octave correction handle fast EDM better than librosa's default `tempo()`.
+- **Key: the gap was our chroma resolution.** librosa's `chroma_cqt` beat our linear 2048-bin
+  STFT chroma because 2048 bins smear the bass pitches that define the key root (fifth
+  confusion). We tried to fix our own `CQTEngine` (real→complex FFT, effective rate, kernel
+  normalization) but it is still not usable — see the Remaining section. The fix that **did**
+  work: compute chroma from a **high-resolution STFT (nFFT 8192, ~2.7 Hz bins)** on the
+  existing, correct STFT path, wired into the pipeline's tonal stage (same hop 512, so the
+  modulation/structure timebases are unchanged; 8/8 ground-truth still passes). Validated on
+  the **full 599-track set**: key rose from 26.7% → **41.9% exact / 57.7% MIREX**, matching
+  librosa on exact (42.4%) and exceeding it on the MIREX-weighted score (52.5%).
+
+> ⚠️ Scope of this benchmark: only **tempo and key** were compared to librosa, and loudness
+> to ffmpeg — not every feature. "We match/beat librosa" means on those two MIR metrics; it
+> does **not** mean 100% accuracy (both sit at 40–70% on a deliberately hard EDM set) nor that
+> every engine is verified. Instrument, chord, pitch and structure remain unvalidated.
+
+### Corrections to earlier claims in this log / README
+The following previously-stated figures were **not substantiated** and are retracted:
+- "70-track SQAM audit" — only 6 SQAM files are present in the repo.
+- "94.2% instrument classification accuracy" — instrument ID is unvalidated and visibly
+  misclassifies (e.g. solo trumpet → "Vocals/Chorus").
+- "100% stability / bit-exact accuracy" — loudness is EBU-compliant (±0.08 LU); tempo and
+  key are now *measured* and benchmarked at/above librosa, but are not "100% accurate" (key
+  exact ≈ 42% on a deliberately hard EDM set).
+- "Verified Librosa parity (MSE < 0.00018)" — predates the autocorrelate/superflux fixes,
+  so any prior parity was against broken DSP; not currently re-verified.
+
+### Remaining (scoped for a dedicated effort)
+- **CQTEngine rewrite (attempted, still not usable)**: fixed three real bugs — the IFFT now
+  uses a full complex FFT (`vDSP_fft_zip`) instead of the real packed FFT, the kernels use
+  the effective post-decimation sample rate, and each kernel is L1-normalized. Output chroma
+  is now *structured* but still bass-dominated and low-contrast, so key accuracy through CQT
+  stays near random. Remaining suspects: the 2-tap decimation aliasing the heavily-decimated
+  low octaves, and correlation-output indexing. It needs a methodical reimplementation
+  against librosa's `cqt`, not more incremental patching. The high-res STFT chroma already
+  reaches librosa-level key without it, so the CQT is not on the critical path.
+- **Instrument classifier**: the 6-class heuristic is unvalidated and misclassifies
+  (trumpet → "Vocals/Chorus"); needs a rework + ground-truth tests.
+- **Ground-truth tests** for chord/vertical, pitch (YIN), and structure-segment quality.
+
+---
+
+## 📐 Phase 7: Axis A — Measurement-Engine Standard Validation (2026-06-15)
+**Focus**: making the "measurement" layer genuinely certifiable.
+
+### Why this phase exists (the strategic rationale)
+After tempo/key reached librosa parity we had to decide what "more accurate than librosa"
+actually *means* for this library, because the answer dictates where to spend effort. We
+separated two categories that had been conflated:
+
+- **Measurement** (loudness, true-peak, LRA, bit-depth, THD+N, IMD, ITU-R 468, SNR): there is
+  one correct, physical/standard answer. "More accurate" is **objective and falsifiable** —
+  anyone can run a reference meter and check. librosa isn't even a measurement instrument here.
+- **Estimation** (tempo, key, instrument, genre): no single ground truth; accuracy is
+  statistical and dataset-relative; it can **never be 100%**.
+
+The decision: the brand's "accuracy" claim must live in the *measurement* engines and be
+aggressive there; estimation is positioned honestly as "best-effort, scoped," labelled
+*estimate* not *measurement*. Mixing them is the real risk — a 70% instrument estimator would
+poison trust in a ±0.08 LU loudness meter if both wear one "accuracy" badge.
+
+A second, deeper reason makes measurement-first not a preference but a **dependency order**:
+the user's actual goal is "analyse the file very well, then estimate instrument and genre from
+that analysis." Measurement is the *feature foundation*; it sets the estimation ceiling
+(garbage features → garbage estimation). So the measurement layer must be verified before any
+estimator is built on it. This phase proved the point twice over — the STFT and MFCC bugs
+below would have silently capped the instrument classifier. See `Tests/AES17ValidationTests`
+and `Tests/ParityDumpTests`.
+
+Audited each standard claim against signals with a *known* answer (as we did for loudness):
+
+- **AES17 THD+N** — was ~50× wrong (reported a true 1% distortion as 0.02%): it returned a
+  power ratio instead of an RMS ratio (missing √) and a wide IIR notch leaked ~1% of the
+  fundamental. Rebuilt as a Blackman-Harris-windowed FFT (fundamental excluded by a guard
+  band, residual √-ratio). Now 1%→1.00%, 10%→9.95%, pure→0.01%.
+- **SMPTE/DIN IMD** — was unrelated to intermodulation (it measured the 60 Hz tone's energy ×
+  0.1). Rebuilt to measure the actual sideband structure (7000 ± k·60) vs the carrier. Now
+  5%→5.00%, 10%→10.00%.
+- **ITU-R 468 weighting** — hardcoded approximate biquads under-responded ~6 dB at the 6.3 kHz
+  peak (read +6.4 dB vs the standard +12.2 dB). Replaced with the exact analytic 468 response
+  R(f) applied in the frequency domain. Now 2 kHz +5.63 dB, 6.3 kHz +12.22 dB (±0.03 dB).
+- **BS.1770 true-peak** — already correct: an 8× oversampled 511-tap Kaiser-sinc recovers a
+  0 dBFS inter-sample peak from a −3 dBFS sample peak (measured +0.09 dB). Validated.
+
+Three of the four "measurement" claims were materially wrong before this audit — exactly the
+kind of fake number the brand cannot afford.
+
+### The STFT was half-resolution (the biggest find)
+Foundational DSP parity (#5) against librosa exposed a severe bug: `STFTEngine` used vDSP's
+packed real FFT (`vDSP_fft_zrip`) with a stride-1 `ctoz`, which placed every frequency at
+**half its true bin** (index k held bin 2k, dropping the odd bins). The entire frequency axis
+was 2× compressed. It went unnoticed because chroma→key is octave-invariant and onset→tempo is
+relative — but every *absolute-frequency* feature (spectral centroid, rolloff, mel, MFCC) was
+wrong, i.e. the feature foundation for the estimation layer. Replaced with a full complex FFT
+(`vDSP_fft_zip`, real signal + imag 0): bin k → index k. The STFT now matches librosa to
+**machine precision** (correlation 1.00000, best-fit scale 1.0000, 0.000% residual on the mean
+spectrum and on individual frames). 8/8 ground truth still passes, and — fixing the foundation
+*improved* key from 38.8%/51.9% → **45.0%/56.5%** (now beating librosa's 41.2%/51.5%), vindicating
+the measurement-first architecture. Validated by `Tests/ParityDumpTests` + `/tmp/parity_compare.py`.
+
+### Mel exact, MFCC was missing its log
+Extending the same harness down the feature chain: the **mel** spectrogram (128-band, Slaney,
+power=2) matches librosa to machine precision (corr 1.00000, 0.000% residual). **MFCC** did
+*not* — correlation −0.21 — because the pipeline DCT'd the *linear* power mel; an MFCC is the
+DCT of the *log* mel. Adding `power_to_db` before the DCT brings it to corr 0.99 (the residual
+14% is just the DCT-II ortho normalization convention, irrelevant since the classifier trains
+on our own consistent features). This mattered: MFCC is the instrument classifier's primary
+feature, and it was uncorrelated with a real MFCC. With STFT, mel and MFCC now correct and the
+loudness/THD+N/IMD/468/true-peak engines validated, **Axis A (the measurement/feature
+foundation) is complete** — the estimation layer can now be built on clean, verified features.
+
+### Verification checkpoint (gate to the estimation layer)
+Re-ran the full foundation suite to confirm we may proceed: library builds clean; loudness
+18/18 (EBU SQAM vs ffmpeg); THD+N 3/3, IMD 3/3, ITU-468 2/2, true-peak 3/3, SIR 4/4; STFT and
+mel librosa-exact (corr 1.00000, 0% residual), MFCC corr 0.99; synthetic ground truth 8/8.
+**Honest scope:** "verified" means high-precision agreement with reference implementations on
+the *tested* scenarios, not exhaustive coverage of every channel/sample-rate/edge case — and
+it applies to the **measurement** engines, which are deterministic, explainable and standards-
+referenced (usable for engineering/analytical forensic work, *not* claimed court-admissible/
+certified). Estimation (tempo/key) is librosa-level, not 100% — and is not the foundation the
+instrument/genre layer depends on. Gate satisfied → estimation layer may begin.
+
+---
+
+> *"Measured, not claimed: AudioIntelligence reports what it can prove."*

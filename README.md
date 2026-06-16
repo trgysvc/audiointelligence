@@ -3,10 +3,10 @@
 [![Swift 6.1](https://img.shields.io/badge/Swift-6.1-orange.svg)](https://swift.org)
 [![macOS 15](https://img.shields.io/badge/macOS-15-blue.svg)](https://apple.com)
 [![EBU R128](https://img.shields.io/badge/EBU-R128-green.svg)](https://tech.ebu.ch)
-[![SQAM Verified](https://img.shields.io/badge/SQAM-Level%20A-gold.svg)](https://tech.ebu.ch/publications/sqamcd)
+[![Loudness](https://img.shields.io/badge/Loudness-%E2%89%A40.08%20LU%20vs%20ffmpeg-green.svg)](https://tech.ebu.ch/publications/sqamcd)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-AudioIntelligence is a premium, high-fidelity Music Information Retrieval (MIR) and DSP framework. Built for **Swift 6** and **Apple Silicon (M4 optimized)**, it delivers bit-exact scientific accuracy validated against the EBU SQAM dataset.
+AudioIntelligence is a Music Information Retrieval (MIR) and DSP framework for **Swift 6** and **Apple Silicon**. Its loudness/forensic layer is validated against authoritative references (EBU SQAM via ffmpeg/ebur128, EBU R128/ITU-R BS.1770); its musical-interpretation layer (tempo, key, instrument) is under active accuracy work. See [Validation Status](#-validation-status-honest) for exactly what is verified.
 
 ---
 
@@ -19,48 +19,148 @@ While legacy libraries like Librosa are excellent for research, AudioIntelligenc
 - **🛡️ Swift 6 Actor Isolation**: The world's first MIR library with compile-time thread safety and zero data races.
 - **💿 Professional Format Support**: Mastery of ALL native Apple codecs including AAC, MP3, ALAC, and FLAC via `AVAudioConverter`.
 - **🍏 Apple Binary Standard**: Zero JSON artifacts. All forensic DNA signatures are exported in high-performance **.plist** format.
-- **4️⃣ Hybrid 4GB Cache**: Advanced persistent storage for instantaneous retrieval of forensic DNA signatures.
+- **♻️ In-Memory STFT Reuse**: A bounded RAM LRU lets the onset/mel/spectral engines share a chunk's spectrogram without disk I/O (no per-file cache bloat on batch runs).
+
+---
+
+## 📦 Installation & Quick Start
+
+**Requirements:** Swift 6.3+, macOS 15+ / iOS 18+ (Apple Silicon recommended).
+
+Add the package to your `Package.swift`:
+```swift
+dependencies: [
+    .package(url: "https://github.com/trgysvc/audiointelligence.git", from: "8.1.5")
+],
+targets: [
+    .target(name: "YourApp", dependencies: [
+        .product(name: "AudioIntelligence", package: "audiointelligence")
+    ])
+]
+```
+
+Analyze a file:
+```swift
+import AudioIntelligence
+
+let engine = AudioIntelligence()                       // thread-safe actor
+let report = try await engine.analyze(url: audioURL)   // full DNA analysis
+let dna = report.rawAnalysis
+
+// Measurement layer (standards-validated):
+print(dna.mastering.integratedLUFS)   // EBU R128 LUFS
+print(dna.mastering.truePeak)         // BS.1770 true peak (dBTP)
+print(dna.forensic.effectiveBits)     // source bit depth
+
+// Estimation layer (best-effort — treat as estimates, not measurements):
+print(dna.rhythm.bpm)                 // tempo
+print(dna.tonality.key)               // key
+```
+
+> `AudioIntelligence` is an `actor`; call its methods with `await` from an async context.
+> See [Validation Status](#-validation-status-honest) for which outputs are measurements vs estimates.
 
 ---
 
 ## 🎨 UI Showcase: AudioIntelligenceUI
-Built with **SwiftUI** and **Metal**, our ready-to-use components deliver industrial-grade visualization out of the box.
-
-![AudioIntelligence Dashboard Mockup](/Users/trgysvc/.gemini/antigravity/brain/466fb5fb-9a53-4a30-849d-20e64a06c0e4/audiointelligence_dashboard_mockup_1776601605730.png)
-*Example: The 'AudioScope Pro' dashboard built using the Infinity Engine v6.3.*
+Built with **SwiftUI** and **Metal**, `AudioIntelligenceUI` provides ready-to-use, hardware-accelerated components for real-time spectrograms, waveforms, and meters.
 
 ---
 
 ## 🌉 The Librosa Bridge
-Coming from the Python world? AudioIntelligence provides 1:1 functional parity with Librosa while delivering 10x performance improvements.
+Coming from the Python world? AudioIntelligence mirrors many Librosa APIs to ease migration. (Numerical parity is per-feature and not universally verified — treat it as a porting aid, not a drop-in equivalence.)
 
 - **[Migration Guide](docs/Migration_from_Librosa.md)**: A Rosetta stone for Librosa users.
 - **[Format Support](docs/FormatSupport.md)**: Native support for WAV, MP3, FLAC, and more.
 
 ---
 
-## 💎 Professional Standards & Compliance (v8.1.5)
-The Infinity Engine is formally validated against industry "Gold Standards":
-- **ITU-R BS.1770-4 / EBU R128**: bit-exact, multi-channel loudness metering (±0.1 LU precision).
-- **Forensic True Peak**: 511-tap high-precision inter-sample detection (BT.1770 compliant).
-- **EBU Tech 3341/3342**: Verified Integrated, Momentary, Short-term, and LRA compliance.
-- **SQAM Level A**: Comprehensive 70-track scientific audit completed with 100% stability.
-- **Scientific Integrity**: Verified mathematical parity with Librosa (MSE < 0.00018).
+## 💎 Standards & Compliance (loudness / forensic layer)
+Validated against authoritative references:
+- **ITU-R BS.1770-4 / EBU R128**: integrated loudness matches the reference ffmpeg/ebur128
+  implementation to **Δ ≤ 0.08 LU** across the available EBU SQAM material (true peak Δ ≤ 0.27 dB,
+  LRA Δ ≤ 0.21 LU).
+- **EBU Tech 3341/3342**: calibration, gating, LRA and SNR self-tests pass (4/4).
+- **Bit-depth / sample-rate / duration**: read deterministically from the container header.
+
+> ⚠️ These guarantees cover the loudness/forensic metrics only. Tempo, key, instrument and
+> chord accuracy are measured separately and still improving — see Validation Status below.
 
 ---
 
-## 🧪 Testing & Scientific Validation
+## ✅ Validation Status (honest)
 
-We maintain a strict "Scientific First" policy. Every algorithm is validated against official industry test vectors to ensure absolute forensic integrity.
+We report **measured** accuracy, not claimed. Each row below is backed by a test in `Tests/`.
 
-- **Automated CI Suite**: Every commit is tested on **macOS 15**runners via GitHub Actions.
-- **Reference Parity**: High-precision tests verify parity with EBU R128 and ITU-R BS.1770 standards.
-- **SQAM Suite**: Comprehensive analysis of the official EBU Sound Quality Assessment Material library.
-- **Regression Testing**: Extensive coverage for multi-channel energy summation and gating logic.
+> "Matches/beats librosa" applies **only to tempo and key** (the two metrics we benchmarked
+> against `librosa` 0.11), and loudness was validated against `ffmpeg`. It does **not** mean
+> 100% accuracy — both tempo and key sit at 40–70% on a hard EDM set — and it does **not**
+> mean every engine is verified. Instrument, chord, pitch and structure are not yet validated.
 
-To run the scientific validation suite locally:
+| Area | Status | Source of truth |
+| :-- | :-- | :-- |
+| Loudness (LUFS / True Peak / LRA) | ✅ Δ ≤ 0.08 LU (18/18) | ffmpeg `ebur128` |
+| EBU 3341/3342 calibration (SIR) | ✅ 4/4 | reference signals |
+| AES17 THD+N / SMPTE IMD | ✅ exact on known-distortion signals | synthetic references |
+| ITU-R 468 noise weighting | ✅ ±0.03 dB vs the standard curve | analytic reference |
+| Bit-depth / sample-rate / duration | ✅ exact | container header |
+| Foundational DSP (STFT, mel) | ✅ librosa-exact (corr 1.00000, 0% residual) | librosa 0.11 |
+| Synthetic ground truth (tempo/timebase/phase/structure coverage) | ✅ 8/8 | deterministic fixtures |
+| Tempo — real music (EDM, 43 tracks) | ✅ Acc1 53% / Acc2 70% (librosa: 42% / 49%) | GiantSteps (MIREX) |
+| Key — real music (599 tracks) | ✅ 41.9% exact / 57.7% MIREX-weighted (librosa: 42.4% / 52.5%) | GiantSteps (MIREX) |
+| Instrument / chord / pitch / structure quality | ❌ not yet validated | — |
+
+> Tempo and key were benchmarked directly against `librosa` 0.11 on the same files: we
+> match or exceed it on both. (Key uses a high-resolution STFT chromagram; the bundled CQT
+> engine has a known complex-FFT bug and is not used.)
+
+---
+
+## 📚 Test & Validation Material
+
+The library ships **only source code** — all test audio/datasets and the reference tools are
+**git-ignored** (see `.gitignore`) to keep the repo lean. They are not runtime dependencies;
+they are used **at test time only**, as ground-truth oracles. Reproduce any validation by
+fetching the material below into the indicated paths.
+
+### Reference audio & annotation datasets
+
+| Material | Path (git-ignored) | Source | What it is / used for |
+| :-- | :-- | :-- | :-- |
+| **EBU SQAM** (Tech 3253) | `Tests/Resources/SQAM/*.wav` | EBU — <https://tech.ebu.ch/publications/sqamcd> | 6 broadcast reference recordings (trumpet, horn, harp, quartet, speech, glockenspiel). Loudness + instrument tests. |
+| SQAM reference values | `Tests/Resources/sqam_reference_values.txt` *(kept; small text)* | generated by `ffmpeg` `ebur128` | Authoritative integrated LUFS / true-peak / LRA for the SQAM files. |
+| **GiantSteps Key+Tempo** | `Examples/Golden/giantsteps/*.mp3` (+ `manifest.json`) | audio: Zenodo <https://zenodo.org/records/1095691> · annotations: <https://github.com/GiantSteps/giantsteps-key-dataset> & <https://github.com/GiantSteps/giantsteps-tempo-dataset> | 600 EDM previews with MIREX-annotated key (599) and BPM (43). Real-music tempo/key accuracy. CC-BY (audio = Beatport previews for research). |
+| **OpenMIC-2018** | `/tmp/openmic/` | Zenodo <https://zenodo.org/records/1432913> | 20-instrument, multi-label clips (from FMA). For the upcoming instrument/genre estimation layer. CC-BY 4.0. |
+
+### Reference tools (test-time oracles — never shipped)
+
+- **ffmpeg / `ebur128`** — the reference ITU-R BS.1770 / EBU R128 loudness meter we validate `LoudnessEngine` against (`brew install ffmpeg`).
+- **librosa 0.11** (Python) — the reference for STFT/mel/MFCC/chroma/tempo/key parity. Used **only** in a throwaway venv at test time; the library itself is pure Swift, zero-dependency.
+
+### Rebuilding the GiantSteps golden set
 ```bash
-swift test --filter ScientificValidationTests
+# audio (≈822 MB) → Examples/Golden/giantsteps/<id>.mp3 ; annotations → manifest.json
+curl -L "https://zenodo.org/records/1095691/files/audio.zip?download=1" -o /tmp/gs.zip
+git clone --depth 1 https://github.com/GiantSteps/giantsteps-key-dataset.git   /tmp/gs-key
+git clone --depth 1 https://github.com/GiantSteps/giantsteps-tempo-dataset.git /tmp/gs-tempo
+# extract audio, match <id> to key/bpm annotations, emit Examples/Golden/manifest.json
+```
+
+### Setting up the librosa reference venv
+```bash
+python3 -m venv --system-site-packages /tmp/lrvenv
+/tmp/lrvenv/bin/pip install librosa soundfile audioread
+# parity: dump features from Swift, compare with matched conventions
+swift test --filter ParityDumpTests
+/tmp/lrvenv/bin/python /tmp/parity_compare.py
+```
+
+Run the suites locally:
+```bash
+swift test --filter GroundTruthValidationTests     # synthetic, deterministic
+swift test --filter EBUReferenceValidationTests    # loudness vs ffmpeg ebur128 (needs Tests/Resources/SQAM)
+swift test --filter ScientificAuditorTests         # EBU 3341/3342 calibration
+swift test --filter GoldenDatasetValidationTests   # GiantSteps key+tempo accuracy (needs Examples/Golden)
 ```
 
 ---
@@ -110,7 +210,7 @@ From time-domain forensic analysis to frequency-domain neural separation, AudioI
 
 AudioIntelligence is designed for seamless integration with **AI Agents**, **Mastering DAWs**, and **Automated Forensic Pipelines**.
 
-- **[Scientific Integrity Report](scientific_integrity_report.md)**: Official v8.1.5 verification certificate.
+- **[Development Log](DEVLOG.md)**: Phase 6 documents the accuracy audit, root-cause fixes, and the honest measured-status matrix.
 - **[Report Specification](docs/REPORT_SPECIFICATION.md)**: Detailed breakdown of the forensic output, now utilizing the **Apple Binary Property List (.plist)** standard.
 - **[Engine Catalog](docs/Engines.md)**: Comprehensive technical specs for all 31+ specialized DSP engines.
 

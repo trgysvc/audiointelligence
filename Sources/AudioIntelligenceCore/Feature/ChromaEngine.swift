@@ -153,9 +153,37 @@ public final class ChromaEngine: @unchecked Sendable {
     private let filterBank: ChromaFilterBank
     private let sampleRate: Double
 
-    public init(nFFT: Int = 2048, sampleRate: Double = 22050) {
+    /// `tuningCents` shifts the chroma reference (A440·2^(cents/1200)); pass the output of
+    /// `estimateTuning` × 100 to align bins to a slightly de-tuned recording.
+    public init(nFFT: Int = 2048, sampleRate: Double = 22050, tuningCents: Float = 0.0) {
         self.sampleRate = sampleRate
-        self.filterBank = ChromaFilterBank(nFFT: nFFT, sampleRate: Float(sampleRate))
+        self.filterBank = ChromaFilterBank(nFFT: nFFT, sampleRate: Float(sampleRate), tuning: tuningCents)
+    }
+
+    /// Estimates tuning deviation in fractions of a semitone bin ∈ [-0.5, 0.5) from tracked
+    /// pitches (librosa `estimate_tuning`/`pitch_tuning`): the histogram peak of each
+    /// pitch's residual against the equal-tempered grid, keeping only strong pitches.
+    public static func estimateTuning(pitches: [Float], magnitudes: [Float], resolution: Float = 0.01) -> Float {
+        var freqs: [Float] = [], mags: [Float] = []
+        for i in 0..<min(pitches.count, magnitudes.count) where pitches[i] > 0 {
+            freqs.append(pitches[i]); mags.append(magnitudes[i])
+        }
+        guard !freqs.isEmpty else { return 0 }
+        let medianMag = mags.sorted()[mags.count / 2]
+        var strong = zip(freqs, mags).filter { $0.1 > medianMag }.map { $0.0 }
+        if strong.isEmpty { strong = freqs }
+
+        let nBins = max(1, Int((1.0 / resolution).rounded(.up)))
+        var counts = [Int](repeating: 0, count: nBins)
+        for f in strong {
+            var r = (12.0 * log2f(f / 440.0)).truncatingRemainder(dividingBy: 1.0) // semitone residual
+            if r < 0 { r += 1.0 }
+            if r >= 0.5 { r -= 1.0 } // fold to [-0.5, 0.5)
+            let idx = min(nBins - 1, max(0, Int((r + 0.5) / resolution)))
+            counts[idx] += 1
+        }
+        let peak = counts.firstIndex(of: counts.max() ?? 0) ?? nBins / 2
+        return -0.5 + (Float(peak) + 0.5) * resolution
     }
 
     // MARK: Chromagram
@@ -167,6 +195,23 @@ public final class ChromaEngine: @unchecked Sendable {
     /// Industry Standard: feature.chroma_cqt()
     /// Computes a chromagram from a Constant-Q transform.
     /// This is often more musically accurate than STFT-based chroma.
+    /// Time-aggregated CQT chroma (12-vector) for key/global analysis. Each CQT bin is
+    /// reduced to its own mean over time *before* folding into pitch classes, so octaves
+    /// with different frame counts (post-decimation) align correctly. Robust where the
+    /// per-frame `chromaCQT` assumes a uniform frame count.
+    public func meanChromaFromCQT(cqtMagnitude: [[Float]], binsPerOctave: Int = 12) -> [Float] {
+        guard !cqtMagnitude.isEmpty else { return [Float](repeating: 0, count: 12) }
+        var chroma = [Float](repeating: 0, count: 12)
+        for b in 0..<cqtMagnitude.count {
+            let row = cqtMagnitude[b]
+            let m = row.isEmpty ? 0 : row.reduce(0, +) / Float(row.count)
+            chroma[b % 12] += m
+        }
+        let sum = chroma.reduce(0, +)
+        if sum > 1e-9 { for i in 0..<12 { chroma[i] /= sum } }
+        return chroma
+    }
+
     public func chromaCQT(cqtMagnitude: [[Float]], binsPerOctave: Int = 12) -> [[Float]] {
         guard !cqtMagnitude.isEmpty else { return [] }
         let nBins = cqtMagnitude.count

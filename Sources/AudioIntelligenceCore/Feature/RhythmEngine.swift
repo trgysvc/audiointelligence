@@ -237,50 +237,69 @@ public final class RhythmEngine: Sendable {
     public static func estimateTempo(onsetStrength: [Float], sr: Double, hopLength: Int) -> (bpm: Float, confidence: Float) {
         let n = onsetStrength.count
         guard n > 0 else { return (120.0, 0.0) }
-        
-        // 1. Centralized Autocorrelation
-        let acorr = DSPHelpers.autocorrelate(onsetStrength, maxSize: n)
+
+        // 1. Mean-center the onset envelope before autocorrelation.
+        // The envelope is non-negative (DC-heavy); a biased autocorrelation of a DC
+        // signal decays monotonically with lag, so the shortest in-range lag always
+        // won (e.g. 258 BPM on a true 120 BPM track). Removing the mean exposes the
+        // genuine periodic peak at the beat period.
+        var mean: Float = 0
+        vDSP_meanv(onsetStrength, 1, &mean, vDSP_Length(n))
+        var negMean = -mean
+        var centered = [Float](repeating: 0, count: n)
+        vDSP_vsadd(onsetStrength, 1, &negMean, &centered, 1, vDSP_Length(n))
+
+        let acorr = DSPHelpers.autocorrelate(centered, maxSize: n)
         
         // 2. Identify peaks in the standard tempo range (40...240 BPM)
         let minLag = Int(60.0 * Float(sr) / (Float(hopLength) * 240.0))
         let maxLag = Int(60.0 * Float(sr) / (Float(hopLength) * 40.0))
         
         var bestBPM = Float(120.0)
-        var maxVal: Float = -1.0
-        
+        var maxVal: Float = -Float.infinity
+
         let referenceLag = 60.0 * Float(sr) / (Float(hopLength) * 120.0)
-        
-        for lag in max(1, minLag)...min(n-1, maxLag) {
-            // Apply Librosa-style log-normal prior (weighted at 120 BPM)
-            let prior = expf(-0.5 * powf(log2f(Float(lag) / Float(referenceLag)), 2.0) / (0.5 * 0.5))
-            let val = acorr[lag] * prior
-            
-            if val > maxVal {
-                maxVal = val
-                bestBPM = 60.0 * Float(sr) / (Float(hopLength) * Float(lag))
-            }
-        }
-        
-        // 3. Tempo Octave Guard: Check if half-time or double-time peaks are strong
-        if bestBPM > 180.0 {
-            let halfTimeLag = Int(roundf(Float(60.0 * sr) / (Float(hopLength) * (bestBPM / 2.0))))
-            if halfTimeLag < acorr.count {
-                let halfVal = acorr[halfTimeLag]
-                if halfVal > (maxVal * 0.8) { 
-                    bestBPM = bestBPM / 2.0
-                }
-            }
-        } else if bestBPM < 60.0 {
-            let doubleTimeLag = Int(roundf(Float(60.0 * sr) / (Float(hopLength) * (bestBPM * 2.0))))
-            if doubleTimeLag < acorr.count {
-                let doubleVal = acorr[doubleTimeLag]
-                if doubleVal > (maxVal * 0.8) {
-                    bestBPM = bestBPM * 2.0
+
+        // Prior-weighted ACF peak. A WIDE log-normal prior (σ=1 octave, centred at 120)
+        // only gently discourages implausible extremes; the old σ=0.5 prior was so narrow
+        // it dragged every estimate into a ~117–129 cluster, suppressing the genuine peak
+        // (e.g. a 175 BPM track was reported as 117).
+        let priorSigma: Float = 1.0
+        let loLag = max(1, minLag)
+        let hiLag = min(n - 1, maxLag)
+        var bestLag = loLag
+        if hiLag >= loLag {
+            for lag in loLag...hiLag {
+                let prior = expf(-0.5 * powf(log2f(Float(lag) / Float(referenceLag)), 2.0) / (priorSigma * priorSigma))
+                let val = acorr[lag] * prior
+                if val > maxVal {
+                    maxVal = val
+                    bestLag = lag
+                    bestBPM = 60.0 * Float(sr) / (Float(hopLength) * Float(lag))
                 }
             }
         }
-        
-        // 4. BPM Clipping & Confidence
+
+        // Octave correction: the ACF of a beat sequence is often strongest at a sub-
+        // harmonic (half/quarter tempo), so a slow pick frequently hides a faster
+        // fundamental. If the double-time lag carries comparable energy and lands in a
+        // perceptually plausible range, prefer it. The support is taken from a ±1 window
+        // around the (possibly non-integer) half-period lag so a beat period that splits
+        // between two frames isn't missed.
+        if bestBPM < 110.0 {
+            let center = Int((Float(bestLag) / 2.0).rounded())
+            var dblSupport: Float = 0
+            var dblBestLag = center
+            for l in (center - 1)...(center + 1) where l >= 1 && l < acorr.count {
+                if acorr[l] > dblSupport { dblSupport = acorr[l]; dblBestLag = l }
+            }
+            let dblBPM = 60.0 * Float(sr) / (Float(hopLength) * Float(dblBestLag))
+            if dblBPM <= 210.0 && dblSupport >= 0.4 * acorr[bestLag] {
+                bestBPM = dblBPM
+            }
+        }
+
+        // BPM Clipping & Confidence
         bestBPM = max(40.0, min(320.0, bestBPM))
         var meanVal: Float = 0
         acorr.withUnsafeBufferPointer { ptr in

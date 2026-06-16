@@ -22,3 +22,9 @@ xcuserdata/
 *.o
 *.a
 *.dylib
+
+# ── Test & validation material (large; NOT shipped — see README "Test & Validation Material") ──
+# Download/rebuild instructions are documented in the README.
+Examples/Golden/                 # GiantSteps key+tempo golden set (~822 MB mp3)
+Tests/Resources/SQAM/*.wav       # EBU SQAM reference audio
+/tmp/openmic/                    # OpenMIC-2018 (instrument layer dataset)

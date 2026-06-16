@@ -170,19 +170,27 @@ public final class OnsetEngine: @unchecked Sendable {
     
     /// Superflux: max-filtered spectral flux.
     /// Industry Standard: onset.onset_strength(..., max_size=3)
-    private func computeSuperflux(_ logSpec: [[Float]]) -> [Float] {
+    private func computeSuperflux(_ logSpec: [[Float]], lag: Int = 1, freqMaxSize: Int = 3) -> [Float] {
         let nMels = logSpec.count
+        guard nMels > 0 else { return [] }
         let nFrames = logSpec[0].count
         var envelope = [Float](repeating: 0, count: nFrames)
-        
-        // Max-filter each frequency bin independently
-        let maxSpec = logSpec.map { DSPHelpers.maxFilter1D($0, windowSize: 3) }
-        
-        for t in 1..<nFrames {
+        let w = freqMaxSize / 2
+
+        // Böck SuperFlux: the reference spectrum is max-filtered over FREQUENCY (so a
+        // little pitch wobble doesn't masquerade as an onset), then compared against the
+        // current frame with a temporal lag μ.
+        //   SF[t] = Σ_m max(0, S[t][m] − maxfilt_freq(S[t−μ])[m])
+        // The previous implementation max-filtered over TIME with a centered window that
+        // included frame t itself, so S[t][m] ≤ ref always held and the envelope was
+        // identically zero for every input — which collapsed tempo to a constant.
+        for t in lag..<nFrames {
             var flux: Float = 0
             for m in 0..<nMels {
-                // S[t] - max_filter(S[t-1])
-                let diff = logSpec[m][t] - maxSpec[m][t-1]
+                var ref = -Float.greatestFiniteMagnitude
+                let lo = Swift.max(0, m - w), hi = Swift.min(nMels - 1, m + w)
+                for mm in lo...hi { ref = Swift.max(ref, logSpec[mm][t - lag]) }
+                let diff = logSpec[m][t] - ref
                 if diff > 0 { flux += diff }
             }
             envelope[t] = flux / Float(nMels)

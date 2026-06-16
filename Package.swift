@@ -1,4 +1,4 @@
-// swift-tools-version: 6.1.0
+// swift-tools-version: 6.3.0
 import PackageDescription
 
 let package = Package(
@@ -40,6 +40,8 @@ let package = Package(
     dependencies: [
         .package(url: "https://github.com/apple/swift-atomics.git", from: "1.1.0"),
         .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.2.0"),
+        // Documentation only (build-time plugin; not linked into the library).
+        .package(url: "https://github.com/apple/swift-docc-plugin", from: "1.3.0"),
     ],
     targets: [
         // ---------------------------------------------------------------------

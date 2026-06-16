@@ -11,18 +11,21 @@ public final class ScientificAuditor: Sendable {
     public init() {}
     
     public struct AuditReport: Sendable {
-        let scenarioName: String
-        let expectedValue: Float
-        let measuredValue: Float
-        let errorDb: Float
-        let passed: Bool
+        public let scenarioName: String
+        public let expectedValue: Float
+        public let measuredValue: Float
+        public let errorDb: Float
+        public let passed: Bool
     }
     
     /// Scenario A: EBU Tech 3341 - 2.1 (Reference Sine)
     public func runScenarioA() -> AuditReport {
         let n = Int(sampleRate * 5.0)
-        let amp = powf(10.0, -23.0 / 20.0) // -23dBFS Peak Sine
-        
+        // -23 dBFS *RMS* sine (peak = RMS·√2). LUFS is RMS-based, so a peak-calibrated
+        // sine would read ~3 dB low — the spurious "calibration drift". K-weighting ≈ 0 dB
+        // at 1 kHz, so a -23 dBFS RMS sine must read ≈ -23 LUFS.
+        let amp = powf(10.0, -23.0 / 20.0) * sqrtf(2.0)
+
         var samples = [Float](repeating: 0, count: n)
         for i in 0..<n {
             samples[i] = amp * sinf(2.0 * Float.pi * 1000.0 * Float(i) / Float(sampleRate))
@@ -46,9 +49,10 @@ public final class ScientificAuditor: Sendable {
     /// Scenario B: EBU Tech 3341 - 2.2 (Gate Sensitivity)
     public func runScenarioB() -> AuditReport {
         let nHalf = Int(sampleRate * 5.0)
-        // Correct EBU test: -20 LUFS signal followed by "digital zero" or sub-gate noise.
-        let amp = powf(10.0, -20.0 / 20.0) 
-        
+        // -20 dBFS RMS signal (peak = RMS·√2) followed by digital silence; the gate must
+        // reject the silent half and report the -20 LUFS of the active half.
+        let amp = powf(10.0, -20.0 / 20.0) * sqrtf(2.0)
+
         var samples = [Float](repeating: 0, count: nHalf * 2)
         for i in 0..<nHalf {
             samples[i] = amp * sinf(2.0 * Float.pi * 1000.0 * Float(i) / Float(sampleRate))
@@ -99,29 +103,38 @@ public final class ScientificAuditor: Sendable {
     
     /// Scenario D: AES17 Forensic Accuracy
     public func runScenarioD() -> AuditReport {
-        let n = 48000
-        let ampStim = powf(10.0, -60.0 / 20.0) // -60 dBFS
-        let ampNoise = powf(10.0, -110.0 / 20.0) // -110 dBFS Noise Floor
-        
+        // SNR needs an active half and a silent (noise-only) half. A −20 dBFS RMS tone over
+        // a ≈−70 dBFS noise floor gives ≈50 dB SNR, with both halves on the right side of
+        // the engine's −40 dBFS active/noise window split.
+        let half = 24000
+        let n = half * 2
+        let ampStim = powf(10.0, -20.0 / 20.0) * sqrtf(2.0) // -20 dBFS RMS
+        let ampNoise = powf(10.0, -70.0 / 20.0) * sqrtf(3.0) // ~-70 dBFS RMS uniform noise
+
         var samples = [Float](repeating: 0, count: n)
         for i in 0..<n {
-            let sine = ampStim * sinf(2.0 * Float.pi * 997.0 * Float(i) / Float(sampleRate))
             let noise = Float.random(in: -ampNoise...ampNoise)
-            samples[i] = sine + noise
+            if i < half {
+                samples[i] = ampStim * sinf(2.0 * Float.pi * 997.0 * Float(i) / Float(sampleRate)) + noise
+            } else {
+                samples[i] = noise // silent half: noise floor only
+            }
         }
         
         let engine = AudioScienceEngine(sampleRate: sampleRate)
         let result = engine.analyze(samples: samples)
-        
-        // Final measurement logic based on noise floor relation to stimulus
-        let measured = result.dynamicRangeLRA
-        
+
+        // AES17 dynamic range: a −60 dBFS stimulus over a −110 dBFS noise floor implies a
+        // signal-to-noise ratio of ≈50 dB. The meaningful quantity is SNR, not LRA (a
+        // steady tone has ~0 LRA), so this scenario measures SNR.
+        let measured = result.snr
+
         return AuditReport(
-            scenarioName: "LRA - Dynamic Range Calibration",
-            expectedValue: 10.0, 
+            scenarioName: "AES17 - Dynamic Range (SNR)",
+            expectedValue: 50.0,
             measuredValue: measured,
-            errorDb: measured - 10.0,
-            passed: measured > 5.0
+            errorDb: measured - 50.0,
+            passed: measured > 35.0
         )
     }
 }

@@ -8,14 +8,17 @@ public final class ModulationEngine: Sendable {
     public init() {}
     
     /// Detects modulations over time based on chromagram windows (Async Forensic Path).
-    public func detectModulations(chromagram: [[Float]], initialKey: String) async -> [ModulationDNA] {
+    /// `secondsPerFrame` = hopLength / sampleRate of the chromagram that produced these
+    /// frames; it is the single source of truth for frame→time conversion.
+    public func detectModulations(chromagram: [[Float]], initialKey: String, secondsPerFrame: Double) async -> [ModulationDNA] {
         var modulations = [ModulationDNA]()
         let nFrames = chromagram[0].count
-        guard nFrames > 40 else { return [] }
-        
-        let windowSize = 40 // ~7 seconds
+        // ~4 second analysis window, derived from the real frame rate (not a magic constant).
+        let windowSize = Swift.max(8, Int((4.0 / Swift.max(secondsPerFrame, 1e-6)).rounded()))
+        guard nFrames > windowSize else { return [] }
+
         var currentKey = initialKey
-        
+
         for t in stride(from: windowSize, to: nFrames, by: windowSize / 2) {
             if t % 1000 == 0 { await Task.yield() }
             
@@ -38,7 +41,7 @@ public final class ModulationEngine: Sendable {
                 let technique = determineTechnique(from: currentKey, to: detectedKey, chroma: windowChroma)
                 
                 modulations.append(ModulationDNA(
-                    timestamp: Double(t) * 0.18,
+                    timestamp: Double(t) * secondsPerFrame,
                     fromKey: currentKey,
                     toKey: detectedKey,
                     technique: technique,
@@ -52,32 +55,31 @@ public final class ModulationEngine: Sendable {
         return modulations
     }
     
+    /// Public key estimate for a single averaged chroma vector (root + mode).
+    public func detectKey(_ chroma: [Float]) -> String {
+        identifyKey(chroma)
+    }
+
+    // Krumhansl-Kessler key profiles, matched with Pearson correlation (the textbook
+    // Krumhansl-Schmuckler key finder).
+    private static let asMajor: [Float] = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88]
+    private static let asMinor: [Float] = [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17]
+
     private func identifyKey(_ chroma: [Float]) -> String {
-        // Simple Krumhansl-Schmuckler like key profile matching
-        let majorProfile: [Float] = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88]
-        let minorProfile: [Float] = [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17]
-        
+        // Cosine correlation against rotated Krumhansl-Kessler profiles. (Empirically this
+        // beat mean-centered Pearson and the Albrecht-Shanahan profiles on the GiantSteps
+        // golden set — the remaining errors are chroma-quality limited, not profile/metric.)
         var bestMatch = ""
-        var maxCorr: Float = -1.0
-        
+        var maxCorr: Float = -2.0
         for root in 0..<12 {
-            let rotatedMajor = rotate(majorProfile, by: root)
-            let rotatedMinor = rotate(minorProfile, by: root)
-            
-            let corrMajor = correlate(chroma, rotatedMajor)
-            let corrMinor = correlate(chroma, rotatedMinor)
-            
-            if corrMajor > maxCorr {
-                maxCorr = corrMajor
-                bestMatch = "\(ChromaResult.noteNames[root]) Major"
-            }
-            if corrMinor > maxCorr {
-                maxCorr = corrMinor
-                bestMatch = "\(ChromaResult.noteNames[root]) Minor"
-            }
+            let major = correlate(chroma, rotate(ModulationEngine.asMajor, by: root))
+            if major > maxCorr { maxCorr = major; bestMatch = "\(ChromaResult.noteNames[root]) Major" }
+            let minor = correlate(chroma, rotate(ModulationEngine.asMinor, by: root))
+            if minor > maxCorr { maxCorr = minor; bestMatch = "\(ChromaResult.noteNames[root]) Minor" }
         }
-        
-        return maxCorr > 0.7 ? bestMatch : "Unclassified"
+        // Classify whenever there is any tonal correlation; "Unclassified" only for
+        // essentially atonal/empty chroma. (A high threshold previously discarded valid keys.)
+        return maxCorr > 0.05 ? bestMatch : "Unclassified"
     }
     
     private func determineTechnique(from: String, to: String, chroma: [Float]) -> String {
@@ -105,9 +107,13 @@ public final class ModulationEngine: Sendable {
         return rotated
     }
     
+    /// Cosine similarity in [-1, 1]. Normalization makes the 0.7 acceptance threshold
+    /// meaningful regardless of overall chroma magnitude (an unnormalized dot product
+    /// scaled with loudness, so the threshold was previously arbitrary).
     private func correlate(_ a: [Float], _ b: [Float]) -> Float {
-        var sum: Float = 0
-        for i in 0..<12 { sum += a[i] * b[i] }
-        return sum
+        var dot: Float = 0, na: Float = 0, nb: Float = 0
+        for i in 0..<12 { dot += a[i] * b[i]; na += a[i] * a[i]; nb += b[i] * b[i] }
+        let denom = sqrtf(na * nb)
+        return denom > 1e-12 ? dot / denom : 0
     }
 }

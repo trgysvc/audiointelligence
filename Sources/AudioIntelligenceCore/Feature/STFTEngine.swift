@@ -163,7 +163,12 @@ public final class STFTEngine: @unchecked Sendable {
             "hash": sampleHash, "nFFT": nFFT, "hop": hopLength, "window": windowType.rawValue, "center": center, "pad": padMode
         ])
         
-        if let cached: STFTMatrix = await IntelligenceCache.shared.get(forKey: cacheKey) {
+        // In-memory cache only. A spectrogram is reused within a file (onset/mel/spectral
+        // re-request the same chunk's STFT) but never across distinct files, so the old
+        // disk cache wrote ~42 MB per chunk that was never read back — bloating to GBs and
+        // adding seconds/file on batch runs. A small bounded RAM LRU keeps the intra-file
+        // reuse without any disk I/O.
+        if let cached = STFTMemoryCache.shared.get(cacheKey) {
             return cached
         }
 
@@ -185,66 +190,45 @@ public final class STFTEngine: @unchecked Sendable {
         let fftSetup = vDSP_create_fftsetup(log2n, FFTRadix(kFFTRadix2))!
         defer { vDSP_destroy_fftsetup(fftSetup) }
         
-        var splitComplex = DSPSplitComplex(
-            realp: UnsafeMutablePointer<Float>.allocate(capacity: nFFT / 2),
-            imagp: UnsafeMutablePointer<Float>.allocate(capacity: nFFT / 2)
-        )
-        defer {
-            splitComplex.realp.deallocate()
-            splitComplex.imagp.deallocate()
-        }
         var allReal = [Float](repeating: 0, count: nFrames * nFreqs)
         var allImag = [Float](repeating: 0, count: nFrames * nFreqs)
 
         // v7.6 GPU Optimization: Batched Windowing
-        // --- [M4 SILICON HOOK: SEALED] ---
         let preWindowed: [Float]
         if let metal = metalEngine {
             preWindowed = metal.executeBatchWindowing(samples: input, window: window, nFFT: nFFT, hopLength: hopLength)
         } else {
-            preWindowed = [] // Fallback handled in loop
+            preWindowed = []
         }
 
+        // Full complex FFT (real signal, imag = 0). The previous packed real FFT (vDSP_fft_zrip
+        // with a stride-1 ctoz) placed a frequency at HALF its true bin (index k held bin 2k,
+        // dropping the odd bins) — the whole frequency axis was 2× compressed. A full complex
+        // FFT (vDSP_fft_zip) maps bin k → index k correctly.
+        var fftReal = [Float](repeating: 0, count: nFFT)
+        var fftImag = [Float](repeating: 0, count: nFFT)
         for t in 0..<nFrames {
             let start = t * hopLength
-            
-            // 1. Pack into split complex for zrip
             if !preWindowed.isEmpty {
-                // Use pre-windowed GPU buffer
                 let frameStart = t * nFFT
-                preWindowed.withUnsafeBufferPointer { wBuff in
-                    guard let wBase = wBuff.baseAddress else { return }
-                    wBase.advanced(by: frameStart).withMemoryRebound(to: DSPComplex.self, capacity: nFFT / 2) { complexPtr in
-                        vDSP_ctoz(complexPtr, 1, &splitComplex, 1, vDSP_Length(nFFT / 2))
-                    }
-                }
+                for i in 0..<nFFT { fftReal[i] = preWindowed[frameStart + i]; fftImag[i] = 0 }
             } else {
-                // CPU Fallback: Manual windowing as before
                 input.withUnsafeBufferPointer { iBuff in
                     guard let iBase = iBuff.baseAddress else { return }
-                    var windowed = [Float](repeating: 0, count: nFFT)
-                    for i in 0..<nFFT {
-                        windowed[i] = iBase.advanced(by: start + i).pointee * window[i]
-                    }
-                    windowed.withUnsafeBufferPointer { wBuff in
-                        wBuff.baseAddress!.withMemoryRebound(to: DSPComplex.self, capacity: nFFT / 2) { complexPtr in
-                            vDSP_ctoz(complexPtr, 1, &splitComplex, 1, vDSP_Length(nFFT / 2))
-                        }
-                    }
+                    for i in 0..<nFFT { fftReal[i] = iBase[start + i] * window[i]; fftImag[i] = 0 }
                 }
             }
-
-            // 2. Forward Real FFT
-            vDSP_fft_zrip(fftSetup, &splitComplex, 1, log2n, FFTDirection(kFFTDirection_Forward))
-            
-            // Extract Split Complex for Batching
-            for f in 0..<nFreqs - 1 {
-                allReal[t * nFreqs + f] = splitComplex.realp[f]
-                allImag[t * nFreqs + f] = splitComplex.imagp[f]
+            fftReal.withUnsafeMutableBufferPointer { rp in
+                fftImag.withUnsafeMutableBufferPointer { ip in
+                    var sc = DSPSplitComplex(realp: rp.baseAddress!, imagp: ip.baseAddress!)
+                    vDSP_fft_zip(fftSetup, &sc, 1, log2n, FFTDirection(kFFTDirection_Forward))
+                }
             }
-            // Nyquist storage (imagp[0])
-            allReal[t * nFreqs + (nFreqs - 1)] = splitComplex.imagp[0]
-            allImag[t * nFreqs + (nFreqs - 1)] = 0.0
+            // Positive-frequency bins 0…nFFT/2 (k = bin k).
+            for f in 0..<nFreqs {
+                allReal[t * nFreqs + f] = fftReal[f]
+                allImag[t * nFreqs + f] = fftImag[f]
+            }
         }
         
         // v7.5 GPU Optimization: Batch Magnitude/Phase to Metal
@@ -271,7 +255,7 @@ public final class STFTEngine: @unchecked Sendable {
         }
         
         let matrix = STFTMatrix(magnitude: magnitudes, phase: phases, nFFT: nFFT, hopLength: hopLength, sampleRate: sampleRate)
-        await IntelligenceCache.shared.set(matrix, forKey: cacheKey)
+        STFTMemoryCache.shared.set(cacheKey, matrix)
         return matrix
     }
 
@@ -427,6 +411,35 @@ public final class STFTEngine: @unchecked Sendable {
         
         return power.map { row in
             row.map { 10.0 * log10f(max($0, 1e-10) / safeRef) }
+        }
+    }
+}
+
+/// Bounded in-memory LRU for STFT matrices, shared across engine instances so the
+/// onset/mel/spectral engines re-use a chunk's spectrogram from RAM instead of recomputing
+/// it or round-tripping ~42 MB through disk. Capacity is small because only a couple of
+/// distinct spectrograms are live at once; nothing is persisted between files.
+final class STFTMemoryCache: @unchecked Sendable {
+    static let shared = STFTMemoryCache()
+    private let lock = NSLock()
+    private var store: [String: STFTMatrix] = [:]
+    private var order: [String] = []
+    private let capacity = 4
+
+    func get(_ key: String) -> STFTMatrix? {
+        lock.lock(); defer { lock.unlock() }
+        guard let v = store[key] else { return nil }
+        if let i = order.firstIndex(of: key) { order.remove(at: i); order.append(key) }
+        return v
+    }
+
+    func set(_ key: String, _ value: STFTMatrix) {
+        lock.lock(); defer { lock.unlock() }
+        if store[key] == nil { order.append(key) }
+        store[key] = value
+        while order.count > capacity {
+            let evicted = order.removeFirst()
+            store.removeValue(forKey: evicted)
         }
     }
 }

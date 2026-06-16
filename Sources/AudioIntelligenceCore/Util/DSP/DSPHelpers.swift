@@ -77,21 +77,22 @@ public enum DSPHelpers {
         
         let outSize = min(maxSize, n)
         var result = [Float](repeating: 0, count: outSize)
-        
-        // vDSP_conv logic:
-        // Result[k] = Sum_{j=0}^{SignalLength - FilterLength} Signal[k+j] * Filter[j]
-        // To get autocorrelation at lag k, we want: Sum_{j} Signal[j] * Signal[j+k]
-        // We use 'signal' as the filter and a zero-padded 'signal' as the base.
-        
+
+        // vDSP_conv computes CORRELATION (no filter flip):
+        //   result[k] = Σ_{p=0}^{P-1} A[k+p] · F[p]
+        // For autocorrelation R[k] = Σ_j signal[j]·signal[j+k] the filter F must be the
+        // signal ITSELF (the zero-padded base supplies the lagged samples). Reversing the
+        // filter (the previous behavior) computed signal ⊛ reverse(signal) — a convolution
+        // whose peaks are unrelated to periodicity, corrupting every tempo/periodicity
+        // estimate downstream.
         let paddedSignal = signal + [Float](repeating: 0, count: outSize)
-        let reversedSignal = Array(signal.reversed())
-        
+
         paddedSignal.withUnsafeBufferPointer { pBuff in
-            reversedSignal.withUnsafeBufferPointer { rBuff in
-                vDSP_conv(pBuff.baseAddress!, 1, rBuff.baseAddress!, 1, &result, 1, vDSP_Length(outSize), vDSP_Length(n))
+            signal.withUnsafeBufferPointer { fBuff in
+                vDSP_conv(pBuff.baseAddress!, 1, fBuff.baseAddress!, 1, &result, 1, vDSP_Length(outSize), vDSP_Length(n))
             }
         }
-        
+
         return result
     }
 
