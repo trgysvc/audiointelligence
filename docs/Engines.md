@@ -69,4 +69,4 @@ suite spans two layers of trust (see the README Validation Status):
 | **SpectralZoneEngine**| Energy Budgeting | Detailed sub-band energy distribution. |
 
 ---
-*Engines live under `Sources/AudioIntelligenceCore/Feature/`. Last reviewed: 2026-06-16 — AudioIntelligence 8.2.0.*
+*Engines live under `Sources/AudioIntelligenceCore/Feature/`. Last reviewed: 2026-06-16 — AudioIntelligence 8.2.1.*

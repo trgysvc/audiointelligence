@@ -39,4 +39,4 @@ MIREX-annotated) — there we report measured accuracy, not perfection (see READ
   ships, and it is not part of `analyze()`.
 
 ---
-*Last reviewed: 2026-06-16 — AudioIntelligence 8.2.0. See [Integration.md](Integration.md).*
+*Last reviewed: 2026-06-16 — AudioIntelligence 8.2.1. See [Integration.md](Integration.md).*

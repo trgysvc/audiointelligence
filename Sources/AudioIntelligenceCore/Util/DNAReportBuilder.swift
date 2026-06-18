@@ -99,6 +99,7 @@ public actor DNAReportBuilder {
         var allChannelEnergy = [(left: Float, right: Float)](repeating: (0, 0), count: maxExpectedFragments)
         var nmfComponentEnergy: [Float] = []   // real NMF activation energy (set at idx==0)
         var nmfReconError: Float = 0           // real NMF reconstruction error (set at idx==0)
+        var waveformEnvelope: [Float] = []     // downsampled peak envelope, accumulated per chunk
         
         Swift.print("🔍 Starting [Absolute Forensic Recalibration] Run (30 Engines - High-Res Path)")
         
@@ -116,6 +117,23 @@ public actor DNAReportBuilder {
             var halfScale: Float = 0.5
             vDSP_vsmul(monoSamples, 1, &halfScale, &monoSamples, 1, vDSP_Length(monoSamples.count))
             let chunk = AudioBuffer(samples: monoSamples, sampleRate: stereoChunk.sampleRate, duration: stereoChunk.duration)
+
+            // Waveform peak envelope: max |sample| per bucket, accumulated across the whole
+            // track for the report's downsampled overview (was hardcoded empty at build time).
+            if !monoSamples.isEmpty {
+                let bucketsPerChunk = 64
+                let bucketSize = max(1, monoSamples.count / bucketsPerChunk)
+                monoSamples.withUnsafeBufferPointer { ptr in
+                    var b = 0
+                    while b < monoSamples.count {
+                        let len = min(bucketSize, monoSamples.count - b)
+                        var peak: Float = 0
+                        vDSP_maxmgv(ptr.baseAddress! + b, 1, &peak, vDSP_Length(len))
+                        waveformEnvelope.append(peak)
+                        b += bucketSize
+                    }
+                }
+            }
 
             // Real stereo/phase metrics (energy-weighted aggregation downstream).
             let stereoRes = StereoEngine().analyze(left: stereoChunk.left, right: stereoChunk.right)
@@ -413,6 +431,7 @@ public actor DNAReportBuilder {
             allHPSSData: allHPSS.compactMap{$0},
             nmfComponentEnergy: nmfComponentEnergy,
             nmfReconError: nmfReconError,
+            waveformEnvelope: waveformEnvelope,
             reduction: reductionRes,
             musicology: musicology,
             historicalEng: historicalEng
@@ -452,6 +471,7 @@ public actor DNAReportBuilder {
                                   allHPSSData: [HPSSResult],
                                   nmfComponentEnergy: [Float],
                                   nmfReconError: Float,
+                                  waveformEnvelope: [Float],
                                   reduction: ReductionMetrics,
                                   musicology: MusicologyMetrics,
                                   historicalEng: HistoricalEngine) -> MusicDNAAnalysis {
@@ -676,14 +696,17 @@ public actor DNAReportBuilder {
                 
                 return ScienceMetrics(
                     dynamicRangeLRA: validLRA.isEmpty ? 0 : validLRA.reduce(0, +) / Float(validLRA.count),
-                    thdPlusN: validThd.isEmpty ? Float.nan : validThd.reduce(0, +) / Float(validThd.count),
-                    smpteIMD: validImd.isEmpty ? Float.nan : validImd.reduce(0, +) / Float(validImd.count),
+                    // THD+N and SMPTE IMD are test-tone-only lab metrics; on real music no
+                    // tone is present so no fragment yields a value. Return 0 (not NaN) — NaN
+                    // is invalid JSON and breaks Codable. The mapping marks these validated:false.
+                    thdPlusN: validThd.isEmpty ? 0 : validThd.reduce(0, +) / Float(validThd.count),
+                    smpteIMD: validImd.isEmpty ? 0 : validImd.reduce(0, +) / Float(validImd.count),
                     snr: validSNR.isEmpty ? 0 : validSNR.reduce(0, +) / Float(validSNR.count),
                     noiseFloorWeight468: validNoise.isEmpty ? 0 : validNoise.reduce(0, +) / Float(validNoise.count),
                     status: "Verified"
                 )
             }(),
-            waveformPeaks: [], chromaProfile: allChroma.reduce([Float](repeating: 0, count: 12)) { res, fragment in
+            waveformPeaks: waveformEnvelope, chromaProfile: allChroma.reduce([Float](repeating: 0, count: 12)) { res, fragment in
                 var next = res
                 for c in 0..<12 {
                     if c < fragment.count {

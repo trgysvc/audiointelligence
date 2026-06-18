@@ -1,5 +1,32 @@
 ---
 
+## [8.2.1] - 2026-06-18
+### Fixed
+- **Time-signature confidence overflowed to 383%.** The mapping piped `rhythm.beatConsistency`
+  — an unbounded beat-interval *deviation* in `[0, ∞)` where *lower* means steadier — straight
+  into `Estimated.confidence` (which is not self-clamping). On an erratic source (a 46-min jazz
+  album) a deviation of `3.83` surfaced as a `383%` confidence. Now inverted and clamped:
+  `max(0, min(1, 1 - beatConsistency))`, so a steady meter reads high and an irregular one low
+  (the Rubén González album now correctly reports `0%`).
+- **THD+N and SMPTE IMD emitted `NaN` on real music, breaking serialization.** Both are
+  test-tone-only lab measurements (`detectTestTone` finds no 997 Hz / 7 kHz stimulus in music),
+  so the per-fragment aggregate fell back to `Float.nan`. `NaN` is invalid JSON, so
+  `report.jsonData()` / `plistData()` could throw or round-trip badly. The aggregate now returns
+  `0` when no tone is present, and the report marks these `validated: false` (instead of the
+  previous unconditional `validated: true`) — honestly "not measured on this material" rather
+  than a fabricated certified `0%`.
+- **`waveformPeaks` was always empty.** `DNAReportBuilder` hardcoded `waveformPeaks: []` at
+  assembly time; the per-chunk peak envelope was never accumulated. It is now built in the chunk
+  loop (`vDSP_maxmgv`, 64 buckets/chunk) and threaded through to the report (the 46-min album
+  now yields 4030 envelope points, max ≈ 0.978).
+
+### Changed
+- **CLI example (`Examples/CLIExample`) now takes a file-path argument** and renders a **live,
+  single-line progress bar** driven by the library's existing `analyze(progress:)` callback —
+  demonstrating that the library *streams* progress to the consumer (it does not print it
+  itself). The example also serializes the report to JSON + `.plist` via `report.jsonData()` /
+  `report.plistData()`; **writing those files is the example app's job, never the library's.**
+
 ## [8.2.0] - 2026-06-16
 ### Added
 - **`AudioReport` — a typed, layered report product.** `analyze()` now returns a single

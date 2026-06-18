@@ -73,4 +73,4 @@ See the [Report Specification](REPORT_SPECIFICATION.md) for the full schema.
 >   so analysis never risks mutating the user's original asset.
 
 ---
-*Generated for: Professional AI Integrations — AudioIntelligence 8.2.0*
+*Generated for: Professional AI Integrations — AudioIntelligence 8.2.1*

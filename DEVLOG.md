@@ -342,4 +342,64 @@ the foundation *and* its reporting are honest.**
 
 ---
 
+## Phase 9 — Report-mapping fidelity & live progress (2026-06-18, v8.2.1)
+**Focus**: three defects found by reading a *real* full-length report end-to-end, not a unit
+fixture. The DSP engines were correct; the bugs lived in the `MusicDNAAnalysis → AudioReport`
+mapping and in one hardcoded assembly field — exactly the seam Phase 8 introduced. The trigger
+was analysing a single 45:59 Rubén González jazz FLAC (`introducing... Rubén González`) and
+inspecting every surfaced field.
+
+### The three findings (file + line, with root cause)
+- **Time-signature confidence = 383% (`AudioReportMapping.swift`).** The mapping assigned
+  `Estimated(timeSignature, confidence: Double(rhythm.beatConsistency))`. `beatConsistency` is a
+  beat-interval *standard deviation* in `[0, ∞)` where *lower* = steadier (see
+  `DNAReportBuilder` line ~620: `< 0.05 ? "Locked/Stable" : "Organic/Varied"`), so it is both
+  **unbounded** and **inverted** relative to a confidence — and `Estimated.confidence` does no
+  clamping of its own. A jazz album's natural rubato pushed the deviation to ~3.83 → "383%".
+  Fixed to `max(0, min(1, 1 - beatConsistency))`: steady meter → high confidence, erratic → low.
+  The album now reads `Complex / Poly-meter @ 0%`, which is the honest answer for a 46-minute
+  aggregate.
+- **THD+N / IMD = `NaN`, which is unserializable (`AudioScienceEngine` + `DNAReportBuilder`).**
+  `measureTHDPlusN` / `measureSMPTEIMD` both gate on `detectTestTone` (a pure 997 Hz / 7 kHz
+  stimulus) and return `Float.nan` when absent — correct for *lab* measurements, but real music
+  never carries the tone, so every fragment was `NaN`. The aggregate (`science` builder) then
+  propagated `Float.nan`. Two consequences: `NaN` is **invalid JSON**, so `report.jsonData()`
+  could throw / round-trip badly; and the mapping stamped these `validated: true` regardless.
+  Fixed: the aggregate returns `0` when no tone is present, and the mapping sets
+  `validated: a.science.thdPlusN > 0` (resp. IMD) — "not measured on this material," not a fake
+  certified `0%`. The lab-tone path (synthetic AES17/SMPTE fixtures from Phase 7) is unchanged
+  and still reports real values with `validated: true`.
+- **`waveformPeaks` always empty (`DNAReportBuilder`).** Assembly hardcoded
+  `waveformPeaks: []`; the envelope was never computed even though the per-chunk mono samples
+  were right there. Now accumulated in the chunk loop (`vDSP_maxmgv` over 64 buckets/chunk,
+  magnitudes in `[0,1]`) and threaded into `assembleFinalDNA` as a parameter.
+
+### Verified on the source file (release binary, full feature set)
+A throwaway consumer (`Examples/CLIExample`) ran the whole 26-engine pipeline on the 2759.9 s
+FLAC and printed the previously-broken fields:
+
+| Field | Before | After |
+| :-- | :-- | :-- |
+| Time-sig confidence | `383%` | `0%` (clamped, inverted) |
+| THD+N / IMD | `NaN` (`isNaN=true`) | `0.0000%`, `validated=false`, `isNaN=false` |
+| `waveformPeaks` | `0` points | `4030` points, max `0.978` |
+| JSON / plist export | could break on `NaN` | OK (730 KB JSON / 1.05 MB plist) |
+
+(For reference, the run's estimations were sane: BPM 123 @ 98%, key C @ 25% — a reasonable
+whole-album key confidence.)
+
+### Live progress is the consumer's to render
+The public `analyze(url:features:progress:)` already streams `(percent, message, detail)` to the
+caller; the library does **not** print. The CLI example now wires that callback to a live,
+single-line `stderr` progress bar and takes the audio path as an argument. It also persists the
+report via `report.jsonData()` / `plistData()` — reinforcing the Phase-8 contract: **the library
+returns `Data`; writing files is the app's job.** No library target performs report file I/O
+(verified by grep across `Sources/`; the only on-disk writer is `IntelligenceCache`, an internal
+fingerprinted cache, not the report).
+
+**Status:** `swift build` green; all three fields validated against a real 46-minute album; no
+new library file I/O. Mapping seam hardened — the foundation *and* its reporting remain honest.
+
+---
+
 > *"Measured, not claimed: AudioIntelligence reports what it can prove."*

@@ -73,4 +73,4 @@ swift test --filter ScientificAuditorTests         # EBU 3341/3342 calibration
 swift run InfinityAudit "path/to/audio/file.wav"
 ```
 
-*Last reviewed: 2026-06-16 — AudioIntelligence 8.2.0*
+*Last reviewed: 2026-06-16 — AudioIntelligence 8.2.1*

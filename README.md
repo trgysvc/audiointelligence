@@ -1,4 +1,4 @@
-# 🌌 AudioIntelligence: Infinity Engine (v8.2.0)
+# 🌌 AudioIntelligence: Infinity Engine (v8.2.1)
 
 [![Swift 6.3](https://img.shields.io/badge/Swift-6.3-orange.svg)](https://swift.org)
 [![macOS 15](https://img.shields.io/badge/macOS-15-blue.svg)](https://apple.com)
@@ -30,7 +30,7 @@ While legacy libraries like Librosa are excellent for research, AudioIntelligenc
 Add the package to your `Package.swift`:
 ```swift
 dependencies: [
-    .package(url: "https://github.com/trgysvc/audiointelligence.git", from: "8.2.0")
+    .package(url: "https://github.com/trgysvc/audiointelligence.git", from: "8.2.1")
 ],
 targets: [
     .target(name: "YourApp", dependencies: [
@@ -45,7 +45,11 @@ measurements from estimations:
 import AudioIntelligence
 
 let engine = AudioIntelligence()                       // thread-safe actor
-let report = try await engine.analyze(url: audioURL)   // -> AudioReport
+
+// The library *streams* progress to you; it never prints or writes anything itself.
+let report = try await engine.analyze(url: audioURL) { percent, message, _ in
+    print("\(Int(percent))% — \(message)")             // render however your app likes
+}                                                      // -> AudioReport
 
 // Measurement layer — objective, standards-traceable (Measured<T>):
 let lufs = report.measurements.loudness.integrated
@@ -108,7 +112,7 @@ We report **measured** accuracy, not claimed. Each row below is backed by a test
 | :-- | :-- | :-- |
 | Loudness (LUFS / True Peak / LRA) | ✅ Δ ≤ 0.08 LU (18/18) | ffmpeg `ebur128` |
 | EBU 3341/3342 calibration (SIR) | ✅ 4/4 | reference signals |
-| AES17 THD+N / SMPTE IMD | ✅ exact on known-distortion signals | synthetic references |
+| AES17 THD+N / SMPTE IMD | ✅ exact on known-distortion signals (test-tone only — on music they report `0` with `validated: false`) | synthetic references |
 | ITU-R 468 noise weighting | ✅ ±0.03 dB vs the standard curve | analytic reference |
 | Bit-depth / sample-rate / duration | ✅ exact | container header |
 | Foundational DSP (STFT, mel) | ✅ librosa-exact (corr 1.00000, 0% residual) | librosa 0.11 |

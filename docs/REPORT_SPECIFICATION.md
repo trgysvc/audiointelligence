@@ -77,6 +77,11 @@ A downstream integrator branches on `.validated` / `.standard` for measurements 
 **measured** `effectiveBits` — i.e. the container claims more bits than the signal actually
 uses. (It is **not** keyed on entropy; see [Forensics.md](Forensics.md).)
 
+`fidelity.thdPlusN` and `fidelity.imd` are **test-tone-only** lab metrics (AES17 / SMPTE need a
+997 Hz / 7 kHz stimulus). On real-world musical material no tone is present, so they report `0`
+with **`validated: false`** — read this as "not measurable on this signal," not as a certified
+`0%`. Always branch on `.validated` before surfacing them.
+
 ---
 
 ## 4. `estimations` (statistical)
@@ -140,4 +145,4 @@ like. The library never touches the filesystem.
 3. **Prefer JSON for cross-language pipelines**, binary plist for Apple-to-Apple.
 
 ---
-*Schema 1.0.0 — AudioIntelligence 8.2.0*
+*Schema 1.0.0 — AudioIntelligence 8.2.1*

@@ -10,7 +10,7 @@ import Foundation
 // =============================================================================
 
 /// The library's released version, stamped into every report.
-public let audioIntelligenceLibraryVersion = "8.2.0"
+public let audioIntelligenceLibraryVersion = "8.2.1"
 
 extension AudioReport {
 
@@ -53,8 +53,11 @@ extension AudioReport {
         )
 
         let fidelity = FidelityMeasurements(
-            thdPlusN:      Measured(Double(a.science.thdPlusN),           unit: .percent, standard: .aes17, validated: true),
-            imd:           Measured(Double(a.science.smpteIMD),           unit: .percent, standard: .smpte, validated: true),
+            // THD+N and IMD are test-tone-only lab measurements. On real music no tone is
+            // present, the engine yields 0, and validated reflects that it was not actually
+            // measured (rather than claiming a certified 0%).
+            thdPlusN:      Measured(Double(a.science.thdPlusN),           unit: .percent, standard: .aes17, validated: a.science.thdPlusN > 0),
+            imd:           Measured(Double(a.science.smpteIMD),           unit: .percent, standard: .smpte, validated: a.science.smpteIMD > 0),
             snr:           Measured(Double(a.science.snr),                unit: .dB,      standard: nil,     validated: true),
             noiseFloor468: Measured(Double(a.science.noiseFloorWeight468), unit: .dB,     standard: .itu468, validated: true)
         )
@@ -106,8 +109,11 @@ extension AudioReport {
                             confidence: Double(a.tonality.keyConfidence),
                             method: "Krumhansl-Schmuckler on high-res STFT chroma")
 
+        // beatConsistency is a beat-interval deviation in [0, ∞] where *lower* means more
+        // regular. Invert and clamp into a 0…1 confidence (it was passed through raw, yielding
+        // values like 3.83 → "383%"). Stable meter → high confidence; erratic → low.
         let timeSignature = Estimated(a.musicology.meter.timeSignature,
-                                      confidence: Double(a.rhythm.beatConsistency),
+                                      confidence: max(0, min(1, 1 - Double(a.rhythm.beatConsistency))),
                                       method: "onset-autocorrelation meter detection")
 
         let instruments: [Estimated<String>]? = a.instruments.predictions.isEmpty

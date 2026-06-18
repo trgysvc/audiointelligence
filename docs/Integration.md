@@ -15,7 +15,7 @@ Update your `Package.swift` to include the Infinity Engine:
 let package = Package(
     name: "MyProAudioApp",
     dependencies: [
-        .package(url: "https://github.com/trgysvc/audiointelligence.git", from: "8.2.0")
+        .package(url: "https://github.com/trgysvc/audiointelligence.git", from: "8.2.1")
     ],
     targets: [
         .target(

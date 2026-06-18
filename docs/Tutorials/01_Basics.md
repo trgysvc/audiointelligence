@@ -10,7 +10,7 @@ AudioIntelligence is a modular SDK optimized for the **Swift Package Manager**. 
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/trgysvc/audiointelligence.git", from: "8.2.0")
+    .package(url: "https://github.com/trgysvc/audiointelligence.git", from: "8.2.1")
 ]
 ```
 
