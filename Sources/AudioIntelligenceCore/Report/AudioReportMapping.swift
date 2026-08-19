@@ -10,7 +10,7 @@ import Foundation
 // =============================================================================
 
 /// The library's released version, stamped into every report.
-public let audioIntelligenceLibraryVersion = "8.2.1"
+public let audioIntelligenceLibraryVersion = "8.2.2"
 
 extension AudioReport {
 

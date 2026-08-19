@@ -1,4 +1,4 @@
-# 🌌 AudioIntelligence: Infinity Engine (v8.2.1)
+# 🌌 AudioIntelligence: Infinity Engine (v8.2.2)
 
 [![Swift 6.3](https://img.shields.io/badge/Swift-6.3-orange.svg)](https://swift.org)
 [![macOS 15](https://img.shields.io/badge/macOS-15-blue.svg)](https://apple.com)
@@ -30,7 +30,7 @@ While legacy libraries like Librosa are excellent for research, AudioIntelligenc
 Add the package to your `Package.swift`:
 ```swift
 dependencies: [
-    .package(url: "https://github.com/trgysvc/audiointelligence.git", from: "8.2.1")
+    .package(url: "https://github.com/trgysvc/audiointelligence.git", from: "8.2.2")
 ],
 targets: [
     .target(name: "YourApp", dependencies: [
