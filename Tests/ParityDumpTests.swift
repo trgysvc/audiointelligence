@@ -128,4 +128,33 @@ final class ParityDumpTests: XCTestCase {
         print("   frame 86 peak bin=\(peakBin) → \(String(format: "%.1f", binHz)) Hz (a 440 Hz tone should peak at bin 41)")
         XCTAssertEqual(stft.nFreqs, 1025)
     }
+
+    /// Dumps a two-tone signal (A4=440Hz, E6≈1318.51Hz — both within the CQT's fMin=32.7Hz,
+    /// 7-octave range) and CQTEngine's raw transform() output, for a real numeric diff against
+    /// librosa.cqt() on the identical samples (`parity_compare_cqt.py`). Distinct from
+    /// `LibrosaParityTests.testCQTResolves*Tone`, which only checks correctness against a
+    /// hand-computed bin index inside Swift — this is the actual librosa cross-check the
+    /// CQTEngine doc comment says is still outstanding.
+    func testDumpCQTForParity() throws {
+        try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        let n = Int(2.0 * sr)
+        let freqs = [440.0, 1318.51]
+        var signal = [Float](repeating: 0, count: n)
+        for i in 0..<n {
+            let t = Double(i) / sr
+            var v = 0.0
+            for f in freqs { v += 0.3 * sin(2.0 * Double.pi * f * t) }
+            signal[i] = Float(v)
+        }
+        writeF32(signal, to: "\(dir)/cqt_signal.f32")
+
+        let nBins = 84, binsPerOctave = 12, hop = 512
+        let engine = CQTEngine(nBins: nBins, binsPerOctave: binsPerOctave, fMin: 32.7, sampleRate: sr, hopLength: hop)
+        let result = engine.transform(signal) // [bin][frame]
+        let nFrames = result.first?.count ?? 0
+        var out: [Float] = [Float(nBins), Float(nFrames)]
+        for bin in result { out.append(contentsOf: bin) }
+        writeF32(out, to: "\(dir)/swift_cqt.f32")
+        print("📦 CQT dump: \(nBins)×\(nFrames) (tones: \(freqs))")
+    }
 }

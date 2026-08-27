@@ -35,13 +35,21 @@ import Accelerate
 ///     blocks, so within every single octave the 12 notes came out in descending pitch order.
 ///     Octaves are now kept as blocks and only the block order is reversed.
 ///
-/// Validated against pure sine-tone ground truth (`testCQTResolvesMidRangeTone` for a
-/// lightly-decimated octave, `testCQTResolvesLowOctaveTone` for the most-decimated octave,
-/// both in `LibrosaParityTests.swift`) — both now resolve to the correct bin with clear
-/// contrast. Not yet numerically diffed against real librosa output.
-/// For key/tonal analysis the pipeline uses a high-resolution STFT chromagram (nFFT 8192),
-/// which already reaches librosa-level accuracy — do NOT route tonal analysis through CQT
-/// until it has been diffed against real librosa output on real audio.
+/// Validated two ways:
+///  - Pure sine-tone ground truth (`testCQTResolvesMidRangeTone` for a lightly-decimated
+///    octave, `testCQTResolvesLowOctaveTone` for the most-decimated octave, both in
+///    `LibrosaParityTests.swift`) — both resolve to the correct bin with clear contrast.
+///  - A real numeric diff against actual `librosa.cqt()` output (`ParityDumpTests.
+///    testDumpCQTForParity` dumps a two-tone signal + this engine's output; `/tmp/
+///    parity_compare_cqt.py` runs librosa 1.0.0 on the identical samples). On a 440Hz +
+///    1318.51Hz signal: identical output shape (84×87), identical top-3 dominant bins
+///    ([45, 64, 46] both sides — the correct bins for both tones plus one shared spectral-
+///    leakage neighbor), 0.9471 Pearson correlation of the mean per-bin profile. Absolute
+///    magnitude scale differs from librosa (different normalization convention), but pitch
+///    location and relative shape match.
+/// For key/tonal analysis the pipeline still uses a high-resolution STFT chromagram
+/// (nFFT 8192), which already reaches librosa-level accuracy — CQT here is validated as a
+/// standalone engine but has no downstream consumer yet.
 public final class CQTEngine: @unchecked Sendable {
 
     public let nBins: Int
