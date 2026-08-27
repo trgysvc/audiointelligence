@@ -65,4 +65,57 @@ final class LibrosaParityTests: XCTestCase {
         XCTAssertGreaterThan(abs(midVal), 0.05, "Signal is missing at midpoint")
         XCTAssertEqual(midVal, 1.0, accuracy: 0.9, "Signal magnitude mismatch") // Broad threshold for now
     }
+
+    // MARK: - CQT Pitch Accuracy (ground truth: pure sine tones)
+
+    /// Feeds a pure sine tone through CQTEngine and returns the bin index with the
+    /// highest mean magnitude across frames, plus how many dB it stands above the mean
+    /// of all other bins (a proxy for chroma "contrast" — the previous 2-tap-decimation
+    /// bug produced a flat, bass-dominated response with near-zero contrast).
+    private func dominantBin(frequency: Float, sampleRate: Double, engine: CQTEngine) -> (bin: Int, contrastDB: Float) {
+        let duration = 1.0
+        let n = Int(sampleRate * duration)
+        var samples = [Float](repeating: 0, count: n)
+        for i in 0..<n {
+            samples[i] = sinf(2.0 * .pi * frequency * Float(i) / Float(sampleRate))
+        }
+
+        let result = engine.transform(samples)
+        let meanPerBin = result.map { bin -> Float in
+            guard !bin.isEmpty else { return 0 }
+            return bin.reduce(0, +) / Float(bin.count)
+        }
+
+        var bestBin = 0
+        var bestVal: Float = -.infinity
+        for (i, v) in meanPerBin.enumerated() where v > bestVal {
+            bestVal = v
+            bestBin = i
+        }
+
+        let others = meanPerBin.enumerated().filter { $0.offset != bestBin }.map(\.element)
+        let othersMean = others.isEmpty ? 0 : others.reduce(0, +) / Float(others.count)
+        let contrastDB = 20 * log10f(max(bestVal, 1e-9) / max(othersMean, 1e-9))
+        return (bestBin, contrastDB)
+    }
+
+    /// A4 (440 Hz) sits mid-range (octave with 2 decimations) — verifies pitch resolves
+    /// to the correct bin with high contrast after the kernel/correlation fixes.
+    func testCQTResolvesMidRangeTone() {
+        let engine = CQTEngine(nBins: 84, binsPerOctave: 12, fMin: 32.7, sampleRate: 22050, hopLength: 512)
+        // bin = 12 * log2(440 / 32.7) ≈ 45
+        let (bin, contrastDB) = dominantBin(frequency: 440.0, sampleRate: 22050, engine: engine)
+        XCTAssertEqual(bin, 45, accuracy: 1, "A4 (440Hz) should resolve near bin 45")
+        XCTAssertGreaterThan(contrastDB, 6.0, "Peak bin should clearly stand out from the noise floor")
+    }
+
+    /// A low tone near fMin forces 6 recursive decimations (the deepest octave) — this is
+    /// exactly the path the old naive 2-tap filter and missing energy-rescale broke.
+    func testCQTResolvesLowOctaveTone() {
+        let engine = CQTEngine(nBins: 84, binsPerOctave: 12, fMin: 32.7, sampleRate: 22050, hopLength: 512)
+        // bin = 12 * log2(40 / 32.7) ≈ 3
+        let (bin, contrastDB) = dominantBin(frequency: 40.0, sampleRate: 22050, engine: engine)
+        XCTAssertEqual(bin, 3, accuracy: 1, "40Hz tone (6 decimations deep) should resolve near bin 3")
+        XCTAssertGreaterThan(contrastDB, 6.0, "Peak bin should clearly stand out even in the most-decimated octave")
+    }
 }
