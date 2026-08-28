@@ -9,12 +9,15 @@ on:
 jobs:
   build-and-test:
     name: Build & Scientific Validation
-    runs-on: macos-15
-    
+    runs-on: macos-26
+
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
-      
+
+      - name: Select Xcode (Swift 6.3 toolchain)
+        run: sudo xcode-select -s /Applications/Xcode_26.6.app/Contents/Developer
+
       - name: Environment Audit
         run: |
           swift --version
