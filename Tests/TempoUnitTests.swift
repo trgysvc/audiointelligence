@@ -79,4 +79,18 @@ final class TempoUnitTests: XCTestCase {
         XCTAssertEqual(Double(result.bpm), 120.0, accuracy: 3.0,
                        "Clean 120 BPM onset train must estimate ≈120, got \(result.bpm)")
     }
+
+    /// At sr=44100/hop=512, `minLag` (the tempo-range floor, ~240 BPM) is ~21 frames. An
+    /// onset envelope shorter than that (< ~0.25s of audio) previously crashed:
+    /// `vDSP_meanv(base + minLag, ..., vDSP_Length(acorr.count - minLag))` computed a
+    /// negative length and `vDSP_Length` (UInt) traps on a negative Int. Must now return a
+    /// safe fallback instead of crashing.
+    func testEstimateTempo_veryShortOnsetEnvelope_doesNotCrash() {
+        for n in [0, 1, 5, 10, 20] {
+            let onset = [Float](repeating: 0.5, count: n)
+            let result = RhythmEngine.estimateTempo(onsetStrength: onset, sr: 44100, hopLength: 512)
+            XCTAssertTrue(result.bpm.isFinite, "n=\(n): bpm must be finite, got \(result.bpm)")
+            XCTAssertTrue(result.confidence.isFinite, "n=\(n): confidence must be finite, got \(result.confidence)")
+        }
+    }
 }

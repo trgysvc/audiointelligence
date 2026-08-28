@@ -141,23 +141,17 @@ public final class STFTEngine: @unchecked Sendable {
     /// Computes STFT with Industry Standard-exact behavior.
     /// - Parameter padMode: 'constant' (zeros) or 'reflect' (Industry Standard default: 'constant')
     public func analyze(_ samples: [Float], center: Bool = true, padMode: String = "constant") async -> STFTMatrix {
-        // Cache Check (Fast SHA256 hash of signal signature)
-        let sampleHash: String
-        if samples.count > 4000 {
-            var signature = Data()
-            samples.prefix(2000).withUnsafeBufferPointer { ptr in
-                signature.append(ptr)
-            }
-            samples.suffix(2000).withUnsafeBufferPointer { ptr in
-                signature.append(ptr)
-            }
-            let hash = SHA256.hash(data: signature)
-            sampleHash = hash.compactMap { String(format: "%02x", $0) }.joined() + "_\(samples.count)"
-        } else {
-            let signature = samples.withUnsafeBufferPointer { Data(buffer: $0) }
-            let hash = SHA256.hash(data: signature)
-            sampleHash = hash.compactMap { String(format: "%02x", $0) }.joined()
-        }
+        // Cache Check (SHA256 hash of the full signal).
+        // Previously hashed only the first 2000 + last 2000 samples (+ sample count) for
+        // signals over 4000 samples — two different signals sharing the same head/tail but
+        // differing in the middle (e.g. the same lead-in/fade padding around different
+        // content, which is common when chunking a track) would collide on the same cache
+        // key and one would silently return the other's STFT result. SHA256 over the full
+        // buffer is still fast relative to the STFT/HPSS/etc. work this cache is protecting
+        // (hardware-accelerated on Apple platforms; a 45s/22kHz chunk is ~1M samples, ~4MB).
+        let signature = samples.withUnsafeBufferPointer { Data(buffer: $0) }
+        let hash = SHA256.hash(data: signature)
+        let sampleHash = hash.compactMap { String(format: "%02x", $0) }.joined()
         
         let cacheKey = await IntelligenceCache.shared.generateKey(for: URL(string: "stft://local")!, parameters: [
             "hash": sampleHash, "nFFT": nFFT, "hop": hopLength, "window": windowType.rawValue, "center": center, "pad": padMode
@@ -441,5 +435,17 @@ final class STFTMemoryCache: @unchecked Sendable {
             let evicted = order.removeFirst()
             store.removeValue(forKey: evicted)
         }
+    }
+
+    /// The cache key (`analyze`'s `sampleHash` + STFT params) has no notion of which
+    /// `STFTEngine` instance — or whether its `metalEngine` — produced the cached result, so
+    /// two engines analyzing identical samples with identical params collide on the same
+    /// entry. Tests that need to force fresh execution (e.g. comparing a CPU-only engine
+    /// against a GPU-backed one on the same signal) must clear this, not `IntelligenceCache`
+    /// (a separate, disk-backed cache with its own key space).
+    func clear() {
+        lock.lock(); defer { lock.unlock() }
+        store.removeAll()
+        order.removeAll()
     }
 }

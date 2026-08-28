@@ -29,23 +29,28 @@ public final class SpectralZoneEngine: Sendable {
         let magnitude = stft.magnitude // [t * nBins + f]
         let binFreq = Float(sampleRate) / Float(stft.nFFT)
         
-        // Define Scientific Spectral Zones (Hz)
-        let zones = [
-            ("Sub/Bass", 0.0...250.0),
-            ("Mid/Body", 250.0...2000.0),
-            ("Presence/Lead", 2000.0...6000.0),
-            ("Air/Treble", 6000.0...Float(sampleRate/2))
-        ]
-        
+        // Define Scientific Spectral Zones (Hz) as shared boundary edges rather than
+        // independent per-zone ranges. Each edge frequency maps to exactly ONE bin index, so
+        // adjacent zones can't disagree about who owns the boundary bin — previously, each
+        // zone independently floor'd its own start and ceil'd its own end, so the bin(s)
+        // straddling a shared edge (e.g. ~250Hz between Sub/Bass and Mid/Body) were counted
+        // in BOTH zones, double-counting that energy and skewing `dominanceMap`.
+        let names = ["Sub/Bass", "Mid/Body", "Presence/Lead", "Air/Treble"]
+        let edgeFreqs: [Float] = [0.0, 250.0, 2000.0, 6000.0, Float(sampleRate / 2)]
+        var edgeBins = edgeFreqs.map { Int(($0 / binFreq).rounded()) }
+        edgeBins[0] = 0
+        edgeBins[edgeBins.count - 1] = nBins // exclusive upper bound — covers the final bin
+
         var zoneEnergies = [String: Float]()
         var totalEnergy: Float = 0
-        
-        for (name, range) in zones {
-            let startBin = Int(floor(range.lowerBound / binFreq))
-            let endBin = min(Int(ceil(range.upperBound / binFreq)), nBins - 1)
-            
+
+        for i in 0..<names.count {
+            let startBin = max(0, edgeBins[i])
+            let endBin = min(nBins, edgeBins[i + 1]) // exclusive, so zones never overlap
+            guard endBin > startBin else { zoneEnergies[names[i]] = 0; continue }
+
             var zoneEnergy: Float = 0
-            for f in startBin...endBin {
+            for f in startBin..<endBin {
                 var binPower: Float = 0
                 // Calculate total power for this bin across all frames
                 for t in 0..<nFrames {
@@ -54,7 +59,7 @@ public final class SpectralZoneEngine: Sendable {
                 }
                 zoneEnergy += binPower
             }
-            zoneEnergies[name] = zoneEnergy
+            zoneEnergies[names[i]] = zoneEnergy
             totalEnergy += zoneEnergy
         }
         

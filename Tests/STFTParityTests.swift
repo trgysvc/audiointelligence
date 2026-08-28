@@ -20,8 +20,13 @@ final class STFTParityTests: XCTestCase {
         let cpuMatrix = await cpuEngine.analyze(samples)
         
         // 2. Target: GPU Path (MetalEngine active)
-        // SEALED: Clear cache to ensure fresh GPU execution (not returning CPU cached results)
+        // SEALED: Clear caches to ensure fresh GPU execution (not returning CPU cached results).
+        // `analyze()`'s cache key has no engine/metalEngine identity — the CPU run above and
+        // this GPU run share the same key for identical samples+params, so STFTMemoryCache
+        // (not IntelligenceCache, a separate disk-backed cache) must be cleared or this
+        // silently returns the CPU engine's cached result without ever touching the GPU.
         await IntelligenceCache.shared.clear()
+        STFTMemoryCache.shared.clear()
         
         let metal = MetalEngine()
         guard metal.getHardwareStatus() != "None (Metal No Supported)" else {

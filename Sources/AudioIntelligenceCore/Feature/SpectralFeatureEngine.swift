@@ -128,7 +128,11 @@ public enum SpectralFeatureEngine {
         }
         bandEdges[nBands] = nFreqs - 1
         
-        var contrast = [[Float]](repeating: [Float](repeating: 0, count: nFrames), count: nBands + 1)
+        // `bandEdges` needs nBands+1 entries (each band is the span between two consecutive
+        // edges), but `contrast` only ever has nBands *bands* — allocating nBands+1 rows here
+        // left the last row permanently zero (the fill loop below only reaches `b < nBands`),
+        // which fed a spurious always-0 "7th band" into every downstream mean/aggregate.
+        var contrast = [[Float]](repeating: [Float](repeating: 0, count: nFrames), count: nBands)
         
         for t in 0..<nFrames {
             for b in 0..<nBands {

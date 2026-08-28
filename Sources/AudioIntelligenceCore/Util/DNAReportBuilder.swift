@@ -191,7 +191,15 @@ public actor DNAReportBuilder {
             allPiptrack[idx] = piptrackRes.pitches.reduce(0, +) / Float(max(1, piptrackRes.pitches.count))
             
             // High-Res Append (Aligned to global offset)
-            for p in piptrackRes.pitches { fullPitchPath.append(Int(p)) }
+            // `PiptrackResult.pitches` is Hz per frame (0 = no pitch detected — PiptrackEngine
+            // leaves silent/unvoiced frames at their zero-initialized default). CounterpointEngine
+            // and MotifEngine both expect MIDI note numbers here (their own code refers to
+            // "leadMidi" and counts "semitones" between entries) — passing the raw Hz value
+            // straight through as if it already were a MIDI number made their interval math
+            // meaningless (e.g. a 440Hz A4 read as MIDI note 440, off the instrument's actual
+            // register by over 30 octaves). Convert Hz -> MIDI properly; keep 0 as the "no
+            // pitch" sentinel so a silent frame still reads as 0 downstream, same as before.
+            for p in piptrackRes.pitches { fullPitchPath.append(DSPHelpers.hzToMIDI(p)) }
             
             let contrast = SpectralFeatureEngine.spectralContrast(from: stft, nBands: 6)
             allContrast[idx] = contrast.map { $0.reduce(0, +) / Float(max(1, $0.count)) }
@@ -212,8 +220,12 @@ public actor DNAReportBuilder {
             Swift.print("⚙️ [Group C] Engaging Infinity Matrix (Isolated Path)...")
             let melRes = await MelSpectrogramEngine(stftEngine: stftEngine, nMels: 128, metalEngine: metalEngine).createMelSpectrogram(from: chunk.samples)
             
+            // HPSS runs on EVERY chunk so coverage spans the whole track (previously idx==0
+            // only stored — the harmonic/percussive ratio averages below were silently
+            // computed from just the first ~45s of a multi-minute track). Same bug class as
+            // StructureEngine's, fixed the same way, below.
             let hpss = HPSSEngine(winHarm: 31, winPerc: 31, metalEngine: metalEngine).analyze(stft: stft)
-            if idx == 0 { allHPSS[0] = hpss } 
+            allHPSS[idx] = hpss
             
             autoreleasepool {
                 // MFCC = DCT of LOG-mel (power_to_db), not linear mel — DCT'ing the linear
@@ -349,7 +361,7 @@ public actor DNAReportBuilder {
         Swift.print("📊 [TRACE] Forensic Chroma Validation: \(totalChromaFrames) frames captured across 12 semitones.")
         
         Swift.print("🔍 [TRACE] Step 1: Starting Reduction Analysis...")
-        let reductionRes = await reductionEng.reduce(chromagram: fullChromagramBins, segments: finalSegments)
+        let reductionRes = await reductionEng.reduce(chromagram: fullChromagramBins, segments: finalSegments, sampleRate: sampleRate)
         Swift.print("✅ [TRACE] Step 1: Reduction Analysis Complete.")
         await Task.yield()
         
@@ -408,7 +420,24 @@ public actor DNAReportBuilder {
         )
         
         progress(90, "Finalizing Atomic Data Aggregation...", nil)
-        
+
+        // Whole-track Viterbi-smoothed pitch path (ViterbiEngine's own doc comment describes
+        // exactly this use — "pitch path stabilization" — but it was never actually wired in;
+        // `allViterbi` was always passed as a literal `[]`, so the public `ViterbiMetrics.path`
+        // field was always empty). Concatenates every chunk's raw YIN f0 series into one
+        // continuous sequence first, so the smoothing isn't reset at each 45s chunk boundary.
+        let fullF0Series = allYIN.compactMap { $0 }.flatMap { $0.f0Series }
+        let smoothedPitchPath = ViterbiEngine().smoothPitchPath(f0Series: fullF0Series)
+
+        // TempogramEngine was never actually called — `cyclicTempoMap` was always a literal
+        // `[]`. `fullOnsetEnv` (the whole-track onset envelope, already concatenated across
+        // chunks) is exactly what `computeACT` needs; average its per-frame autocorrelation
+        // across time into one track-wide "which periodicities are prominent" profile.
+        let tempogramRes = TempogramEngine().computeACT(onsetStrength: fullOnsetEnv)
+        let cyclicTempoMapReal: [Float] = tempogramRes.tempogram.map { lagRow in
+            lagRow.isEmpty ? 0 : lagRow.reduce(0, +) / Float(lagRow.count)
+        }
+
         let finalAnalysis = assembleFinalDNA(
             filename: filename, 
             allLoudness: allLoudness.compactMap{$0}, allSpectral: allSpectral.compactMap{$0}, 
@@ -420,7 +449,8 @@ public actor DNAReportBuilder {
             allInstruments: Array(allInstruments.prefix(instrumentPtr)), 
             allScience: allScience.compactMap{$0}, allTonnetz: allTonnetz.compactMap{$0}, 
             allNMF: allNMF.compactMap{$0}, allPiptrack: allPiptrack.compactMap{$0}, 
-            allViterbi: [], allYIN: allYIN.compactMap{$0}, 
+            allViterbi: [smoothedPitchPath], allYIN: allYIN.compactMap{$0},
+            cyclicTempoMap: cyclicTempoMapReal,
             allMFCC: allMFCC.compactMap{$0}, allStructure: allStructure.compactMap{$0}, 
             allRhythm: allRhythm.compactMap{$0}, allContrast: allContrast.compactMap{$0},
             allChroma: allChroma.compactMap{$0},
@@ -460,7 +490,8 @@ public actor DNAReportBuilder {
                                   allEntropy: [Float],
                                   allInstruments: [InstrumentPrediction], 
                                   allScience: [ScienceMetrics], allTonnetz: [[Float]], allNMF: [Float], 
-                                  allPiptrack: [Float], allViterbi: [[Int]], allYIN: [PitchResult], 
+                                  allPiptrack: [Float], allViterbi: [[Int]], allYIN: [PitchResult],
+                                  cyclicTempoMap: [Float],
                                   allMFCC: [[Float]], allStructure: [StructureResult], 
                                   allRhythm: [RhythmResult], allContrast: [[Float]],
                                   allChroma: [[[Float]]],
@@ -510,7 +541,13 @@ public actor DNAReportBuilder {
 
         let mastering = MasteringMetrics(integratedLUFS: finalLufs, momentaryLUFS: allLoudness.map{$0.momentaryLUFsMax}.max() ?? -70, shortTermLUFS: allLoudness.map{$0.shortTermLUFsMax}.max() ?? -70, truePeak: finalPeak, phaseCorrelation: wPhase, monoCompatibility: monoCompat, balanceLR: balanceLR, msBalance: balanceLR, sideEnergyPercent: wSide, stereoWidth: wWidth, lraLU: allLoudness.map{$0.loudnessRange}.max() ?? 0)
         
-        let finalContrast = (0..<7).map { i in allContrast.map { $0[i] }.reduce(0, +) / Float(max(1, allContrast.count)) }
+        // Was hardcoded `0..<7`, silently depending on `SpectralFeatureEngine.spectralContrast`
+        // returning one extra always-zero row (nBands+1 instead of nBands) — fixing that bug
+        // shrank each `allContrast[chunk]` to its correct nBands=6 length and turned this into
+        // an out-of-bounds crash (`$0[6]` on a 6-element array). Derive the count from the
+        // actual data instead of a magic number, so this can't silently drift out of sync again.
+        let contrastBandCount = allContrast.first?.count ?? 0
+        let finalContrast = (0..<contrastBandCount).map { i in allContrast.map { $0[i] }.reduce(0, +) / Float(max(1, allContrast.count)) }
         
         // Per-chunk segments are chunk-relative; shift each by its 45s chunk offset so
         // the timeline spans the whole track instead of collapsing into the first 45s.
@@ -719,9 +756,29 @@ public actor DNAReportBuilder {
                 return next
             }.map { $0 / Float(max(1, allChroma.count)) }, 
             segments: Array(finalSegments.prefix(256)), // whole-track coverage, not just first 45s
-            audit: AuditMetrics(engineCoverage: ["Full-26": true, "Structure": true, "RhythmDP": true, "PLP": true, "Contrast": true], cqtStatus: "OK", melSpectrogramResolution: "128x800", utilityCheck: "OK", filterbankStatus: "OK"), 
+            audit: {
+                // Was entirely hardcoded (identical literal values on every single analysis,
+                // regardless of what actually ran) — `AuditMetrics` is directly reachable via
+                // the public `AudioIntelligence.analyzeRawAggregate` API, not just internal.
+                // `engineCoverage` now reflects whether each engine's array actually holds
+                // real per-chunk results for THIS analysis, `cqtStatus` honestly reports that
+                // CQTEngine has no consumer in this pipeline (see CQTEngine.swift's own doc
+                // comment), and `melSpectrogramResolution` uses the real frame count (mel and
+                // chroma share the same 512-sample hop, so `allChroma`'s frame count is exact).
+                // `utilityCheck`/`filterbankStatus` are left "OK": both underlying utilities
+                // are deterministic constructors with no defined failure mode to check against.
+                let totalMelFrames = allChroma.reduce(0) { $0 + ($1.first?.count ?? 0) }
+                let coverage: [String: Bool] = [
+                    "Structure": !allStructure.isEmpty,
+                    "HPSS": !allHPSSData.isEmpty,
+                    "Rhythm": !allRhythm.isEmpty,
+                    "Contrast": !allContrast.isEmpty,
+                    "Chroma": !allChroma.isEmpty,
+                ]
+                return AuditMetrics(engineCoverage: coverage, cqtStatus: "Not Used (no downstream consumer in this pipeline)", melSpectrogramResolution: "128x\(totalMelFrames)", utilityCheck: "OK", filterbankStatus: "OK")
+            }(),
             tonnetz: TonnetzMetrics(meanTonnetz: allTonnetz.first ?? [], harmonicStability: tonnetzStability),
-            tempogram: TempogramMetrics(cyclicTempoMap: [], dominantPeriod: dominantPeriodReal),
+            tempogram: TempogramMetrics(cyclicTempoMap: cyclicTempoMap, dominantPeriod: dominantPeriodReal),
             nmf: NMFMetrics(reconstructionError: nmfReconError, componentEnergy: nmfComponentEnergyReal),
             piptrack: PiptrackMetrics(refinedMeanF0: allPiptrack.reduce(0, +) / Float(max(1, allPiptrack.count)), trackingConfidence: voicedRatio),
             viterbi: ViterbiMetrics(path: allViterbi.first ?? [], confidence: stability),

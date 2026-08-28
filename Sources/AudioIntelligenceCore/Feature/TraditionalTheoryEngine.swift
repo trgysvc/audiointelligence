@@ -47,7 +47,9 @@ public final class TraditionalTheoryEngine: @unchecked Sendable {
     
     // MARK: - Internal Logic
     
-    private enum TriadType {
+    // `internal` (not `private`) — needed as a parameter type on `determineFunction`, which
+    // is itself `internal` for direct unit testing.
+    enum TriadType {
         case major, minor, diminished, augmented, unclassified
     }
     
@@ -125,10 +127,16 @@ public final class TraditionalTheoryEngine: @unchecked Sendable {
         }
     }
     
-    private func determineFunction(root: Int, type: TriadType, key: String) -> (function: String, reasoning: String) {
+    // `internal` (not `private`) for direct unit testing of the key-parsing fallback.
+    func determineFunction(root: Int, type: TriadType, key: String) -> (function: String, reasoning: String) {
         // Simplified Functional Logic (v6.5)
         let keyParts = key.components(separatedBy: " ")
-        guard keyParts.count >= 2 else { return ("Tonic", "Dominant behavior in current context") }
+        // Every other branch below returns a "<Name> (<RomanNumeral>)"-formatted function
+        // string (e.g. "Tonic (I)"), which `CadenceEngine.classify` matches via `.contains(
+        // "Tonic (I)")`/`.contains("Dominant (V)")` etc. This fallback (no parseable key, e.g.
+        // key == "Unclassified") returned a bare "Tonic" — never matching that format, so
+        // every cadence in a passage with no detected key silently went unclassified.
+        guard keyParts.count >= 2 else { return ("Tonic (I)", "No reliable key context was available; defaulting to the tonic function.") }
         
         let keyRootName = keyParts[0]
         _ = keyParts[1].lowercased() == "minor"

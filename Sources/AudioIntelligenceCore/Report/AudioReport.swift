@@ -263,7 +263,7 @@ public struct MusicologyReport: Codable, Sendable {
 public struct LowLevelFeatures: Codable, Sendable {
     public let chromaProfile: [Float]        // 12 semitone means
     public let mfcc: [Float]                  // 20 coefficient means
-    public let spectralContrast: [Float]      // 7 bands
+    public let spectralContrast: [Float]      // 6 bands (was mislabeled 7 — see SpectralFeatureEngine's fixed off-by-one)
     public let tonnetz: [Float]               // 6 dimensions
     public let tempogramCyclic: [Float]
     public let nmfComponentEnergy: [Float]

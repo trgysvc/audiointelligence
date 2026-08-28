@@ -105,17 +105,20 @@ public final class WaveletEngine: Sendable {
     private func decompositionStep(_ input: [Float], lowPass: [Float], highPass: [Float]) -> (cA: [Float], cD: [Float]) {
         let n = input.count
         let filterLen = lowPass.count
-        
-        // Output size for Downsampled convolution: (N + F - 1) / 2 approx
-        // For simplicity, we use valid padding or circular for audio.
-        // vDSP_conv default is 'valid' style or custom.
-        
+
+        // vDSP_conv computes N output samples, each reading P consecutive input samples
+        // starting at its own index — it needs N + P - 1 input samples, not N. Calling it
+        // with an unpadded N-length `input` read up to filterLen-1 samples past the end of
+        // the array (confirmed: garbage/denormal floats came back from out-of-bounds heap
+        // memory). Zero-pad the tail so every read stays in bounds.
+        let padded = input + [Float](repeating: 0, count: filterLen - 1)
+
         var approx = [Float](repeating: 0, count: n)
         var detail = [Float](repeating: 0, count: n)
-        
+
         // Convolution using vDSP
-        vDSP_conv(input, 1, lowPass, 1, &approx, 1, vDSP_Length(n), vDSP_Length(filterLen))
-        vDSP_conv(input, 1, highPass, 1, &detail, 1, vDSP_Length(n), vDSP_Length(filterLen))
+        vDSP_conv(padded, 1, lowPass, 1, &approx, 1, vDSP_Length(n), vDSP_Length(filterLen))
+        vDSP_conv(padded, 1, highPass, 1, &detail, 1, vDSP_Length(n), vDSP_Length(filterLen))
         
         // Downsample by 2
         let nOut = n / 2

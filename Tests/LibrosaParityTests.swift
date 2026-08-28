@@ -21,6 +21,56 @@ final class LibrosaParityTests: XCTestCase {
         XCTAssertEqual(result.coefficients["cD1"]![1], 0.7071, accuracy: 0.001)
     }
 
+    /// `decompositionStep`'in vDSP_conv çağrısı N+P-1 örnek gerektirirken N örnek geçiriyordu,
+    /// dizinin dışından okuyordu (P-1=3 tap db2 için canlı testle doğrulanan denormal/çöp float
+    /// bug'ı). Haar'ın kendi testi (P=2, n=4) bunu yakalamıyordu çünkü decimation kazara sadece
+    /// bounds-içi çift indeksleri tutuyordu — db2 (P=4) ile decimation SONRASI kullanılan
+    /// değerler de etkileniyordu. Determinizm (aynı girdi → aynı çıktı, art arda 2 çalıştırma)
+    /// ve sonluluk (NaN/Infinity/aşırı-büyük yok) kontrol ediliyor; ikisi de düzeltmeden önce
+    /// heap içeriğine bağlı olarak arızalıydı.
+    func testWaveletDb2NoOutOfBoundsCorruption() {
+        let samples: [Float] = (0..<64).map { sinf(Float($0) * 0.3) }
+        let engine = WaveletEngine()
+
+        let r1 = engine.decompose(samples, wavelet: .db2, levels: 3)
+        let r2 = engine.decompose(samples, wavelet: .db2, levels: 3)
+
+        for key in ["cA", "cD1", "cD2", "cD3"] {
+            let a = r1.coefficients[key]!
+            let b = r2.coefficients[key]!
+            XCTAssertEqual(a, b, "\(key): iki ardışık çalıştırma farklı sonuç verdi (non-determinism)")
+            for v in a {
+                XCTAssertTrue(v.isFinite, "\(key) contains a non-finite value: \(v)")
+                XCTAssertLessThan(abs(v), 1000.0, "\(key) contains an implausibly large value: \(v)")
+            }
+        }
+    }
+
+    /// Same regression, but on real audio (EBU SQAM trumpet) instead of a synthetic sine —
+    /// WaveletEngine has no in-library consumer to exercise it through the report pipeline,
+    /// so this calls it directly on real samples to confirm the fix holds on real material,
+    /// not just a hand-picked synthetic signal.
+    func testWaveletDb3OnRealAudio_noOutOfBoundsCorruption() async throws {
+        let path = "Tests/Resources/SQAM/trpt21_2.wav"
+        guard FileManager.default.fileExists(atPath: path) else {
+            throw XCTSkip("SQAM trpt21_2.wav not present locally")
+        }
+        let buffer = try await AudioLoader.load(url: URL(fileURLWithPath: path))
+        XCTAssertGreaterThan(buffer.samples.count, 1000, "expected a real, non-trivial sample count")
+
+        let engine = WaveletEngine()
+        let result = engine.decompose(buffer.samples, wavelet: .db3, levels: 3)
+
+        for key in ["cA", "cD1", "cD2", "cD3"] {
+            let coeffs = result.coefficients[key]!
+            XCTAssertFalse(coeffs.isEmpty, "\(key) is empty on real audio")
+            for v in coeffs {
+                XCTAssertTrue(v.isFinite, "\(key) contains a non-finite value on real audio: \(v)")
+            }
+        }
+        print("🌊 WaveletEngine on real SQAM trumpet: cA=\(result.coefficients["cA"]!.count) samples, all finite")
+    }
+
     // MARK: - Recurrence Matrix (SSM) Parity
     
     /// Verifies that StructureEngine.recurrenceMatrix yields a symmetric 1.0 diagonal.

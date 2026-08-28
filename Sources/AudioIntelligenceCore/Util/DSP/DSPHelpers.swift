@@ -14,6 +14,18 @@ import Foundation
 
 public enum DSPHelpers {
 
+    // MARK: Pitch unit conversion
+
+    /// Converts a frequency in Hz to the nearest MIDI note number (A4 = 440Hz = note 69).
+    /// Returns 0 for any non-positive input (the convention used throughout this codebase for
+    /// "no pitch detected" — e.g. `PiptrackEngine`'s silent/unvoiced frames), since MIDI note 0
+    /// isn't a meaningful value to derive from a pitch estimate of zero or below.
+    public static func hzToMIDI(_ hz: Float) -> Int {
+        guard hz > 0 else { return 0 }
+        let midi = 69.0 + 12.0 * log2(Double(hz) / 440.0)
+        return Int(midi.rounded())
+    }
+
     // MARK: Cosine Similarity
 
     /// Cosine similarity between two L2-normalized vectors.

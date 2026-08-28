@@ -301,10 +301,17 @@ public final class RhythmEngine: Sendable {
 
         // BPM Clipping & Confidence
         bestBPM = max(40.0, min(320.0, bestBPM))
+        // Guard: on very short audio (< ~0.25s at typical hop/sr) `minLag` can exceed
+        // `acorr.count`, which would make the length below negative — `vDSP_Length` (UInt)
+        // traps on a negative Int, crashing the whole analysis. Skip the mean (confidence
+        // falls back to 0 below) rather than reading/converting out of range.
         var meanVal: Float = 0
-        acorr.withUnsafeBufferPointer { ptr in
-            if let base = ptr.baseAddress {
-                vDSP_meanv(base + minLag, 1, &meanVal, vDSP_Length(min(acorr.count - minLag, maxLag - minLag + 1)))
+        let confidenceWindowLen = min(acorr.count - minLag, maxLag - minLag + 1)
+        if confidenceWindowLen > 0 && minLag < acorr.count {
+            acorr.withUnsafeBufferPointer { ptr in
+                if let base = ptr.baseAddress {
+                    vDSP_meanv(base + minLag, 1, &meanVal, vDSP_Length(confidenceWindowLen))
+                }
             }
         }
         let confidence = maxVal > 0 ? min(1.0, (maxVal - meanVal) / maxVal) : 0.0

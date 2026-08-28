@@ -130,11 +130,11 @@ final class ParityDumpTests: XCTestCase {
     }
 
     /// Dumps a two-tone signal (A4=440Hz, E6≈1318.51Hz — both within the CQT's fMin=32.7Hz,
-    /// 7-octave range) and CQTEngine's raw transform() output, for a real numeric diff against
-    /// librosa.cqt() on the identical samples (`parity_compare_cqt.py`). Distinct from
-    /// `LibrosaParityTests.testCQTResolves*Tone`, which only checks correctness against a
-    /// hand-computed bin index inside Swift — this is the actual librosa cross-check the
-    /// CQTEngine doc comment says is still outstanding.
+    /// 7-octave range) and CQTEngine's raw transform() output, for a real numeric cross-check
+    /// against an independent reference CQT implementation on the identical samples (script
+    /// kept outside the repo). Distinct from `LibrosaParityTests.testCQTResolves*Tone`, which
+    /// only checks correctness against a hand-computed bin index inside Swift — this is the
+    /// independent cross-check the CQTEngine doc comment references.
     func testDumpCQTForParity() throws {
         try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
         let n = Int(2.0 * sr)

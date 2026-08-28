@@ -154,6 +154,29 @@ public struct AdvancedSpectralMetrics: Codable, Sendable {
     public let rmsMax: Float
     public let brightnessDescription: String
     public let fullMagnitudes: [[Float]] // [FreqBin][FrameIndex] for visualization
+
+    // Swift only synthesizes a memberwise init at the type's own access level (internal for a
+    // `public struct` unless written explicitly) — without this, no module outside
+    // AudioIntelligenceCore can construct a value of this public type, even though it's a
+    // required parameter of public API (e.g. `InstrumentEngine.predict`). Found while wiring
+    // an external reliability-audit tool against the public surface.
+    public init(centroid: Float, rolloff: Float, flatness: Float, flux: Float, skewness: Float,
+                kurtosis: Float, bandwidth: Float, zcr: Float, dynamicRange: Float, rmsMean: Float,
+                rmsMax: Float, brightnessDescription: String, fullMagnitudes: [[Float]]) {
+        self.centroid = centroid
+        self.rolloff = rolloff
+        self.flatness = flatness
+        self.flux = flux
+        self.skewness = skewness
+        self.kurtosis = kurtosis
+        self.bandwidth = bandwidth
+        self.zcr = zcr
+        self.dynamicRange = dynamicRange
+        self.rmsMean = rmsMean
+        self.rmsMax = rmsMax
+        self.brightnessDescription = brightnessDescription
+        self.fullMagnitudes = fullMagnitudes
+    }
 }
 
 public struct HPSSMetrics: Codable, Sendable {
@@ -168,7 +191,7 @@ public struct HPSSMetrics: Codable, Sendable {
 
 public struct TimbreMetrics: Codable, Sendable {
     public let mfcc: [Float] // All 20 coefficients
-    public let spectralContrast: [Float] // 7 bands
+    public let spectralContrast: [Float] // 6 bands (was mislabeled 7 — see SpectralFeatureEngine's fixed off-by-one)
 }
 
 public struct MasteringMetrics: Codable, Sendable {

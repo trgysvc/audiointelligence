@@ -429,17 +429,17 @@ public final class MetalEngine: @unchecked Sendable {
         guard let device = device, let commandQueue = commandQueue, let magPhaseState = magPhaseState, !real.isEmpty else {
             return ([], [])
         }
-        
+
         let count = real.count
         let size = count * 4
-        
+
         guard let rBuf = device.makeBuffer(bytes: real, length: size, options: .storageModeShared),
               let iBuf = device.makeBuffer(bytes: imag, length: size, options: .storageModeShared),
               let mBuf = device.makeBuffer(length: size, options: .storageModeShared),
               let pBuf = device.makeBuffer(length: size, options: .storageModeShared) else {
             return ([], [])
         }
-        
+
         guard let commandBuffer = commandQueue.makeCommandBuffer(),
               let encoder = commandBuffer.makeComputeCommandEncoder() else {
             return ([], [])
@@ -480,20 +480,20 @@ public final class MetalEngine: @unchecked Sendable {
         guard let device = device, let commandQueue = commandQueue, let windowMagState = windowMagState, !samples.isEmpty else {
             return []
         }
-        
+
         let nFrames = 1 + (samples.count - nFFT) / hopLength
         if nFrames <= 0 { return [] }
-        
+
         let sampleSize = samples.count * 4
         let windowSize = window.count * 4
         let outputSize = nFrames * nFFT * 4
-        
+
         guard let sBuf = device.makeBuffer(bytes: samples, length: sampleSize, options: .storageModeShared),
               let wBuf = device.makeBuffer(bytes: window, length: windowSize, options: .storageModeShared),
               let oBuf = device.makeBuffer(length: outputSize, options: .storageModeShared) else {
             return []
         }
-        
+
         guard let commandBuffer = commandQueue.makeCommandBuffer(),
               let encoder = commandBuffer.makeComputeCommandEncoder() else {
             return []

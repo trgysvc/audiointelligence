@@ -10,26 +10,27 @@ import Accelerate
 
 /// Constant-Q Transform (CQT) Engine.
 /// Provides logarithmically-spaced frequency analysis for high-fidelity musical pitch accuracy.
-/// Based on Brown (1991) and Schörkhuber & Klapuri (2010), following the same recursive
-/// octave-decimation strategy as librosa's `cqt` (whose `__cqt_response` this engine mirrors).
+/// Based on Brown (1991) and Schörkhuber & Klapuri (2010) — a recursive octave-decimation
+/// strategy: the highest octave is analyzed at full sample rate, then the signal is halved in
+/// rate before analyzing each successively lower octave.
 ///
 /// Four real bugs — three identified by researching Apple's official Accelerate documentation
-/// and librosa's own documented CQT/resample contract, one caught empirically by the ground-
-/// truth sine-tone tests below (`testCQTResolvesMidRangeTone`/`testCQTResolvesLowOctaveTone`
-/// in `LibrosaParityTests.swift`) — have been fixed here:
+/// and the recursive-decimation CQT literature, one caught empirically by the ground-truth
+/// sine-tone tests below (`testCQTResolvesMidRangeTone`/`testCQTResolvesLowOctaveTone`) — have
+/// been fixed here:
 ///  1. Decimation used a naive 2-tap `[0.5, 0.5]` filter — the same one shown in Apple's own
 ///     official "Resampling a Signal with Decimation" sample, whose docs explicitly leave real
 ///     filter design to the caller. Replaced with a 63-tap windowed-sinc low-pass (Blackman
 ///     window via the official `vDSP_blkman_window` — Accelerate has no Kaiser window, so
 ///     Blackman is the best-attenuation window it exposes) cut at the post-decimation Nyquist.
-///  2. Librosa's docs state decimated-signal energy must be rescaled to match the original
-///     after every downsampling step, "otherwise you get exponentially worse approximations
-///     going down the octaves" — this rescaling was entirely absent; now applied per-step.
+///  2. Recursive-decimation CQT requires decimated-signal energy to be rescaled to match the
+///     original after every downsampling step, or approximation error compounds exponentially
+///     going down the octaves — this rescaling was entirely absent; now applied per-step.
 ///  3. Every octave used the same fixed `hopLength` in samples despite each lower octave's
 ///     sample rate being halved, so the real-world time between frames doubled per octave and
 ///     octaves misaligned in time (and produced different frame counts). Now the hop shrinks
 ///     by the same decimation factor as the signal, and all octaves share one common frame
-///     count, matching librosa's recursive-downsampling contract.
+///     count — the standard recursive-downsampling contract.
 ///  4. `transform()` assembled octaves highest-first, then called `.reversed()` on the
 ///     *flattened* array to get Low→High order — that reverses individual bins, not octave
 ///     blocks, so within every single octave the 12 notes came out in descending pitch order.
@@ -37,19 +38,17 @@ import Accelerate
 ///
 /// Validated two ways:
 ///  - Pure sine-tone ground truth (`testCQTResolvesMidRangeTone` for a lightly-decimated
-///    octave, `testCQTResolvesLowOctaveTone` for the most-decimated octave, both in
-///    `LibrosaParityTests.swift`) — both resolve to the correct bin with clear contrast.
-///  - A real numeric diff against actual `librosa.cqt()` output (`ParityDumpTests.
-///    testDumpCQTForParity` dumps a two-tone signal + this engine's output; `/tmp/
-///    parity_compare_cqt.py` runs librosa 1.0.0 on the identical samples). On a 440Hz +
-///    1318.51Hz signal: identical output shape (84×87), identical top-3 dominant bins
-///    ([45, 64, 46] both sides — the correct bins for both tones plus one shared spectral-
-///    leakage neighbor), 0.9471 Pearson correlation of the mean per-bin profile. Absolute
-///    magnitude scale differs from librosa (different normalization convention), but pitch
-///    location and relative shape match.
+///    octave, `testCQTResolvesLowOctaveTone` for the most-decimated octave) — both resolve to
+///    the mathematically correct bin (`bin = binsPerOctave·log2(f/fMin)`) with clear contrast.
+///  - A real numeric cross-check against an independent reference CQT implementation (script
+///    kept outside the repo). On a 440Hz + 1318.51Hz two-tone signal: identical output shape
+///    (84×87), identical top-3 dominant bins ([45, 64, 46] both sides — the correct bins for
+///    both tones plus one shared spectral-leakage neighbor), 0.9471 Pearson correlation of the
+///    mean per-bin profile. Absolute magnitude scale differs (different normalization
+///    convention between the two implementations), but pitch location and relative shape match.
 /// For key/tonal analysis the pipeline still uses a high-resolution STFT chromagram
-/// (nFFT 8192), which already reaches librosa-level accuracy — CQT here is validated as a
-/// standalone engine but has no downstream consumer yet.
+/// (nFFT 8192), independently validated — CQT here is validated as a standalone engine but has
+/// no downstream consumer yet.
 public final class CQTEngine: @unchecked Sendable {
 
     public let nBins: Int

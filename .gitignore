@@ -24,7 +24,24 @@ xcuserdata/
 *.dylib
 
 # ── Test & validation material (large; NOT shipped — see README "Test & Validation Material") ──
-# Download/rebuild instructions are documented in the README.
-Examples/Golden/                 # GiantSteps key+tempo golden set (~822 MB mp3)
-Tests/Resources/SQAM/*.wav       # EBU SQAM reference audio
-/tmp/openmic/                    # OpenMIC-2018 (instrument layer dataset)
+# Download/rebuild instructions are documented in the README. NOTE: git does not support
+# trailing inline comments on a pattern line (a "pattern  # comment" line is matched literally
+# and never matches anything) — keep each pattern on its own line, comment above it.
+# GiantSteps key+tempo golden set (~822 MB mp3)
+Examples/Golden/
+# EBU SQAM reference audio
+Tests/Resources/SQAM/*.wav
+# OpenMIC-2018 (instrument, multi-label — symlink)
+Tests/Resources/OpenMIC
+# IRMAS (instrument, single-label — symlink)
+Tests/Resources/IRMAS
+# MDB-stem-synth (pitch/f0 ground truth — symlink)
+Tests/Resources/MDBStemSynth
+# Beatles chord/key/structure annotations — symlink
+Tests/Resources/Isophonics
+# Billboard chord/structure annotations — symlink
+Tests/Resources/McGillBillboard
+# ReliabilityAudit latest-run snapshot (regenerated every run, not source).
+# history.jsonl is intentionally NOT ignored — one line per run, tracked in git as the
+# versioned accuracy-over-time trend (see Examples/ReliabilityAudit/README.md).
+Examples/ReliabilityAudit/reliability_report.json

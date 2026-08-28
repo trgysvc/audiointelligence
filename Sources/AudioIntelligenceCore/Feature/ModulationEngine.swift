@@ -94,9 +94,31 @@ public final class ModulationEngine: Sendable {
         return "Common Chord (Pivot)"
     }
     
-    private func identifyPivotNotes(from: String, to: String) -> [String] {
-        // Returns common notes between the two keys
-        return ["Common Tones"]
+    /// Returns the diatonic pitch classes shared between the two keys — the actual common
+    /// tones a pivot-chord modulation exploits (was a hardcoded `["Common Tones"]` placeholder
+    /// string for every single modulation event, parameters unused).
+    // `internal` (not `private`) so it's directly unit-testable without needing to construct
+    // a chromagram that coincidentally triggers a detected modulation.
+    func identifyPivotNotes(from: String, to: String) -> [String] {
+        guard let fromPCs = Self.diatonicPitchClasses(for: from),
+              let toPCs = Self.diatonicPitchClasses(for: to) else {
+            return []
+        }
+        return fromPCs.intersection(toPCs).sorted().map { ChromaResult.noteNames[$0] }
+    }
+
+    /// Parses a "<Root> Major"/"<Root> Minor" key string (`identifyKey`'s own output format)
+    /// into its 7 diatonic pitch classes (0-11), using the standard major / natural-minor
+    /// interval patterns. Returns nil for anything that doesn't parse (e.g. "Unclassified").
+    private static func diatonicPitchClasses(for key: String) -> Set<Int>? {
+        let parts = key.components(separatedBy: " ")
+        guard parts.count == 2, let rootIdx = ChromaResult.noteNames.firstIndex(of: parts[0]) else {
+            return nil
+        }
+        let intervals = parts[1].lowercased().hasPrefix("min")
+            ? [0, 2, 3, 5, 7, 8, 10]  // natural minor
+            : [0, 2, 4, 5, 7, 9, 11]  // major
+        return Set(intervals.map { (rootIdx + $0) % 12 })
     }
     
     private func rotate(_ profile: [Float], by: Int) -> [Float] {

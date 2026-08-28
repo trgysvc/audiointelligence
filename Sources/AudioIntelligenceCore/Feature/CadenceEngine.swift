@@ -90,17 +90,51 @@ public final class CadenceEngine: @unchecked Sendable {
         return nil
     }
     
-    private func identifyInversion(chord: VerticalChord) -> String {
+    /// Determines a chord's inversion from its symbol (e.g. "G/B", "c°/Eb", "C"). Was
+    /// hardcoded to only recognize a root of "C" — every other root (11 of 12 possible chord
+    /// roots) fell through to a generic, untranslated-Turkish "Çevrimli Pozisyon (bass Bassa)"
+    /// label. Now parses the actual root/quality/bass from `TraditionalTheoryEngine.
+    /// formatSymbol`'s real output convention (case = quality, optional "°"/"+"/"?" suffix,
+    /// optional "/<bass>" suffix) and computes the true inversion for any of the 12 roots.
+    // `internal` (not `private`) for direct unit testing.
+    func identifyInversion(chord: VerticalChord) -> String {
         let parts = chord.symbol.components(separatedBy: "/")
-        if parts.count == 1 { return "Root Position (5/3)" }
-        
-        let root = parts[0].uppercased()
-        let bass = parts[1]
-        
-        // Simplified inversion logic
-        if root.contains("C") && bass == "E" { return "1. Çevrim (6/3)" }
-        if root.contains("C") && bass == "G" { return "2. Çevrim (6/4)" }
-        
-        return "Çevrimli Pozisyon (\(bass) Bassa)"
+        guard let rootPart = parts.first, !rootPart.isEmpty else { return "Root Position (5/3)" }
+        guard parts.count == 2 else { return "Root Position (5/3)" }
+        let bassName = parts[1]
+
+        // `formatSymbol`'s convention: uppercase root = major (or "+" = augmented), lowercase
+        // root = minor (or "°" = diminished), trailing "?" = unclassified.
+        var rootToken = rootPart
+        let isAugmented = rootToken.hasSuffix("+")
+        let isDiminished = rootToken.hasSuffix("°")
+        let isUnclassified = rootToken.hasSuffix("?")
+        if isAugmented || isUnclassified { rootToken.removeLast() }
+        if isDiminished { rootToken.removeLast() } // "°" is a single Character, one removeLast() is correct
+
+        let isMinorCase = rootToken.first.map { $0.isLowercase } ?? false
+        let rootNameNormalized = rootToken.uppercased()
+
+        guard let rootPC = ChromaResult.noteNames.firstIndex(of: rootNameNormalized),
+              let bassPC = ChromaResult.noteNames.firstIndex(of: bassName.uppercased()) else {
+            return "Root Position (5/3)"
+        }
+
+        if rootPC == bassPC { return "Root Position (5/3)" }
+
+        let thirdInterval: Int
+        let fifthInterval: Int
+        if isAugmented { thirdInterval = 4; fifthInterval = 8 }
+        else if isDiminished { thirdInterval = 3; fifthInterval = 6 }
+        else if isUnclassified { thirdInterval = 4; fifthInterval = 7 } // best-effort default
+        else if isMinorCase { thirdInterval = 3; fifthInterval = 7 }
+        else { thirdInterval = 4; fifthInterval = 7 } // major
+
+        let bassInterval = (bassPC - rootPC + 12) % 12
+        switch bassInterval {
+        case thirdInterval: return "First Inversion (6/3)"
+        case fifthInterval: return "Second Inversion (6/4)"
+        default: return "Inverted Position (\(bassName) in the bass)"
+        }
     }
 }

@@ -72,21 +72,40 @@ public final class ForensicEngine: @unchecked Sendable {
         // Typical MP3 cutoffs: 16kHz, 18kHz, 20kHz
         let searchStartBin = Int(Float(nBins) * 0.4) // Start above 4k for speed
         var cutoffBin = nBins - 1
-        
+        let maxMag = meanMag.max() ?? 1.0 // hoisted out of the loop — was recomputed every iteration (O(n^2))
+
+        // Floor-detection state: a genuine codec cutoff is a *contiguous* silent run starting
+        // at Nyquist and extending down to where real content resumes — not just any bin below
+        // the floor. The original loop had no `break` on the floor branch at all, so it kept
+        // overwriting `cutoffBin` at every subsequent quiet bin all the way to `searchStartBin`,
+        // reporting whichever quiet bin happened to be scanned last (e.g. a natural spectral
+        // dip deep in real music) rather than the actual cutoff. A bare `break` on first match
+        // is *also* wrong: real music routinely has brief single-bin nulls, and even genuinely
+        // full-bandwidth content near Nyquist can dip below the floor briefly. Requires
+        // `confirmBins` consecutive non-floor bins after at least one floor bin before treating
+        // that boundary as the real transition — filters isolated dips/nulls on both sides.
+        var sawFloor = false
+        var contentRun = 0
+        let confirmBins = 3
+
         for f in stride(from: nBins - 2, through: searchStartBin, by: -1) {
             let high = meanMag[f+1] + 1e-12
             let low  = meanMag[f]   + 1e-12
-            
+
             // If energy drops by 10x (10dB) between adjacent bins, we found a codec edge
             if low / high > 10.0 {
                 cutoffBin = f
                 break
             }
-            
-            // Also detection via floor: If avg magnitude is below -80dB relative to peak
-            let maxMag = meanMag.max() ?? 1.0
+
+            // Detection via floor: if avg magnitude is below -80dB relative to the track's peak
             if meanMag[f] < maxMag * 0.0001 {
                 cutoffBin = f
+                sawFloor = true
+                contentRun = 0
+            } else if sawFloor {
+                contentRun += 1
+                if contentRun >= confirmBins { break }
             }
         }
         

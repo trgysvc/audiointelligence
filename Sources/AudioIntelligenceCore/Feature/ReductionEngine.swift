@@ -7,16 +7,23 @@ public final class ReductionEngine: @unchecked Sendable {
     public init() {}
     
     /// Performs tonal reduction based on structural segments and chromagram data.
-    public func reduce(chromagram: [[Float]], segments: [MusicSegment]) async -> ReductionMetrics {
+    /// - Parameters:
+    ///   - sampleRate: the sample rate the chromagram's underlying STFT was analyzed at.
+    ///   - hopLength: the STFT hop length used to build the chromagram (default matches this
+    ///     codebase's standard chroma pipeline hop of 512).
+    public func reduce(chromagram: [[Float]], segments: [MusicSegment], sampleRate: Double, hopLength: Int = 512) async -> ReductionMetrics {
         guard !chromagram.isEmpty, !segments.isEmpty else {
             return ReductionMetrics(fundamentalNote: "Unknown", structuralPillars: [], stabilityScore: 0, theoryBasis: "Insufficient data")
         }
-        
+
         let nFrames = chromagram[0].count
         var pillars = [String]()
         var pillarBins = [Int]()
         // 1. Analyze each segment for its "Structural Tonic"
-        let totalDuration = Double(nFrames) * (512.0 / 44100.0) // Precise Forensic Duration
+        // Was hardcoded to 512/44100 regardless of the file's actual sample rate — any
+        // non-44.1kHz file (48kHz is common) mapped segment start/end times to the wrong
+        // chroma frames, since sRatio/eRatio below are computed against this duration.
+        let totalDuration = Double(nFrames) * (Double(hopLength) / sampleRate)
         
         Swift.print("🔍 [TRACE] Reduction Audit Started: \(segments.count) segments | \(totalDuration)s real track duration.")
         

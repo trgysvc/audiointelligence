@@ -9,19 +9,38 @@ public final class HistoricalEngine: Sendable {
     
     /// Provides an educated guess on the context of the audio material.
     public func inferContext(analysis: MusicDNAAnalysis) -> HistoricalContext {
-        let lufs = analysis.mastering.integratedLUFS
-        let bpm = analysis.rhythm.bpm
-        let instruments = analysis.instruments.primaryLabel
-        let entropy = analysis.forensic.entropyScore
-        
+        let (period, movement, global, confidence) = Self.inferPeriod(
+            lufs: analysis.mastering.integratedLUFS,
+            bpm: analysis.rhythm.bpm,
+            instruments: analysis.instruments.primaryLabel,
+            entropy: analysis.forensic.entropyScore,
+            harmonicStability: analysis.tonality.harmonicStability
+        )
+
+        return HistoricalContext(
+            suggestedPeriod: period,
+            artisticMovement: movement,
+            globalContext: global,
+            composerContext: "Inferred from tonal stability (\(analysis.tonality.tendency)) and spectral entropy (\(analysis.forensic.entropyScore)).",
+            confidence: confidence
+        )
+    }
+
+    /// Pure period-inference logic, extracted from `inferContext` so it's directly testable
+    /// without constructing a full `MusicDNAAnalysis` (a large, deeply-nested struct).
+    static func inferPeriod(lufs: Float, bpm: Float, instruments: String, entropy: Float, harmonicStability: Float) -> (period: String, movement: String, global: String, confidence: Float) {
         var period = "Modern/Unclassified"
         var movement = "Contemporary"
         var global = "Global Digital Era"
         var confidence: Float = 0.5
-        
+
         // --- 1. Period Inference ---
         // Logic: Low volume (-20 LUFS) + Acoustic instruments + Low entropy -> likely pre-loudness war or earlier.
-        if lufs < -18 && instruments.contains("Piano") || instruments.contains("Strings") {
+        // `&&` binds tighter than `||` in Swift, so the missing parens meant this was actually
+        // `(lufs < -18 && Piano) || Strings` — any track whose primaryLabel merely contains
+        // "Strings" was classified "Romantic/Classical Era" regardless of loudness, e.g. a loud
+        // modern pop track with a synth-strings patch.
+        if lufs < -18 && (instruments.contains("Piano") || instruments.contains("Strings")) {
             period = "Romantic / Classical Era"
             movement = "Classicism/Romanticism"
             global = "Traditional Acoustic Paradigm"
@@ -37,19 +56,13 @@ public final class HistoricalEngine: Sendable {
             global = "Urban Modernization & Syncopation"
             confidence = 0.75
         }
-        
+
         // --- 2. Tonal Stability Refinement ---
         // High stability + Specific instrumentation typically points to structural perfection of the era.
-        if analysis.tonality.harmonicStability > 0.8 && instruments.contains("Piano") {
+        if harmonicStability > 0.8 && instruments.contains("Piano") {
             confidence += 0.05
         }
 
-        return HistoricalContext(
-            suggestedPeriod: period,
-            artisticMovement: movement,
-            globalContext: global,
-            composerContext: "Inferred from tonal stability (\(analysis.tonality.tendency)) and spectral entropy (\(analysis.forensic.entropyScore)).",
-            confidence: min(0.92, confidence)
-        )
+        return (period, movement, global, min(0.92, confidence))
     }
 }

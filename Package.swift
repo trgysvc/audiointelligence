@@ -32,6 +32,10 @@ let package = Package(
             name: "SQAMAuditTool",
             targets: ["SQAMAuditTool"]
         ),
+        .executable(
+            name: "ReliabilityAudit",
+            targets: ["ReliabilityAudit"]
+        ),
         .library(
             name: "AudioIntelligenceUI",
             targets: ["AudioIntelligenceUI"]
@@ -129,6 +133,17 @@ let package = Package(
             name: "SQAMAuditTool",
             dependencies: ["AudioIntelligence"],
             path: "Examples/SQAMAuditTool"
+        ),
+
+        // Comprehensive real-data reliability scorecard — every engine with a real ground-
+        // truth dataset, run in one pass, tracked over time. Not part of `swift test` (runs
+        // over thousands of real files; too slow for the normal test loop). See
+        // `Examples/ReliabilityAudit/README.md`.
+        .executableTarget(
+            name: "ReliabilityAudit",
+            dependencies: ["AudioIntelligence", "AudioIntelligenceCore"],
+            path: "Examples/ReliabilityAudit",
+            exclude: ["reliability_report.json", "history.jsonl", "README.md"]
         ),
         
         .executableTarget(
