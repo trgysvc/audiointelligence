@@ -36,6 +36,10 @@ let package = Package(
             name: "ReliabilityAudit",
             targets: ["ReliabilityAudit"]
         ),
+        .executable(
+            name: "PrototypeTrainer",
+            targets: ["PrototypeTrainer"]
+        ),
         .library(
             name: "AudioIntelligenceUI",
             targets: ["AudioIntelligenceUI"]
@@ -146,6 +150,17 @@ let package = Package(
             exclude: ["reliability_report.json", "history.jsonl", "README.md"]
         ),
         
+        // One-off tool: computes InstrumentEngine's 6 coarse-class prototype fingerprints
+        // (centroid range, flatness ceiling, mean MFCC) from real OpenMIC-2018 training data,
+        // replacing the original hand-typed placeholder values. Not part of `swift test` —
+        // run manually to regenerate the constants when the training methodology changes.
+        // See DEVLOG Phase 16.
+        .executableTarget(
+            name: "PrototypeTrainer",
+            dependencies: ["AudioIntelligence", "AudioIntelligenceCore"],
+            path: "Examples/PrototypeTrainer"
+        ),
+
         .executableTarget(
             name: "AIBenchmark",
             dependencies: [

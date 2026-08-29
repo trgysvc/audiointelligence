@@ -2,7 +2,11 @@ import XCTest
 @testable import AudioIntelligence
 @testable import AudioIntelligenceCore
 
-final class LibrosaParityTests: XCTestCase {
+/// Pure-Swift regression tests verified against analytically-derived ground truth (hand-computed
+/// wavelet formulas, known sine-tone frequencies, matrix-symmetry invariants) — no Python or
+/// librosa dependency at runtime. (Formerly `LibrosaParityTests`; renamed because the name no
+/// longer matched what the suite actually checks.)
+final class DSPGroundTruthTests: XCTestCase {
     
     // MARK: - Wavelet (DWT) Parity
     

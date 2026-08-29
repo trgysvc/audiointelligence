@@ -439,7 +439,7 @@ codebase had), then the recursive-decimation CQT literature (Brown 1991; Schörk
    highest-first, then called `.reversed()` on the *flattened* 84-element array to get Low→High
    order. That reverses individual bins, not octave blocks — within every single octave the 12
    notes came out in descending pitch order. Caught by writing ground-truth sine-tone tests
-   (`testCQTResolvesMidRangeTone` / `testCQTResolvesLowOctaveTone` in `LibrosaParityTests.swift`
+   (`testCQTResolvesMidRangeTone` / `testCQTResolvesLowOctaveTone` in `DSPGroundTruthTests.swift`
    — a 440 Hz and a 40 Hz tone, the latter forcing the full 6-level decimation chain) before
    this fix landed: both tests initially failed with the peak bin off by a non-constant amount
    (−7 and +5), which is what exposed the block-vs-element reversal bug. Fixed by keeping
@@ -823,8 +823,173 @@ see `~/Desktop/AudioIntelligence_Yapilacaklar.md` for the full ranked list. This
 "medium"-severity item; the remaining "low"-severity items are dead-code/unused-implementation
 cleanup candidates with no effect on any current report field, not yet scheduled.
 
-**Status:** `swift build` green throughout every fix. Full `swift test` run pending as the
-batched checkpoint for this phase.
+**Status:** `swift build` green throughout every fix. Full `swift test`: **87/87 passed, 0
+failures** (4838s) — clean close for this phase.
+
+---
+
+## 🧹 Phase 14 — Low-severity cleanup: two real bugs found along the way, one dead property, one wasted allocation (2026-08-29)
+
+The final tier of the four-way audit's ranked list — items originally filed as "dead code /
+cleanup candidates, no effect on any current report field." Investigating each one individually
+turned up two genuine correctness bugs that the original triage had understandably missed (both
+only manifest on inputs the initial audit didn't exercise), one real API surface honestly
+returning wrong-shaped placeholder data, and two items that further investigation showed were
+**not** actually dead code — corrected here rather than removed, to avoid deleting real,
+intentionally-used logic.
+
+1. **`LoudnessEngine.analyze`'s 6-channel (5.1 surround) energy sum treated every channel with
+   weight 1.0** — a real gap the code's own comment already flagged ("For now, we assume 1.0...
+   In a pro implementation, we check channel map"). ITU-R BS.1770-4 §2.4 requires the LFE channel
+   to be excluded entirely (weight 0) and surround channels (Ls/Rs) weighted 1.41 (+1.5dB) —
+   verified against the exact channel-weighting table in the reference `ffmpeg ebur128`
+   implementation (`libavfilter/f_ebur128.c`, read from raw source) that this engine's stereo/mono
+   accuracy is already validated against. Implemented for the one unambiguous, universally-agreed
+   channel order — 6-channel 5.1 (L, R, C, LFE, Ls, Rs, the standard WAV/CoreAudio default) —
+   deliberately leaving 7.1 and other layouts at the previous conservative weight of 1.0: channel
+   ordering for 7.1 is not consistent across vendors, and no real 7.1 reference material exists in
+   this project to verify a specific convention against. Stereo and mono (the only channel counts
+   exercised by every existing SQAM/EBU test) are unaffected either way. 3 new synthetic tests
+   (no real 5.1 reference audio is available): a loud LFE-channel tone must not change integrated
+   loudness at all (proves exclusion); an identical tone on a surround channel must read exactly
+   +1.5dB louder than the same tone on a front channel (proves the 1.41 weight); a stereo
+   regression guard. All 18/18 existing SQAM loudness tests still pass unchanged.
+
+2. **`NMFEngine.decompose`'s multiplicative-update loop guarded `H` against NaN/Infinity after
+   every iteration but had no equivalent guard on `W`** — an asymmetry in what is, by
+   construction, a symmetric algorithm (W and H play mirrored roles in NMF's multiplicative update
+   rule). Once a NaN/Infinity entered `W` — e.g. from a degenerate input magnitude bin — it had no
+   way to self-heal and multiplied itself forward every remaining iteration, permanently poisoning
+   that (component, frequency) cell, while the exact same failure in `H` recovers on the very next
+   iteration. Added the identical per-element guard to `W`'s update. Regression proven directly:
+   a test injecting one NaN magnitude bin into a synthetic STFT matrix was confirmed to fail
+   against the pre-fix code (temporarily reverted and re-run) with a genuinely non-finite `W`,
+   then confirmed to pass clean after restoring the fix.
+
+3. **`TonalMetrics.keySignature` was a hardcoded, wrong-shaped `[0.1]`** on every single analysis
+   — a one-element array despite its own doc comment describing "12 semitone key weights," and
+   despite `ModulationEngine` already computing exactly this kind of per-root correlation
+   internally (`identifyKey`'s Krumhansl-Kessler matching), just never exposing more than the
+   single winning root. Added `ModulationEngine.keyCorrelationProfile(_:)`, reusing the engine's
+   own already-tested correlation/rotation logic to return the full 12-root profile (the
+   strongest major-or-minor correlation at each root) instead of collapsing it to one winner.
+   `DNAReportBuilder` now computes this from the real whole-track mean chromagram — the same
+   vector already used for `chromaProfile`, so this also removed a duplicate inline computation.
+   2 new tests: a pure C-major-shaped chroma vector correctly peaks at root 0; malformed input
+   returns a correctly-shaped (12-element) neutral profile instead of crashing.
+
+4. **`DNAReportBuilder`'s class-level `private var allHPSS` was permanently dead state** — an
+   identically-named *local* variable inside the one function that does the real work
+   completely shadows it for that function's entire scope (confirmed: the class property is never
+   read or written anywhere). Removed.
+
+5. **`MFCCEngine.compute(melSpectrogram:stftEngine:)`'s `stftEngine` parameter was never used**
+   inside the function body, and its only call site (`createMFCC`) constructed a fresh, immediately
+   discarded `STFTEngine` on every single invocation just to satisfy the signature. Confirmed zero
+   external callers of `compute` exist anywhere in the project. Removed the parameter.
+
+**Investigated and found NOT to be dead code — left unchanged, worklist corrected:**
+- `NeuralSeparationEngine.generateMasks` is a real protocol requirement (`SeparationModel`) with a
+  genuine `CoreMLSeparationModel` conformance, called from `separate()` — already accurately
+  documented elsewhere (`docs/Calibration.md`: "interface only, no Core ML model ships").
+- `RhythmEngine.onsetStrength(from:)` (static) is not unreferenced: `GoldenDatasetValidationTests`
+  deliberately uses it as the "naive spectral-flux baseline" half of a real accuracy comparison
+  against the production SuperFlux onset detector. Not dead code; not touched.
+
+**Deliberately left as-is** (public API, unused by the internal pipeline, but correct and not a
+bug — removing any of them would be a breaking change to a published package for no correctness
+benefit): `FilterbankEngine.createChromaFilterbank`, `WaveformRenderer.swift`,
+`SpectrogramRenderer.swift`, and `IntelligenceCache`'s disk-cache `set`/`get` path.
+
+This closes every item on the original four-way audit's ranked list except the four items
+tracked separately under "Instrument / chord / pitch / structure quality — not yet validated"
+(`InstrumentEngine`'s non-determinism, `TraditionalTheoryEngine`'s empty-`cqtMatrix` bug,
+`YINEngine`'s missing test coverage, and `StructureEngine`'s segmentation-accuracy validation),
+which predate this audit and remain open.
+
+**Status:** `swift build` green throughout every fix. Full `swift test`: **94/94 passed, 0
+failures** (4843s) — clean close for this phase.
+
+---
+
+## 🎯 Phase 15 — Closing the "not yet validated" layer: four real bugs, one root-caused and fixed empirically (2026-08-29)
+
+The four items tracked separately from the main audit under README's own "Instrument / chord /
+pitch / structure quality — not yet validated" line (first identified in Phase 10). All four
+closed.
+
+1. **`InstrumentEngine` — a dead masking-correction branch, and genuine, empirically-reproduced
+   non-determinism.** `profile.label == "Piano"` compared against a fingerprint whose real label
+   is `"Piano/Keyboard"` — the comparison never matched, so the percussion-heavy masking
+   correction (meant to relax centroid/flatness sensitivity for piano in dense mixes) silently
+   never ran for any input. Fixed to compare against the real label.
+
+   The non-determinism was reproduced directly, not just inferred: running the real pipeline
+   twice on the same 6 SQAM reference files classified `trpt21_2.wav` as `Brass/Trumpet`
+   (correct) once and `Piano/Keyboard` (wrong) once. Root-caused to the classifier's binary
+   threshold scoring (`if profile.centroidRange.contains(centroid) { score += 0.4 }`) combined
+   with wide, overlapping profile ranges: real audio routinely lands multiple profiles at the
+   *exact same* rounded confidence (e.g. 60%), and which one wins the tie depends on whatever
+   tiny floating-point noise exists upstream. The Metal `batch_dct` compute kernel (MFCC via
+   GPU) was inspected directly and ruled out as that noise source — each thread computes an
+   independent, sequential per-coefficient sum with no cross-thread reduction, so it's
+   deterministic by construction; the likely source is AVFoundation's audio decode/resample
+   path, which Apple doesn't guarantee bit-exact across runs, though the exact origin wasn't
+   pinned down further. Rather than chase an elusive upstream noise source, the classifier
+   itself was made robust to it: binary thresholds replaced with graded scoring (a Gaussian
+   centered on each profile's centroid-range midpoint; a linear taper for flatness), which
+   collapses near-ties at their source instead of leaving the classifier fragile to whatever
+   magnitude of noise happens to exist upstream. Verified with **3 consecutive full-pipeline
+   runs on all 6 real reference files — byte-identical confidence percentages every time**,
+   including the closest remaining near-tie (`gspi35_1.wav`, Brass/Trumpet vs. Vocals/Chorus at
+   53%/53% in every run). A permanent regression guard
+   (`testInstrumentClassification_isDeterministicAcrossRepeatedRuns`) now runs the real pipeline
+   twice within one test and asserts identical output. 2 additional unit tests confirm the
+   masking correction now actually applies, and that scoring genuinely varies with distance from
+   a profile's center rather than clustering at fixed binary sums.
+
+2. **`TraditionalTheoryEngine.analyzeVertical` was always called with a literal empty
+   `cqtMatrix`.** `detectBassNote`'s bounds check (`bin < cqtMatrix.count`) is always false
+   against an empty array, so the detected bass note silently defaulted to bin 0 (C) on every
+   single chord regardless of the real root — any non-C root chord got a spurious "/C" inversion
+   suffix (e.g. a real root-position G major misreported as "G/C"). Wired a real per-chunk CQT
+   transform into `DNAReportBuilder` (the same `CQTEngine` config already independently verified
+   in Phase 10), concatenated the same way as the chromagram, and passed through instead of `[]`.
+   Honestly documented residual limitation: CQT's own frame-count formula differs slightly from
+   the chroma STFT's (no `center` padding), so the two grids can drift by roughly one frame per
+   chunk near chunk boundaries — non-crashing (the existing bounds check already handles it),
+   just not frame-perfect. 5 new tests verify root-position and both inversions resolve to the
+   correct bass note, a non-chord-tone bass is honestly reported rather than clamped, and the old
+   empty-matrix fallback still doesn't crash. (One test-design note: the test chord is C major,
+   not G — a sparse 3-note chroma vector is mathematically ambiguous with the rootless
+   seventh-chord a third below it by construction of the scoring, e.g. G-B-D scores identically
+   as G major or rootless E-minor-7; root 0 has no smaller root that can tie it this way, making
+   it the one unambiguous choice for isolating this specific bug.)
+
+3. **`YINEngine` (time-domain pitch/f0 estimation) had zero test coverage.** Added 6 tests:
+   known synthetic sine tones (A4=440Hz, C6=1046.5Hz, C1=32.7Hz), digital silence resolving to
+   fully unvoiced, a rising pitch glide tracked as a genuine trend rather than aliased octaves,
+   and a real SQAM trumpet recording landing in a musically plausible F0 range. One real,
+   measured limitation surfaced along the way (documented, not hidden): at the engine's own
+   default `frameLength` (2048 samples), a 32.7Hz tone — the engine's own documented `fMin`
+   default — completes only ~3 periods per analysis frame, empirically confirmed too few for
+   this implementation's trough detection (every frame came back unvoiced). Resolves cleanly
+   with a longer `frameLength` (4096, verified); a caller analyzing low-pitched material needs
+   that adjustment from the defaults.
+
+4. **`StructureEngine` (structural segmentation) had only a self-similarity-matrix symmetry
+   test** — never exercised boundary detection or section labeling at all. A real
+   human-annotated dataset (SALAMI) still isn't available (its audio isn't a single downloadable
+   archive — separate, unstarted effort). Added the ground-truth check that *is* available
+   without external data: a synthetic track built from two objectively distinct, alternating
+   sections (different chroma root and different MFCC/timbre profile) with known transition
+   points. 3 new tests confirm detected boundaries land within a generous tolerance of the true
+   transitions, segments cover the track contiguously with no gaps or overlaps, and a too-short
+   input degrades gracefully to an empty result instead of crashing.
+
+**Status:** `swift build` green throughout every fix. Full `swift test`: **111/111 passed, 0
+failures** (5114s) — clean close, no regressions anywhere in the suite. This closes the last
+open item from the original four-way audit.
 
 ---
 

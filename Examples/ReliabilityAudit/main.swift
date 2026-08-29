@@ -233,6 +233,56 @@ func runKeyTask(goldenRoot: String) async -> [TaskResult] {
 
 // MARK: - Task 3: Instrument (IRMAS)
 
+/// Prints a full confusion matrix (rows = true fine-grained class, columns = predicted coarse
+/// label, raw counts) plus per-true-class recall and per-predicted-label precision.
+/// `trueClassAcceptable` defines which predicted label(s) count as "correct" for each true row
+/// (IRMAS/OpenMIC coarse classes are coarser than the fine-grained ground truth, so some true
+/// classes accept more than one predicted column — e.g. IRMAS "cla"/"flu" accept either
+/// Brass/Trumpet or Strings/Synth).
+func printConfusionMatrix(_ confusion: [String: [String: Int]], trueClassAcceptable: [String: [String]]) {
+    let trueClasses = confusion.keys.sorted()
+    let predictedLabels = Set(confusion.values.flatMap { $0.keys }).sorted()
+
+    print("\n=== CONFUSION MATRIX (rows = true class, columns = predicted label, raw counts) ===")
+    let colWidth = 8
+    var header = "true\\pred".padding(toLength: 12, withPad: " ", startingAt: 0)
+    for p in predictedLabels {
+        header += String(p.prefix(colWidth)).padding(toLength: colWidth, withPad: " ", startingAt: 0)
+    }
+    print(header)
+    for t in trueClasses {
+        var row = t.padding(toLength: 12, withPad: " ", startingAt: 0)
+        for p in predictedLabels {
+            let c = confusion[t]?[p] ?? 0
+            row += String(c).padding(toLength: colWidth, withPad: " ", startingAt: 0)
+        }
+        print(row)
+    }
+
+    print("\n=== PER-TRUE-CLASS RECALL (of this true class's audio, % predicted into an acceptable label) ===")
+    for t in trueClasses {
+        let row = confusion[t] ?? [:]
+        let total = row.values.reduce(0, +)
+        guard total > 0 else { continue }
+        let acceptable = Set(trueClassAcceptable[t] ?? [])
+        let hit = row.filter { acceptable.contains($0.key) }.values.reduce(0, +)
+        print("  \(t): \(hit)/\(total) (\(Int(Double(hit) / Double(total) * 100))%)")
+    }
+
+    print("\n=== PER-PREDICTED-LABEL PRECISION (of everything predicted this label, % truly from an acceptable true class) ===")
+    for p in predictedLabels {
+        var totalPredicted = 0, truePositive = 0
+        for t in trueClasses {
+            let c = confusion[t]?[p] ?? 0
+            totalPredicted += c
+            if (trueClassAcceptable[t] ?? []).contains(p) { truePositive += c }
+        }
+        guard totalPredicted > 0 else { continue }
+        print("  \(p): \(truePositive)/\(totalPredicted) (\(Int(Double(truePositive) / Double(totalPredicted) * 100))%)")
+    }
+    print("")
+}
+
 func runIRMASTask(root: String) async -> TaskResult {
     let base = URL(fileURLWithPath: root).resolvingSymlinksInPath()
     guard let classDirs = try? FileManager.default.contentsOfDirectory(at: base, includingPropertiesForKeys: nil) else {
@@ -240,18 +290,32 @@ func runIRMASTask(root: String) async -> TaskResult {
                            sampleCount: nil, dataset: "IRMAS", note: "\(root) not found")
     }
     let perClassLimit = envLimit("RA_IRMAS_PER_CLASS", default: 15)
+    let verbose = ProcessInfo.processInfo.environment["RA_IRMAS_VERBOSE"] == "1"
+    // [trueIRMAScode][predictedCoarseLabel] = count — full confusion matrix, raw counts.
+    var confusion: [String: [String: Int]] = [:]
     var hit = 0, n = 0
     for dir in classDirs.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
         let code = dir.lastPathComponent
         guard let acceptable = irmasToCoarse[code] else { continue }
         guard let files = try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)
             .filter({ $0.pathExtension.lowercased() == "wav" }) else { continue }
+        var classHit = 0, classN = 0
+        var labelCounts: [String: Int] = [:]
         for f in thinned(files.sorted { $0.path < $1.path }, limit: perClassLimit) {
             guard let buf = try? await AudioLoader.load(url: f, targetSampleRate: 22050) else { continue }
             let label = await predictInstrument(samples: buf.samples, sampleRate: 22050)
-            if acceptable.contains(label) { hit += 1 }
-            n += 1
+            if acceptable.contains(label) { hit += 1; classHit += 1 }
+            n += 1; classN += 1
+            labelCounts[label, default: 0] += 1
+            confusion[code, default: [:]][label, default: 0] += 1
         }
+        if verbose && classN > 0 {
+            let dist = labelCounts.sorted { $0.value > $1.value }.map { "\($0.key)=\($0.value)" }.joined(separator: ", ")
+            print("  [\(code)] acceptable=\(acceptable) hit=\(classHit)/\(classN) (\(Int(Double(classHit)/Double(classN)*100))%) predicted: \(dist)")
+        }
+    }
+    if verbose {
+        printConfusionMatrix(confusion, trueClassAcceptable: irmasToCoarse)
     }
     guard n > 0 else {
         return TaskResult(name: "instrument_irmas", status: "not_available", metric: nil, value: nil,
@@ -284,8 +348,25 @@ func runOpenMICTask(root: String) async -> TaskResult {
             positives[String(cols[0]), default: []].insert(String(cols[1]))
         }
     }
+
+    // RA_OPENMIC_TEST_ONLY=1 restricts evaluation to OpenMIC-2018's official held-out test
+    // partition (`partitions/split01_test.csv`) — the partition `Examples/PrototypeTrainer`
+    // never touches. Since `InstrumentEngine`'s fingerprints (Phase 16) were fit on the TRAIN
+    // partition, this is what makes a post-training accuracy measurement fair rather than
+    // contaminated (the classifier being tested on data it was fit to).
+    var candidateKeys = Array(positives.keys).sorted()
+    if ProcessInfo.processInfo.environment["RA_OPENMIC_TEST_ONLY"] == "1" {
+        let testURL = base.appendingPathComponent("partitions/split01_test.csv")
+        guard let testList = try? String(contentsOf: testURL, encoding: .utf8) else {
+            return TaskResult(name: "instrument_openmic", status: "not_available", metric: nil, value: nil,
+                               sampleCount: nil, dataset: "OpenMIC-2018", note: "split01_test.csv not found at \(testURL.path)")
+        }
+        let testKeys = Set(testList.split(separator: "\n").map(String.init))
+        candidateKeys = candidateKeys.filter { testKeys.contains($0) }
+    }
+
     let limit = envLimit("RA_OPENMIC_LIMIT", default: 60)
-    let keys = thinned(Array(positives.keys).sorted(), limit: limit)
+    let keys = thinned(candidateKeys, limit: limit)
 
     var hit = 0, n = 0, loadFailures = 0
     for key in keys {
@@ -310,11 +391,12 @@ func runOpenMICTask(root: String) async -> TaskResult {
         return TaskResult(name: "instrument_openmic", status: "not_available", metric: nil, value: nil,
                            sampleCount: 0, dataset: "OpenMIC-2018", note: note)
     }
+    let testOnly = ProcessInfo.processInfo.environment["RA_OPENMIC_TEST_ONLY"] == "1"
     let note = loadFailures > 0 ? "\(loadFailures) file(s) failed to decode and were skipped" : nil
     return TaskResult(name: "instrument_openmic", status: "measured",
                        metric: "primaryLabel in acceptable set (%)",
                        value: Double(hit) / Double(n) * 100, sampleCount: n,
-                       dataset: "OpenMIC-2018 (20-class, multi-label, relevance≥0.5 threshold, 20,000 clips total)", note: note)
+                       dataset: "OpenMIC-2018 (20-class, multi-label, relevance≥0.5 threshold, 20,000 clips total\(testOnly ? " — held-out test partition only" : ""))", note: note)
 }
 
 // MARK: - Task 5: Pitch / f0 (MDB-stem-synth)

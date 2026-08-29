@@ -48,10 +48,10 @@ public final class MFCCEngine: @unchecked Sendable {
     /// Industry Standard: feature.mfcc()
     public func createMFCC(from samples: [Float]) async -> MFCCResult {
         let mel = await melEngine.createMelSpectrogram(from: samples)
-        return compute(melSpectrogram: mel.melData, stftEngine: STFTEngine(nFFT: 2048, hopLength: 512, sampleRate: 22050))
+        return compute(melSpectrogram: mel.melData)
     }
-    
-    public func compute(melSpectrogram: [Float], stftEngine: STFTEngine) -> MFCCResult {
+
+    public func compute(melSpectrogram: [Float]) -> MFCCResult {
         let nFrames = melSpectrogram.count / nMels
         
         var logMel = [Float](repeating: 0, count: melSpectrogram.count)

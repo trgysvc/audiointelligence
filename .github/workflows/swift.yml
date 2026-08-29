@@ -13,7 +13,7 @@ jobs:
 
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Select Xcode (Swift 6.3 toolchain)
         run: sudo xcode-select -s /Applications/Xcode_26.6.app/Contents/Developer
@@ -32,12 +32,12 @@ jobs:
       - name: Run Scientific Validation Suite
         run: swift test --filter ScientificValidationTests -v
         
-      - name: Run Librosa Parity Suite
-        run: swift test --filter LibrosaParityTests -v
+      - name: Run DSP Ground Truth Suite
+        run: swift test --filter DSPGroundTruthTests -v
 
       - name: Archive Build Artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: build-logs
           path: .build/*.log

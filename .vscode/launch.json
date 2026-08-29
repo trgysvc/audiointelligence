@@ -119,6 +119,46 @@
             "target": "SQAMAuditTool",
             "configuration": "release",
             "preLaunchTask": "swift: Build Release SQAMAuditTool"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:audiointelligence}",
+            "name": "Debug ReliabilityAudit",
+            "target": "ReliabilityAudit",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug ReliabilityAudit"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:audiointelligence}",
+            "name": "Release ReliabilityAudit",
+            "target": "ReliabilityAudit",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release ReliabilityAudit"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:audiointelligence}",
+            "name": "Debug PrototypeTrainer",
+            "target": "PrototypeTrainer",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug PrototypeTrainer"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:audiointelligence}",
+            "name": "Release PrototypeTrainer",
+            "target": "PrototypeTrainer",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release PrototypeTrainer"
         }
     ]
 }

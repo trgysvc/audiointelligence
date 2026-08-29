@@ -12,9 +12,7 @@ public actor DNAReportBuilder {
     private let device: Device
     private let mode: Mode
     private let metalEngine: MetalEngine
-    
-    private var allHPSS: [HPSSResult?] = []
-    
+
     public init(
         device: Device = .automatic, 
         mode: Mode = .balanced,
@@ -87,6 +85,7 @@ public actor DNAReportBuilder {
         var allScience = [ScienceMetrics?](repeating: nil, count: maxExpectedFragments)
         var allTonnetz = [[Float]?](repeating: nil, count: maxExpectedFragments)
         var allChroma = [[[Float]]?](repeating: nil, count: maxExpectedFragments)
+        var allCQT = [[[Float]]?](repeating: nil, count: maxExpectedFragments)
         var allNMF = [Float?](repeating: nil, count: maxExpectedFragments)
         var allPiptrack = [Float?](repeating: nil, count: maxExpectedFragments)
         var allYIN = [PitchResult?](repeating: nil, count: maxExpectedFragments)
@@ -183,6 +182,16 @@ public actor DNAReportBuilder {
             let stftChroma = await STFTEngine(nFFT: 8192, hopLength: 512, sampleRate: chunk.sampleRate, metalEngine: metalEngine).analyze(chunk.samples)
             let chromaRaw = ChromaEngine(nFFT: 8192, sampleRate: chunk.sampleRate).chromagram(stft: stftChroma)
             allChroma[idx] = chromaRaw // Forensic Fix: Store all 12 bins
+
+            // Real CQT for bass-note/inversion detection (`TraditionalTheoryEngine.
+            // detectBassNote`) — was always passed a literal `[]`, so `dominantBin` never
+            // updated from its 0 default and every chord's bass note silently read as "C"
+            // regardless of the real root, corrupting inversion labels for every non-C chord.
+            // Same hop (512) as the chroma STFT keeps frame indices closely aligned; CQT's own
+            // frame-count formula differs slightly from STFT's (no `center` padding), so the
+            // two grids can drift by roughly one frame per chunk near chunk boundaries —
+            // `detectBassNote`'s existing bounds check already handles that safely.
+            allCQT[idx] = CQTEngine(nBins: 84, binsPerOctave: 12, fMin: 32.7, sampleRate: chunk.sampleRate, hopLength: 512).transform(chunk.samples)
             
             let yin = YINEngine(sampleRate: chunk.sampleRate).analyze(samples: chunk.samples)
             allYIN[idx] = yin
@@ -359,6 +368,19 @@ public actor DNAReportBuilder {
         
         let totalChromaFrames = fullChromagramBins[0].count
         Swift.print("📊 [TRACE] Forensic Chroma Validation: \(totalChromaFrames) frames captured across 12 semitones.")
+
+        // Transpose and merge the global CQT matrix [84][TotalFrames], same chunk order as
+        // the chromagram above.
+        var fullCQTBins = [[Float]](repeating: [], count: 84)
+        for fragmentMapping in allCQT {
+            if let fragment = fragmentMapping {
+                for b in 0..<84 {
+                    if b < fragment.count {
+                        fullCQTBins[b].append(contentsOf: fragment[b])
+                    }
+                }
+            }
+        }
         
         Swift.print("🔍 [TRACE] Step 1: Starting Reduction Analysis...")
         let reductionRes = await reductionEng.reduce(chromagram: fullChromagramBins, segments: finalSegments, sampleRate: sampleRate)
@@ -374,7 +396,7 @@ public actor DNAReportBuilder {
         }
         let detectedGlobalKey = ModulationEngine().detectKey(meanChromaVec)
         let verticalKey = detectedGlobalKey == "Unclassified" ? "\(reductionRes.fundamentalNote) Major" : detectedGlobalKey
-        let verticalRes = theoryEng.analyzeVertical(chromagram: fullChromagramBins, cqtMatrix: [], key: verticalKey)
+        let verticalRes = theoryEng.analyzeVertical(chromagram: fullChromagramBins, cqtMatrix: fullCQTBins, key: verticalKey)
         Swift.print("✅ [TRACE] Step 2: Vertical Theory Analysis Complete (\(verticalRes.count) chords).")
         await Task.yield()
         
@@ -672,6 +694,22 @@ public actor DNAReportBuilder {
             && measuredEffectiveBits > 0
             && sourceBitDepth > measuredEffectiveBits
 
+        // Whole-track mean chroma (reused below for both `chromaProfile` and, via the
+        // Krumhansl-Kessler correlation profile, `TonalMetrics.keySignature`).
+        let meanChromaProfile: [Float] = allChroma.reduce([Float](repeating: 0, count: 12)) { res, fragment in
+            var next = res
+            for c in 0..<12 {
+                if c < fragment.count {
+                    let binFrames = fragment[c]
+                    var binSum: Float = 0
+                    vDSP_sve(binFrames, 1, &binSum, vDSP_Length(binFrames.count))
+                    next[c] += binSum / Float(max(1, binFrames.count))
+                }
+            }
+            return next
+        }.map { $0 / Float(max(1, allChroma.count)) }
+        let keySignatureProfile = ModulationEngine().keyCorrelationProfile(meanChromaProfile)
+
         let finalAnalysis = MusicDNAAnalysis(
             fileName: filename,
             rhythm: RhythmMetrics(bpm: meanBPM, bpmConfidence: meanConfidence, beatConsistency: Float(globalBeatConsistency), onsetMean: allOnsets.map{$0.mean}.reduce(0,+)/Float(max(1,allOnsets.count)), onsetPeak: allOnsets.map{$0.peak}.max() ?? 0, characterize: globalBeatConsistency < 0.05 ? "Locked/Stable" : "Organic/Varied"),
@@ -680,7 +718,7 @@ public actor DNAReportBuilder {
                 keyConfidence: reduction.stabilityScore, 
                 strength: reduction.stabilityScore, 
                 harmonicStability: reduction.stabilityScore,
-                keySignature: [0.1], // Legacy
+                keySignature: keySignatureProfile,
                 tendency: reduction.stabilityScore > 0.8 ? "Stable" : "Evolving",
                 scaleType: "Diatonic/Reduced",
                 tuningSystem: "Equal Temperament"
@@ -743,18 +781,7 @@ public actor DNAReportBuilder {
                     status: "Verified"
                 )
             }(),
-            waveformPeaks: waveformEnvelope, chromaProfile: allChroma.reduce([Float](repeating: 0, count: 12)) { res, fragment in
-                var next = res
-                for c in 0..<12 {
-                    if c < fragment.count {
-                        let binFrames = fragment[c]
-                        var binSum: Float = 0
-                        vDSP_sve(binFrames, 1, &binSum, vDSP_Length(binFrames.count))
-                        next[c] += binSum / Float(max(1, binFrames.count))
-                    }
-                }
-                return next
-            }.map { $0 / Float(max(1, allChroma.count)) }, 
+            waveformPeaks: waveformEnvelope, chromaProfile: meanChromaProfile,
             segments: Array(finalSegments.prefix(256)), // whole-track coverage, not just first 45s
             audit: {
                 // Was entirely hardcoded (identical literal values on every single analysis,

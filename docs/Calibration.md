@@ -17,6 +17,7 @@ on the *tested* scenario — not exhaustive coverage, and not the statistical es
 | AES17 THD+N / SMPTE IMD | known-distortion signals | exact | synthetic references |
 | ITU-R 468 noise weighting | the standard curve | ±0.03 dB | analytic reference |
 | STFT / mel | librosa 0.11 | corr 1.00000, 0% residual | librosa parity |
+| A-weighting (IEC 61672-1) | closed-form analytic curve | Δ ≤ 0.01 dB through 100Hz–2kHz | analytic reference |
 | Bit depth / sample rate / duration | container header | exact | header read |
 
 ## 2. Methodology
@@ -33,10 +34,12 @@ MIREX-annotated) — there we report measured accuracy, not perfection (see READ
 
 ## 3. Known limitations
 
-- **CQT engine**: the bundled Constant-Q transform has a complex-FFT bug and is **not** used; key
-  and chroma rely on a high-resolution STFT chromagram instead.
+- **CQT engine**: its correctness bugs (aliasing filter, energy rescale, octave alignment, note
+  order) were fixed and independently cross-checked against a reference implementation (see
+  DEVLOG Phase 10) — it is validated as a standalone engine, but still has **no** downstream
+  consumer in this pipeline; key and chroma rely on a high-resolution STFT chromagram instead.
 - **Neural stem separation**: the `NeuralSeparationEngine` is an interface only — no Core ML model
   ships, and it is not part of `analyze()`.
 
 ---
-*Last reviewed: 2026-06-16 — AudioIntelligence 8.2.1. See [Integration.md](Integration.md).*
+*Last reviewed: 2026-08-29 — AudioIntelligence 8.2.2. See [Integration.md](Integration.md).*

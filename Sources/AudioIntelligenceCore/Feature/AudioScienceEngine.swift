@@ -254,33 +254,7 @@ public final class AudioScienceEngine: Sendable {
     }
     
     // MARK: - DSP Helpers
-    
-    private func applyNotchFilter(samples: [Float], frequency: Float) -> [Float] {
-        // Simple IIR Notch Filter (Double precision for coefficient stability)
-        let w0 = 2.0 * Double.pi * Double(frequency) / Double(sampleRate)
-        let alpha = sin(w0) / (2.0 * 0.707) // Q = 0.707
-        
-        let b0 = 1.0
-        let b1 = -2.0 * cos(w0)
-        let b2 = 1.0
-        let a0 = 1.0 + alpha
-        let a1 = -2.0 * cos(w0)
-        let a2 = 1.0 - alpha
-        
-        let coeffs: [Double] = [
-            b0/a0, 
-            b1/a0, 
-            b2/a0, 
-            a1/a0, 
-            a2/a0
-        ]
-        
-        var input = samples
-        var output = [Float](repeating: 0, count: samples.count)
-        applyBiquad(input: &input, output: &output, coeffs: coeffs)
-        return output
-    }
-    
+
     private func applyBiquad(input: inout [Float], output: inout [Float], coeffs: [Double]) {
         let n = input.count
         guard n > 0 else { return }

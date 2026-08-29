@@ -60,6 +60,21 @@ public final class ModulationEngine: Sendable {
         identifyKey(chroma)
     }
 
+    /// Per-root key-correlation profile: for each of the 12 pitch classes, the strongest
+    /// (major- or minor-mode) Krumhansl-Kessler correlation with that root — the same
+    /// per-root matching `identifyKey` already performs internally, exposed as the full
+    /// 12-element profile instead of collapsing it to just the winning root. Was previously
+    /// always a hardcoded, wrong-shaped `[0.1]` single-element placeholder in
+    /// `TonalMetrics.keySignature` (its own doc comment says "12 semitone key weights").
+    public func keyCorrelationProfile(_ chroma: [Float]) -> [Float] {
+        guard chroma.count == 12 else { return [Float](repeating: 0, count: 12) }
+        return (0..<12).map { root in
+            let major = correlate(chroma, rotate(Self.asMajor, by: root))
+            let minor = correlate(chroma, rotate(Self.asMinor, by: root))
+            return max(major, minor)
+        }
+    }
+
     // Krumhansl-Kessler key profiles, matched with Pearson correlation (the textbook
     // Krumhansl-Schmuckler key finder).
     private static let asMajor: [Float] = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88]

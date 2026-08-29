@@ -47,4 +47,29 @@ final class InstrumentBaselineTests: XCTestCase {
         print("📊 Instrument baseline over \(total): primary=\(primaryHits) (\(Int(Double(primaryHits)/n*100))%)  top2=\(top2Hits) (\(Int(Double(top2Hits)/n*100))%)")
         XCTAssertGreaterThan(total, 0)
     }
+
+    /// `InstrumentEngine.predict`'s spectral scoring used binary thresholds (`if centroidRange.
+    /// contains(...) { score += 0.4 }`) with wide, overlapping profile ranges — real audio
+    /// routinely landed multiple profiles at the *exact same* rounded confidence, and which one
+    /// won the tie depended on tiny upstream floating-point noise. Empirically confirmed on
+    /// this exact file: two full-pipeline runs on unmodified code classified it as
+    /// "Brass/Trumpet" once and "Piano/Keyboard" once. Replaced binary thresholds with graded
+    /// (Gaussian centroid / linear flatness) scoring, which — re-verified with 3 consecutive
+    /// full-pipeline runs during development, byte-identical confidence percentages every time
+    /// — collapses the near-ties at their source. This runs the real pipeline twice in one test
+    /// as a permanent regression guard against the same bug recurring.
+    func testInstrumentClassification_isDeterministicAcrossRepeatedRuns() async throws {
+        let path = "\(sqamDir)/trpt21_2.wav"
+        guard FileManager.default.fileExists(atPath: path) else {
+            throw XCTSkip("SQAM trpt21_2.wav not present locally")
+        }
+        let url = URL(fileURLWithPath: path)
+        let first = try await AudioIntelligence().analyzeRawAggregate(url: url).instruments
+        let second = try await AudioIntelligence().analyzeRawAggregate(url: url).instruments
+
+        XCTAssertEqual(first.primaryLabel, second.primaryLabel,
+                        "the same file through the same pipeline must classify identically run-to-run")
+        XCTAssertEqual(first.predictions.map(\.label), second.predictions.map(\.label),
+                        "the full ranked prediction order must also be stable, not just the winner")
+    }
 }

@@ -84,6 +84,17 @@ public final class NMFEngine: Sendable {
                         
                         let offsetW = c * nFreqs
                         vDSP_vmul(wBase.advanced(by: offsetW), 1, numerator_W, 1, wBase.advanced(by: offsetW), 1, vDSP_Length(nFreqs))
+
+                        // Same guard as the H update below: a NaN/Infinity here (e.g. from an
+                        // extreme or degenerate input magnitude) would otherwise multiply itself
+                        // forward every remaining iteration — H self-heals per element each
+                        // iteration, W previously had no equivalent guard (asymmetric).
+                        for f in 0..<nFreqs {
+                            let idx = offsetW + f
+                            if wBase[idx].isNaN || wBase[idx].isInfinite {
+                                wBase[idx] = 1e-10
+                            }
+                        }
                     }
                 }
             }

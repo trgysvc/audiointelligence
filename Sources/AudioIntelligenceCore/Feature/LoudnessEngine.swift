@@ -42,7 +42,25 @@ public final class LoudnessEngine: Sendable {
         let weightedChannels = channels.map { applyBS1770Filter(samples: $0) }
         
         // 2. High-Precision Power Calculation (Sum of Channel Energies)
-        // BS.1770-4: Loudness is based on the sum of weighted channel energies.
+        // BS.1770-4: Loudness is based on the sum of channel-weighted energies:
+        // Σ G_i * meanSquare_i, where G_i is 1.0 for front L/R/C, 1.41 (+1.5dB) for surround
+        // channels, and 0 for LFE (excluded entirely) — per the standard's own channel-weighting
+        // table (§2.4), matching the reference `ffmpeg ebur128` implementation this engine is
+        // validated against (`libavfilter/f_ebur128.c`). Only the unambiguous, universally-agreed
+        // 6-channel 5.1 layout (L, R, C, LFE, Ls, Rs — the standard WAV/CoreAudio channel order)
+        // is weighted explicitly; every other channel count (including 7.1, where the channel
+        // order is not consistent across vendors, and no real 7.1 test material is available to
+        // verify against) keeps the conservative default weight of 1.0, matching stereo/mono
+        // behavior (unaffected by this fix either way).
+        let channelWeights: [Float] = {
+            guard nChannels == 6 else { return [Float](repeating: 1.0, count: nChannels) }
+            var w = [Float](repeating: 1.0, count: 6)
+            w[3] = 0.0   // LFE — excluded from loudness summation
+            w[4] = 1.41  // Ls
+            w[5] = 1.41  // Rs
+            return w
+        }()
+
         var totalSquared = [Float](repeating: 0, count: nFrames)
         for ch in 0..<nChannels {
             let squared: [Float]
@@ -57,11 +75,9 @@ public final class LoudnessEngine: Sendable {
                 }
                 squared = sqBuffer
             }
-            
-            // Channel weights: L/R/C = 1.0, Surrounds = 1.41 (+1.5 dB)
-            // For now, we assume 1.0 for L/R in typical layouts. 
-            // In a pro implementation, we check channel map.
-            vDSP_vadd(totalSquared, 1, squared, 1, &totalSquared, 1, vDSP_Length(nFrames))
+
+            var weight = channelWeights[ch]
+            vDSP_vsma(squared, 1, &weight, totalSquared, 1, &totalSquared, 1, vDSP_Length(nFrames))
         }
         
         // Step B: Compute Double Precision Prefix Sum
