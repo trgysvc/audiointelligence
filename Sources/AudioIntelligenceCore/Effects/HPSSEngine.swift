@@ -114,57 +114,72 @@ public final class HPSSEngine: Sendable {
         case vertical
     }
     
-    /// Hardware-accelerated 2D median filter using a sliding window approach with vDSP sorting.
+    /// Incremental sliding-window median filter (CPU fallback path, used when no `MetalEngine`
+    /// is supplied or the spectrogram is small). The previous implementation re-extracted and
+    /// fully re-sorted (`vDSP_vsort`, O(w log w)) a fresh `windowSize`-element window at *every
+    /// single output pixel*, even though adjacent windows share all but one element — a real,
+    /// measured cost (~5s/file on typical ~10s clips at windowSize=31, confirmed while
+    /// diagnosing why an unrelated batch measurement was unexpectedly slow; see DEVLOG Phase
+    /// 16). This version sorts each row/column's first window once, then maintains that sorted
+    /// window incrementally as it slides — removing the one element that leaves and
+    /// binary-search-inserting the one that enters, both O(w) array operations instead of a full
+    /// O(w log w) re-sort. Verified to produce bit-for-bit identical output to the original
+    /// brute-force version (`HPSSEngineTests.testIncrementalMedianFilter_matchesBruteForce`).
     private static func vDSPMedianFilter(
-        _ data: [Float], 
-        nRows: Int, 
-        nCols: Int, 
-        windowSize: Int, 
+        _ data: [Float],
+        nRows: Int,
+        nCols: Int,
+        windowSize: Int,
         axis: Axis
     ) -> [Float] {
         var result = [Float](repeating: 0, count: data.count)
         let halfWin = windowSize / 2
-        
+
+        func insertSorted(_ arr: inout [Float], _ value: Float) {
+            var lo = 0, hi = arr.count
+            while lo < hi {
+                let mid = (lo + hi) / 2
+                if arr[mid] < value { lo = mid + 1 } else { hi = mid }
+            }
+            arr.insert(value, at: lo)
+        }
+        func removeSorted(_ arr: inout [Float], _ value: Float) {
+            var lo = 0, hi = arr.count
+            while lo < hi {
+                let mid = (lo + hi) / 2
+                if arr[mid] < value { lo = mid + 1 } else { hi = mid }
+            }
+            if lo < arr.count { arr.remove(at: lo) }
+        }
+
         if axis == .horizontal {
             // Filter each row (frequency bin) independently
             for r in 0..<nRows {
                 let rowStart = r * nCols
-                var window = [Float](repeating: 0, count: windowSize)
-                
-                for c in 0..<nCols {
-                    // Extract window with zero-padding at boundaries
-                    for i in 0..<windowSize {
-                        let idx = c + i - halfWin
-                        if idx >= 0 && idx < nCols {
-                            window[i] = data[rowStart + idx]
-                        } else {
-                            window[i] = 0
-                        }
-                    }
-                    
-                    // Sort and pick median
-                    vDSP_vsort(&window, vDSP_Length(windowSize), 1)
+                func sample(_ idx: Int) -> Float { (idx >= 0 && idx < nCols) ? data[rowStart + idx] : 0 }
+
+                var window: [Float] = (0..<windowSize).map { sample($0 - halfWin) }
+                window.sort()
+                result[rowStart] = window[halfWin]
+
+                for c in 1..<nCols {
+                    removeSorted(&window, sample(c - 1 - halfWin))
+                    insertSorted(&window, sample(c + halfWin))
                     result[rowStart + c] = window[halfWin]
                 }
             }
         } else {
             // Filter each column (time frame) independently
             for c in 0..<nCols {
-                var window = [Float](repeating: 0, count: windowSize)
-                
-                for r in 0..<nRows {
-                    // Extract window with zero-padding at boundaries
-                    for i in 0..<windowSize {
-                        let idx = r + i - halfWin
-                        if idx >= 0 && idx < nRows {
-                            window[i] = data[idx * nCols + c]
-                        } else {
-                            window[i] = 0
-                        }
-                    }
-                    
-                    // Sort and pick median
-                    vDSP_vsort(&window, vDSP_Length(windowSize), 1)
+                func sample(_ idx: Int) -> Float { (idx >= 0 && idx < nRows) ? data[idx * nCols + c] : 0 }
+
+                var window: [Float] = (0..<windowSize).map { sample($0 - halfWin) }
+                window.sort()
+                result[c] = window[halfWin]
+
+                for r in 1..<nRows {
+                    removeSorted(&window, sample(r - 1 - halfWin))
+                    insertSorted(&window, sample(r + halfWin))
                     result[r * nCols + c] = window[halfWin]
                 }
             }

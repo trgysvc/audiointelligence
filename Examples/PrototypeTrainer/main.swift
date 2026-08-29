@@ -1,7 +1,8 @@
 // PrototypeTrainer — computes InstrumentEngine's 6 coarse-class prototype fingerprints
-// (centroid range, flatness ceiling, mean MFCC) from real OpenMIC-2018 TRAINING data,
-// replacing the original hand-typed placeholder values (which were never fit to any real
-// audio at all). See DEVLOG Phase 16.
+// (centroid, flatness, low-band energy ratio, percussive energy ratio — all as Gaussian
+// mean+SD — plus mean MFCC) from real OpenMIC-2018 TRAINING data, replacing the original
+// hand-typed placeholder values (which were never fit to any real audio at all). See DEVLOG
+// Phase 16.
 //
 // Methodology:
 //   - Uses OpenMIC-2018's OFFICIAL train/test split (`partitions/split01_train.csv`) — only
@@ -20,16 +21,27 @@
 //     instruments' timbre into both prototypes. This is real data, not a workaround: many
 //     OpenMIC clips get skipped this way, which is itself an honest signal about how much of
 //     real music isn't single-source — separate from prototype quality.
-//   - Outputs mean +/- 1 standard deviation for centroid (feeds the existing Gaussian
-//     centroid-scoring formula's center/half-width directly) and flatness (mean + 1 SD as the
-//     "typical ceiling" for the linear flatness taper), and the mean 10-coefficient MFCC
-//     vector, ready to paste into `InstrumentEngine.swift`.
+//   - Every one of the 6 coarse classes gets a mean+SD for ALL FOUR spatial/spectral-shape
+//     features (centroid, flatness, low-band energy ratio, percussive energy ratio) — not just
+//     the classes each feature was originally motivated by (Bass/low-band, Drums/percussive).
+//     Feature values are class-independent per-recording measurements; withholding a feature
+//     from a class removes exactly the information needed to separate that class from the ones
+//     that DO get it (e.g. a low-lowband Piano recording needs Piano's own lowband distribution
+//     to be correctly placed away from Bass). Also reports flatness/low-band/percussive skew
+//     (third standardized moment) so a badly non-Gaussian distribution is visible before fitting
+//     a Gaussian score to it.
 //
 // Usage: swift run -c release PrototypeTrainer
 
 import Foundation
 import AudioIntelligence
 import AudioIntelligenceCore
+import AudioIntelligenceMetal
+import Accelerate
+
+// Shared GPU engine — passed to `HPSSEngine` so its 2D median filter offloads to Metal instead
+// of the CPU fallback (real spectrograms here are always above the GPU-dispatch threshold).
+let sharedMetalEngine = MetalEngine()
 
 let coarseClasses = ["Piano/Keyboard", "Bass (Acoustic/Electric)", "Brass/Trumpet", "Vocals/Chorus", "Drums/Percussion", "Strings/Synth"]
 
@@ -52,18 +64,37 @@ let openmicToSingleCoarse: [String: String] = [
     "voice": "Vocals/Chorus",
 ]
 
-struct Accumulator {
-    var count = 0
-    var centroidSum: Double = 0, centroidSqSum: Double = 0
-    var flatnessSum: Double = 0, flatnessSqSum: Double = 0
-    var mfccSum = [Double](repeating: 0, count: 10)
+
+/// Running moment accumulator (sum, sum of squares, sum of cubes) for one scalar feature —
+/// enough to compute mean, SD, and skewness in one pass without storing every raw value.
+struct MomentAccumulator {
+    var sum: Double = 0, sqSum: Double = 0, cubeSum: Double = 0
+    mutating func add(_ x: Double) { sum += x; sqSum += x * x; cubeSum += x * x * x }
+    func mean(_ n: Int) -> Double { n > 0 ? sum / Double(n) : 0 }
+    func sd(_ n: Int) -> Double {
+        guard n > 1 else { return 0 }
+        let m = mean(n)
+        return max(0, sqSum / Double(n) - m * m).squareRoot()
+    }
+    /// Fisher-Pearson standardized skewness: 0 = symmetric, >0 = right-tailed, <0 = left-tailed.
+    /// Values roughly in [-0.5, 0.5] are "close to symmetric"; beyond +-1 is notably skewed.
+    func skewness(_ n: Int) -> Double {
+        guard n > 2 else { return 0 }
+        let m = mean(n)
+        let variance = max(1e-12, sqSum / Double(n) - m * m)
+        let sd = variance.squareRoot()
+        let thirdMoment = cubeSum / Double(n) - 3 * m * (sqSum / Double(n)) + 2 * m * m * m
+        return thirdMoment / (sd * sd * sd)
+    }
 }
 
-func stddev(sum: Double, sqSum: Double, n: Int) -> Double {
-    guard n > 1 else { return 0 }
-    let mean = sum / Double(n)
-    let variance = max(0, sqSum / Double(n) - mean * mean)
-    return variance.squareRoot()
+struct Accumulator {
+    var count = 0
+    var centroid = MomentAccumulator()
+    var flatness = MomentAccumulator()
+    var lowBand = MomentAccumulator()
+    var percussive = MomentAccumulator()
+    var mfccSum = [Double](repeating: 0, count: 10)
 }
 
 @main
@@ -122,13 +153,15 @@ struct PrototypeTrainer {
             let mfccEngine = MFCCEngine(melEngine: mel, nMFCC: 20)
             let mfcc = await mfccEngine.createMFCC(from: buf.samples)
             let mfccVec = Array(mfcc.mfcc.prefix(10))
+            let lowBand = DSPHelpers.lowBandEnergyRatio(stft: stft, cutoffHz: 250)
+            let hpss = HPSSEngine(winHarm: 31, winPerc: 31, metalEngine: sharedMetalEngine).analyze(stft: stft)
 
             var acc = accumulators[coarse]!
             acc.count += 1
-            acc.centroidSum += Double(specRaw.centroidHz)
-            acc.centroidSqSum += Double(specRaw.centroidHz) * Double(specRaw.centroidHz)
-            acc.flatnessSum += Double(specRaw.flatness)
-            acc.flatnessSqSum += Double(specRaw.flatness) * Double(specRaw.flatness)
+            acc.centroid.add(Double(specRaw.centroidHz))
+            acc.flatness.add(Double(specRaw.flatness))
+            acc.lowBand.add(Double(lowBand))
+            acc.percussive.add(Double(hpss.percussiveEnergyRatio))
             for i in 0..<min(10, mfccVec.count) {
                 acc.mfccSum[i] += Double(mfccVec[i])
             }
@@ -142,26 +175,31 @@ struct PrototypeTrainer {
 
         print("\n=== Training complete: \(processed) processed, \(skippedAmbiguous) skipped (ambiguous/multi-label), \(skippedMissing) skipped (missing file), \(skippedLoadFailed) skipped (load failed) ===\n")
 
+        print("=== SKEWNESS CHECK (0 = symmetric; roughly |skew| < 1 is close enough for a Gaussian score) ===")
+        for cls in coarseClasses {
+            let a = accumulators[cls]!
+            guard a.count > 2 else { continue }
+            print(String(format: "  %@: flatness skew=%.2f  lowBand skew=%.2f  percussive skew=%.2f",
+                          cls, a.flatness.skewness(a.count), a.lowBand.skewness(a.count), a.percussive.skewness(a.count)))
+        }
+        print("")
+
         for cls in coarseClasses {
             let a = accumulators[cls]!
             guard a.count > 0 else { print("// \(cls): NO SAMPLES\n"); continue }
             let n = Double(a.count)
-            let meanCentroid = a.centroidSum / n
-            let sdCentroid = stddev(sum: a.centroidSum, sqSum: a.centroidSqSum, n: a.count)
-            let meanFlatness = a.flatnessSum / n
-            let sdFlatness = stddev(sum: a.flatnessSum, sqSum: a.flatnessSqSum, n: a.count)
             let meanMfcc = a.mfccSum.map { $0 / n }
+            let mfccStr = meanMfcc.map { String(format: "%.4f", $0) }.joined(separator: ", ")
 
             print("// \(cls): n=\(a.count)")
-            print(String(format: "//   centroid: mean=%.1f sd=%.1f", meanCentroid, sdCentroid))
-            print(String(format: "//   flatness: mean=%.4f sd=%.4f", meanFlatness, sdFlatness))
-
-            let lo = max(0.0, meanCentroid - sdCentroid)
-            let hi = meanCentroid + sdCentroid
-            let flatMax = min(1.0, meanFlatness + sdFlatness)
-            let mfccStr = meanMfcc.map { String(format: "%.4f", $0) }.joined(separator: ", ")
-            print(String(format: "centroidRange: %.1f...%.1f,", lo, hi))
-            print(String(format: "flatnessMax: %.4f,", flatMax))
+            print(String(format: "//   centroid:   mean=%.1f sd=%.1f", a.centroid.mean(a.count), a.centroid.sd(a.count)))
+            print(String(format: "//   flatness:   mean=%.4f sd=%.4f", a.flatness.mean(a.count), a.flatness.sd(a.count)))
+            print(String(format: "//   lowBand:    mean=%.4f sd=%.4f", a.lowBand.mean(a.count), a.lowBand.sd(a.count)))
+            print(String(format: "//   percussive: mean=%.4f sd=%.4f", a.percussive.mean(a.count), a.percussive.sd(a.count)))
+            print(String(format: "centroidMean: %.1f, centroidSD: %.1f,", a.centroid.mean(a.count), a.centroid.sd(a.count)))
+            print(String(format: "flatnessMean: %.4f, flatnessSD: %.4f,", a.flatness.mean(a.count), a.flatness.sd(a.count)))
+            print(String(format: "lowBandMean: %.4f, lowBandSD: %.4f,", a.lowBand.mean(a.count), a.lowBand.sd(a.count)))
+            print(String(format: "percussiveMean: %.4f, percussiveSD: %.4f,", a.percussive.mean(a.count), a.percussive.sd(a.count)))
             print("mfccPattern: [\(mfccStr)],")
             print("")
         }

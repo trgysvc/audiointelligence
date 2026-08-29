@@ -14,6 +14,13 @@
 
 import Foundation
 import AudioIntelligenceCore
+import AudioIntelligenceMetal
+
+// Shared GPU engine — passed to every `HPSSEngine` call below so its 2D median filter (winHarm/
+// winPerc=31) offloads to Metal instead of falling back to the CPU path (real spectrograms here
+// are always well above the `nFrames*nFreqs > 10000` GPU-dispatch threshold). Reused across
+// calls rather than constructed per-file: it holds a persistent device/command queue.
+let sharedMetalEngine = MetalEngine()
 
 // MARK: - Report model
 
@@ -111,7 +118,9 @@ func predictInstrument(samples: [Float], sampleRate: Double) async -> String {
     let mel = MelSpectrogramEngine(stftEngine: stftEngine, nMels: 128)
     let mfccEngine = MFCCEngine(melEngine: mel, nMFCC: 20)
     let mfcc = await mfccEngine.createMFCC(from: samples)
-    let result = InstrumentEngine().predict(spectral: spectral, mfcc: Array(mfcc.mfcc.prefix(10)))
+    let lowBand = DSPHelpers.lowBandEnergyRatio(stft: stft, cutoffHz: 250)
+    let hpss = HPSSEngine(winHarm: 31, winPerc: 31, metalEngine: sharedMetalEngine).analyze(stft: stft)
+    let result = InstrumentEngine().predict(spectral: spectral, mfcc: Array(mfcc.mfcc.prefix(10)), lowBandEnergyRatio: lowBand, percussiveEnergyRatio: hpss.percussiveEnergyRatio)
     return result.primaryLabel
 }
 
@@ -279,6 +288,423 @@ func printConfusionMatrix(_ confusion: [String: [String: Int]], trueClassAccepta
         }
         guard totalPredicted > 0 else { continue }
         print("  \(p): \(truePositive)/\(totalPredicted) (\(Int(Double(truePositive) / Double(totalPredicted) * 100))%)")
+    }
+    print("")
+}
+
+/// For the first `perClass` MISCLASSIFIED files in each of `codes` (an IRMAS class code),
+/// prints the full `InstrumentEngine` score-component breakdown (centroidScore, flatnessScore,
+/// timbreScore) for both the winning (wrong) label and every label in the true class's
+/// acceptable set — isolates which component actually drove the wrong decision, rather than
+/// guessing from aggregate confusion-matrix statistics alone.
+func runScoreBreakdownDiagnostic(root: String, codes: [String], perClass: Int) async {
+    let base = URL(fileURLWithPath: root).resolvingSymlinksInPath()
+    for code in codes {
+        guard let acceptable = irmasToCoarse[code] else { continue }
+        let dir = base.appendingPathComponent(code)
+        guard let files = try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)
+            .filter({ $0.pathExtension.lowercased() == "wav" }).sorted(by: { $0.path < $1.path }) else { continue }
+
+        print("\n### [\(code)] acceptable=\(acceptable) — first \(perClass) MISCLASSIFIED examples ###")
+        var shown = 0
+        for f in files {
+            if shown >= perClass { break }
+            guard let buf = try? await AudioLoader.load(url: f, targetSampleRate: 22050) else { continue }
+
+            let stftEngine = STFTEngine(nFFT: 2048, hopLength: 512, sampleRate: 22050)
+            let stft = await stftEngine.analyze(buf.samples)
+            let specRaw = SpectralEngine(sampleRate: 22050).analyze(stft: stft, samples: buf.samples)
+            let spectral = AdvancedSpectralMetrics(
+                centroid: specRaw.centroidHz, rolloff: specRaw.rolloffHz, flatness: specRaw.flatness,
+                flux: specRaw.flux, skewness: specRaw.skewness, kurtosis: specRaw.kurtosis,
+                bandwidth: specRaw.bandwidthHz, zcr: specRaw.zcr, dynamicRange: specRaw.spectralCrestFactor,
+                rmsMean: specRaw.rmsMean, rmsMax: specRaw.rmsMax, brightnessDescription: "", fullMagnitudes: []
+            )
+            let mel = MelSpectrogramEngine(stftEngine: stftEngine, nMels: 128)
+            let mfccEngine = MFCCEngine(melEngine: mel, nMFCC: 20)
+            let mfcc = await mfccEngine.createMFCC(from: buf.samples)
+            let lowBand = DSPHelpers.lowBandEnergyRatio(stft: stft, cutoffHz: 250)
+            let hpss = HPSSEngine(winHarm: 31, winPerc: 31, metalEngine: sharedMetalEngine).analyze(stft: stft)
+            let breakdown = InstrumentEngine().predictWithBreakdown(spectral: spectral, mfcc: Array(mfcc.mfcc.prefix(10)), lowBandEnergyRatio: lowBand, percussiveEnergyRatio: hpss.percussiveEnergyRatio)
+            let winner = breakdown.max(by: { $0.total < $1.total })!
+
+            guard !acceptable.contains(winner.label) else { continue } // only show genuine misclassifications
+            shown += 1
+
+            func fmt(_ label: String, _ b: InstrumentEngine.ScoreBreakdown) -> String {
+                let l = label.padding(toLength: 26, withPad: " ", startingAt: 0)
+                return "    \(l) centroid=\(String(format: "%.3f", b.centroidScore)) flatness=\(String(format: "%.3f", b.flatnessScore)) lowBand=\(String(format: "%.3f", b.lowBandScore)) percussive=\(String(format: "%.3f", b.percussiveScore)) timbre=\(String(format: "%.3f", b.timbreScore)) total=\(String(format: "%.3f", b.total))"
+            }
+            print("  \(f.lastPathComponent): centroid=\(Int(spectral.centroid))Hz flatness=\(String(format: "%.3f", spectral.flatness))")
+            print(fmt("WINNER (\(winner.label))", winner))
+            for accLabel in acceptable {
+                if let b = breakdown.first(where: { $0.label == accLabel }) {
+                    print(fmt("true[\(code)] (\(b.label))", b))
+                }
+            }
+        }
+    }
+}
+
+// IRMAS classes whose instrument had a direct, unambiguous OpenMIC training prototype
+// (Examples/PrototypeTrainer's `openmicToSingleCoarse`) vs those that didn't (clarinet, flute
+// were excluded from training as ambiguous/multi-coarse-class). Used to separate "the model
+// never had a prototype for this" from genuine scoring/domain-shift error.
+let irmasTrainedClasses: Set<String> = ["cel", "gac", "gel", "org", "pia", "sax", "tru", "vio", "voi"]
+let irmasUntrainedClasses: Set<String> = ["cla", "flu"]
+
+/// Two measurements over the full IRMAS set, in one pass:
+///   1. Histogram of each file's MINIMUM mfccDistance to any of the 6 trained prototypes —
+///      quantifies how often `timbreScore` is genuinely zero-information (distance >= 100)
+///      versus contributing real signal, instead of inferring this from a handful of examples.
+///   2. Accuracy (recall) split by whether the true class had a direct training prototype
+///      (`irmasTrainedClasses`) versus not (`irmasUntrainedClasses`) — separates "the
+///      classifier is wrong" from "this class was never represented in training at all."
+func runMFCCDistanceDiagnostic(root: String, perClassLimit: Int) async {
+    let base = URL(fileURLWithPath: root).resolvingSymlinksInPath()
+    guard let classDirs = try? FileManager.default.contentsOfDirectory(at: base, includingPropertiesForKeys: nil) else {
+        print("ERROR: \(root) not found"); return
+    }
+
+    var minDistances: [Float] = []
+    var trainedHit = 0, trainedN = 0
+    var untrainedHit = 0, untrainedN = 0
+
+    for dir in classDirs.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
+        let code = dir.lastPathComponent
+        guard let acceptable = irmasToCoarse[code] else { continue }
+        guard let files = try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)
+            .filter({ $0.pathExtension.lowercased() == "wav" }) else { continue }
+
+        for f in thinned(files.sorted { $0.path < $1.path }, limit: perClassLimit) {
+            guard let buf = try? await AudioLoader.load(url: f, targetSampleRate: 22050) else { continue }
+            let stftEngine = STFTEngine(nFFT: 2048, hopLength: 512, sampleRate: 22050)
+            let stft = await stftEngine.analyze(buf.samples)
+            let specRaw = SpectralEngine(sampleRate: 22050).analyze(stft: stft, samples: buf.samples)
+            let spectral = AdvancedSpectralMetrics(
+                centroid: specRaw.centroidHz, rolloff: specRaw.rolloffHz, flatness: specRaw.flatness,
+                flux: specRaw.flux, skewness: specRaw.skewness, kurtosis: specRaw.kurtosis,
+                bandwidth: specRaw.bandwidthHz, zcr: specRaw.zcr, dynamicRange: specRaw.spectralCrestFactor,
+                rmsMean: specRaw.rmsMean, rmsMax: specRaw.rmsMax, brightnessDescription: "", fullMagnitudes: []
+            )
+            let mel = MelSpectrogramEngine(stftEngine: stftEngine, nMels: 128)
+            let mfccEngine = MFCCEngine(melEngine: mel, nMFCC: 20)
+            let mfcc = await mfccEngine.createMFCC(from: buf.samples)
+            let lowBand = DSPHelpers.lowBandEnergyRatio(stft: stft, cutoffHz: 250)
+            let hpss = HPSSEngine(winHarm: 31, winPerc: 31, metalEngine: sharedMetalEngine).analyze(stft: stft)
+            let breakdown = InstrumentEngine().predictWithBreakdown(spectral: spectral, mfcc: Array(mfcc.mfcc.prefix(10)), lowBandEnergyRatio: lowBand, percussiveEnergyRatio: hpss.percussiveEnergyRatio)
+
+            let minDist = breakdown.map(\.mfccDistance).min() ?? .infinity
+            minDistances.append(minDist)
+
+            let winner = breakdown.max(by: { $0.total < $1.total })!
+            let isHit = acceptable.contains(winner.label)
+            if irmasTrainedClasses.contains(code) {
+                trainedN += 1; if isHit { trainedHit += 1 }
+            } else if irmasUntrainedClasses.contains(code) {
+                untrainedN += 1; if isHit { untrainedHit += 1 }
+            }
+        }
+    }
+
+    guard !minDistances.isEmpty else { print("no files processed"); return }
+    let buckets: [(String, (Float) -> Bool)] = [
+        ("<50", { $0 < 50 }), ("50-100", { $0 >= 50 && $0 < 100 }),
+        ("100-150", { $0 >= 100 && $0 < 150 }), ("150-200", { $0 >= 150 && $0 < 200 }),
+        ("200-250", { $0 >= 200 && $0 < 250 }), (">=250", { $0 >= 250 }),
+    ]
+    let total = minDistances.count
+    print("\n=== MIN-MFCC-DISTANCE HISTOGRAM (n=\(total), full IRMAS set, min distance to any of the 6 trained prototypes) ===")
+    for (label, pred) in buckets {
+        let c = minDistances.filter(pred).count
+        print("  \(label.padding(toLength: 8, withPad: " ", startingAt: 0)): \(c) (\(Int(Double(c) / Double(total) * 100))%)")
+    }
+    let zeroInfoCount = minDistances.filter { $0 >= 100 }.count
+    print("  --> timbreScore is EXACTLY zero (min distance >= 100) for \(zeroInfoCount)/\(total) (\(Int(Double(zeroInfoCount) / Double(total) * 100))%) of all files")
+
+    print("\n=== ACCURACY SPLIT: trained-class vs untrained-class true labels ===")
+    if trainedN > 0 {
+        print("  Trained classes   (\(irmasTrainedClasses.sorted().joined(separator: ","))): \(trainedHit)/\(trainedN) (\(Int(Double(trainedHit) / Double(trainedN) * 100))%)")
+    }
+    if untrainedN > 0 {
+        print("  Untrained classes (\(irmasUntrainedClasses.sorted().joined(separator: ","))): \(untrainedHit)/\(untrainedN) (\(Int(Double(untrainedHit) / Double(untrainedN) * 100))%)")
+    }
+    print("")
+}
+
+// MARK: - Candidate feature discrimination check (Bass/Drums, Phase 16 follow-up)
+//
+// Measures whether two CANDIDATE features (not yet used anywhere in scoring) actually separate
+// their target class from everything else, on real OpenMIC-2018 audio — before writing any
+// scoring code. Same unambiguous single-coarse-class OpenMIC labels `PrototypeTrainer` uses for
+// training (IRMAS has no true Bass/Drums examples at all, so it can't answer this question).
+
+let openmicToSingleCoarseForDiscrimination: [String: String] = [
+    "accordion": "Piano/Keyboard", "banjo": "Strings/Synth", "bass": "Bass (Acoustic/Electric)",
+    "cello": "Strings/Synth", "cymbals": "Drums/Percussion", "drums": "Drums/Percussion",
+    "guitar": "Strings/Synth", "mandolin": "Strings/Synth", "organ": "Piano/Keyboard",
+    "piano": "Piano/Keyboard", "saxophone": "Brass/Trumpet", "trombone": "Brass/Trumpet",
+    "trumpet": "Brass/Trumpet", "ukulele": "Strings/Synth", "violin": "Strings/Synth", "voice": "Vocals/Chorus",
+]
+
+struct Stats { let mean: Double; let sd: Double; let min: Double; let max: Double; let n: Int }
+func stats(_ values: [Double]) -> Stats {
+    guard !values.isEmpty else { return Stats(mean: 0, sd: 0, min: 0, max: 0, n: 0) }
+    let n = Double(values.count)
+    let mean = values.reduce(0, +) / n
+    let variance = values.map { ($0 - mean) * ($0 - mean) }.reduce(0, +) / n
+    return Stats(mean: mean, sd: variance.squareRoot(), min: values.min()!, max: values.max()!, n: values.count)
+}
+
+func runFeatureDiscriminationDiagnostic(root: String, perGroupLimit: Int) async {
+    let base = URL(fileURLWithPath: root).resolvingSymlinksInPath()
+    let csvURL = base.appendingPathComponent("openmic-2018-aggregated-labels.csv")
+    let trainURL = base.appendingPathComponent("partitions/split01_train.csv")
+    guard let csv = try? String(contentsOf: csvURL, encoding: .utf8),
+          let trainList = try? String(contentsOf: trainURL, encoding: .utf8) else {
+        print("ERROR: could not read OpenMIC CSVs"); return
+    }
+    let trainKeys = Set(trainList.split(separator: "\n").map(String.init))
+    var positives: [String: Set<String>] = [:]
+    for line in csv.split(separator: "\n").dropFirst() {
+        let cols = line.split(separator: ",")
+        guard cols.count >= 3, let relevance = Double(cols[2]) else { continue }
+        if relevance >= 0.5 { positives[String(cols[0]), default: []].insert(String(cols[1])) }
+    }
+
+    // key -> single unambiguous coarse label, restricted to train partition (same eligibility
+    // PrototypeTrainer used).
+    var keyToCoarse: [String: String] = [:]
+    for key in trainKeys {
+        guard let fine = positives[key] else { continue }
+        let mapped = Set(fine.compactMap { openmicToSingleCoarseForDiscrimination[$0] })
+        guard mapped.count == 1, let coarse = mapped.first else { continue }
+        keyToCoarse[key] = coarse
+    }
+
+    func sampleKeys(forCoarse target: String?, limit: Int) -> [String] {
+        let matching = keyToCoarse.filter { target == nil ? $0.value != "Bass (Acoustic/Electric)" && $0.value != "Drums/Percussion" : $0.value == target }
+        return thinned(matching.keys.sorted(), limit: limit)
+    }
+
+    func loadAndMeasure(_ keys: [String]) async -> (lowBand: [Double], onsetDensity: [Double], percussiveRatio: [Double]) {
+        var lowBand: [Double] = [], onsetDensity: [Double] = [], percussiveRatio: [Double] = []
+        for key in keys {
+            let prefix = String(key.prefix(3))
+            let audioURL = base.appendingPathComponent("audio/\(prefix)/\(key).ogg")
+            guard let buf = try? await AudioLoader.load(url: audioURL, targetSampleRate: 22050) else { continue }
+            let stft = await STFTEngine(nFFT: 2048, hopLength: 512, sampleRate: 22050).analyze(buf.samples)
+            lowBand.append(Double(DSPHelpers.lowBandEnergyRatio(stft: stft, cutoffHz: 250)))
+            let onsets = await OnsetEngine(sampleRate: 22050).onsetStrength(buf.samples)
+            let duration = Double(buf.samples.count) / 22050.0
+            onsetDensity.append(duration > 0 ? Double(onsets.onsetTimes.count) / duration : 0)
+            let hpss = HPSSEngine(winHarm: 31, winPerc: 31, metalEngine: sharedMetalEngine).analyze(stft: stft)
+            percussiveRatio.append(Double(hpss.percussiveEnergyRatio))
+        }
+        return (lowBand, onsetDensity, percussiveRatio)
+    }
+
+    func cohenD(_ a: Stats, _ b: Stats) -> Double {
+        let pooledSD = ((a.sd * a.sd + b.sd * b.sd) / 2).squareRoot()
+        return pooledSD > 0 ? (a.mean - b.mean) / pooledSD : 0
+    }
+
+    func pearsonCorrelation(_ x: [Double], _ y: [Double]) -> Double {
+        guard x.count == y.count, x.count > 1 else { return 0 }
+        let n = Double(x.count)
+        let meanX = x.reduce(0, +) / n, meanY = y.reduce(0, +) / n
+        var cov = 0.0, varX = 0.0, varY = 0.0
+        for i in 0..<x.count {
+            let dx = x[i] - meanX, dy = y[i] - meanY
+            cov += dx * dy; varX += dx * dx; varY += dy * dy
+        }
+        let denom = (varX * varY).squareRoot()
+        return denom > 0 ? cov / denom : 0
+    }
+
+    print("\n=== FEATURE DISCRIMINATION CHECK (OpenMIC train partition, unambiguous single-coarse labels) ===")
+
+    let bassKeys = sampleKeys(forCoarse: "Bass (Acoustic/Electric)", limit: perGroupLimit)
+    let nonBassKeys = sampleKeys(forCoarse: nil, limit: perGroupLimit)
+    let bassMeasured = await loadAndMeasure(bassKeys)
+    let nonBassMeasured = await loadAndMeasure(nonBassKeys)
+    let bassStats = stats(bassMeasured.lowBand)
+    let nonBassStats = stats(nonBassMeasured.lowBand)
+    print("\nLow-band (<250Hz) energy ratio:")
+    print(String(format: "  Bass       (n=%d): mean=%.3f sd=%.3f range=[%.3f, %.3f]", bassStats.n, bassStats.mean, bassStats.sd, bassStats.min, bassStats.max))
+    print(String(format: "  Non-Bass   (n=%d): mean=%.3f sd=%.3f range=[%.3f, %.3f]", nonBassStats.n, nonBassStats.mean, nonBassStats.sd, nonBassStats.min, nonBassStats.max))
+    print(String(format: "  Cohen's d = %.3f", cohenD(bassStats, nonBassStats)))
+
+    let drumsKeys = sampleKeys(forCoarse: "Drums/Percussion", limit: perGroupLimit)
+    let nonDrumsKeys = sampleKeys(forCoarse: nil, limit: perGroupLimit)
+    let drumsMeasured = await loadAndMeasure(drumsKeys)
+    let nonDrumsMeasured = await loadAndMeasure(nonDrumsKeys)
+    let drumsOnsetStats = stats(drumsMeasured.onsetDensity)
+    let nonDrumsOnsetStats = stats(nonDrumsMeasured.onsetDensity)
+    print("\nOnset density (onsets/sec):")
+    print(String(format: "  Drums      (n=%d): mean=%.3f sd=%.3f range=[%.3f, %.3f]", drumsOnsetStats.n, drumsOnsetStats.mean, drumsOnsetStats.sd, drumsOnsetStats.min, drumsOnsetStats.max))
+    print(String(format: "  Non-Drums  (n=%d): mean=%.3f sd=%.3f range=[%.3f, %.3f]", nonDrumsOnsetStats.n, nonDrumsOnsetStats.mean, nonDrumsOnsetStats.sd, nonDrumsOnsetStats.min, nonDrumsOnsetStats.max))
+    print(String(format: "  Cohen's d = %.3f", cohenD(drumsOnsetStats, nonDrumsOnsetStats)))
+
+    let drumsPercStats = stats(drumsMeasured.percussiveRatio)
+    let nonDrumsPercStats = stats(nonDrumsMeasured.percussiveRatio)
+    print("\nHPSS percussive energy ratio:")
+    print(String(format: "  Drums      (n=%d): mean=%.3f sd=%.3f range=[%.3f, %.3f]", drumsPercStats.n, drumsPercStats.mean, drumsPercStats.sd, drumsPercStats.min, drumsPercStats.max))
+    print(String(format: "  Non-Drums  (n=%d): mean=%.3f sd=%.3f range=[%.3f, %.3f]", nonDrumsPercStats.n, nonDrumsPercStats.mean, nonDrumsPercStats.sd, nonDrumsPercStats.min, nonDrumsPercStats.max))
+    print(String(format: "  Cohen's d = %.3f", cohenD(drumsPercStats, nonDrumsPercStats)))
+
+    let combinedOnset = drumsMeasured.onsetDensity + nonDrumsMeasured.onsetDensity
+    let combinedPerc = drumsMeasured.percussiveRatio + nonDrumsMeasured.percussiveRatio
+    print(String(format: "\n  Pearson correlation (onset density, HPSS percussive ratio), n=%d combined: r = %.3f", combinedOnset.count, pearsonCorrelation(combinedOnset, combinedPerc)))
+    print("")
+}
+
+// MARK: - Bass score-breakdown diagnostic (why does Bass stay at 0% precision despite d=1.50?)
+//
+// For real OpenMIC "bass"-labeled clips (train partition — the same clips whose statistics
+// Bass's own Gaussian was fit from, making this the cleanest possible test: if even these don't
+// score well under Bass's own fitted profile, the scoring formula itself is implicated, not the
+// feature or the data), prints three numbers side by side per file:
+//   1. The clip's raw low-band-energy-ratio value.
+//   2. Bass profile's low-band Gaussian score for that value, vs. the WINNING profile's low-band
+//      score for that same value — is Bass's own score high, or flattened by its own SD?
+//   3. Bass's total score vs. the winner's total score, broken into which component the gap
+//      comes from.
+func runBassScoreBreakdownDiagnostic(root: String, limit: Int) async {
+    let base = URL(fileURLWithPath: root).resolvingSymlinksInPath()
+    let csvURL = base.appendingPathComponent("openmic-2018-aggregated-labels.csv")
+    let trainURL = base.appendingPathComponent("partitions/split01_train.csv")
+    guard let csv = try? String(contentsOf: csvURL, encoding: .utf8),
+          let trainList = try? String(contentsOf: trainURL, encoding: .utf8) else {
+        print("ERROR: could not read OpenMIC CSVs"); return
+    }
+    let trainKeys = Set(trainList.split(separator: "\n").map(String.init))
+    var positives: [String: Set<String>] = [:]
+    for line in csv.split(separator: "\n").dropFirst() {
+        let cols = line.split(separator: ",")
+        guard cols.count >= 3, let relevance = Double(cols[2]) else { continue }
+        if relevance >= 0.5 { positives[String(cols[0]), default: []].insert(String(cols[1])) }
+    }
+    var bassKeys: [String] = []
+    for key in trainKeys.sorted() {
+        guard let fine = positives[key] else { continue }
+        let mapped = Set(fine.compactMap { openmicToSingleCoarseForDiscrimination[$0] })
+        if mapped == ["Bass (Acoustic/Electric)"] { bassKeys.append(key) }
+    }
+    bassKeys = thinned(bassKeys, limit: limit)
+
+    print("\n=== BASS SCORE BREAKDOWN (real OpenMIC 'bass' clips, train partition, n=\(bassKeys.count)) ===")
+    for key in bassKeys {
+        let prefix = String(key.prefix(3))
+        let audioURL = base.appendingPathComponent("audio/\(prefix)/\(key).ogg")
+        guard let buf = try? await AudioLoader.load(url: audioURL, targetSampleRate: 22050) else { continue }
+        let stftEngine = STFTEngine(nFFT: 2048, hopLength: 512, sampleRate: 22050)
+        let stft = await stftEngine.analyze(buf.samples)
+        let specRaw = SpectralEngine(sampleRate: 22050).analyze(stft: stft, samples: buf.samples)
+        let spectral = AdvancedSpectralMetrics(
+            centroid: specRaw.centroidHz, rolloff: specRaw.rolloffHz, flatness: specRaw.flatness,
+            flux: specRaw.flux, skewness: specRaw.skewness, kurtosis: specRaw.kurtosis,
+            bandwidth: specRaw.bandwidthHz, zcr: specRaw.zcr, dynamicRange: specRaw.spectralCrestFactor,
+            rmsMean: specRaw.rmsMean, rmsMax: specRaw.rmsMax, brightnessDescription: "", fullMagnitudes: []
+        )
+        let mel = MelSpectrogramEngine(stftEngine: stftEngine, nMels: 128)
+        let mfccEngine = MFCCEngine(melEngine: mel, nMFCC: 20)
+        let mfcc = await mfccEngine.createMFCC(from: buf.samples)
+        let lowBand = DSPHelpers.lowBandEnergyRatio(stft: stft, cutoffHz: 250)
+        let hpss = HPSSEngine(winHarm: 31, winPerc: 31, metalEngine: sharedMetalEngine).analyze(stft: stft)
+        let breakdown = InstrumentEngine().predictWithBreakdown(spectral: spectral, mfcc: Array(mfcc.mfcc.prefix(10)), lowBandEnergyRatio: lowBand, percussiveEnergyRatio: hpss.percussiveEnergyRatio)
+
+        guard let bassEntry = breakdown.first(where: { $0.label == "Bass (Acoustic/Electric)" }) else { continue }
+        let winner = breakdown.max(by: { $0.total < $1.total })!
+
+        print("\n  \(key): raw lowBand=\(String(format: "%.3f", lowBand))  raw centroid=\(Int(spectral.centroid))Hz  raw flatness=\(String(format: "%.3f", spectral.flatness))  raw percussive=\(String(format: "%.3f", hpss.percussiveEnergyRatio))")
+        print("    Bass    total=\(String(format: "%.3f", bassEntry.total))  centroid=\(String(format: "%.3f", bassEntry.centroidScore)) flatness=\(String(format: "%.3f", bassEntry.flatnessScore)) lowBand=\(String(format: "%.3f", bassEntry.lowBandScore)) percussive=\(String(format: "%.3f", bassEntry.percussiveScore)) timbre=\(String(format: "%.3f", bassEntry.timbreScore))")
+        if winner.label != "Bass (Acoustic/Electric)" {
+            print("    WINNER(\(winner.label)) total=\(String(format: "%.3f", winner.total))  centroid=\(String(format: "%.3f", winner.centroidScore)) flatness=\(String(format: "%.3f", winner.flatnessScore)) lowBand=\(String(format: "%.3f", winner.lowBandScore)) percussive=\(String(format: "%.3f", winner.percussiveScore)) timbre=\(String(format: "%.3f", winner.timbreScore))")
+        } else {
+            print("    (Bass won)")
+        }
+    }
+    print("")
+}
+
+/// Bass/Drums evaluation on OpenMIC-2018's official HELD-OUT TEST partition (never touched by
+/// `PrototypeTrainer` — verified: 0 key overlap and 0 track-ID overlap with the train partition
+/// used to fit prototypes). Matching rule (identical to training's own eligibility rule, for
+/// consistency): a clip counts only if its ENTIRE set of relevance>=0.5 positive labels maps to
+/// a SINGLE coarse class — avoids the undefined "clip is positive for both bass and guitar, is a
+/// Bass prediction right or wrong?" ambiguity of OpenMIC's real multi-label data entirely, by
+/// only scoring genuinely single-source examples.
+///
+/// This is an IN-DISTRIBUTION test (same source distribution the prototypes were fit from) —
+/// NOT comparable to IRMAS's cross-dataset numbers. Do not rank Bass/Drums' OpenMIC accuracy
+/// against Piano/Brass/Vocals/Strings' IRMAS accuracy as if they were the same exam.
+func runOpenMICTestPartitionEval(root: String, perClassLimit: Int) async {
+    let coarseClasses = ["Piano/Keyboard", "Bass (Acoustic/Electric)", "Brass/Trumpet",
+                          "Vocals/Chorus", "Drums/Percussion", "Strings/Synth"]
+    let base = URL(fileURLWithPath: root).resolvingSymlinksInPath()
+    let csvURL = base.appendingPathComponent("openmic-2018-aggregated-labels.csv")
+    let testURL = base.appendingPathComponent("partitions/split01_test.csv")
+    guard let csv = try? String(contentsOf: csvURL, encoding: .utf8),
+          let testList = try? String(contentsOf: testURL, encoding: .utf8) else {
+        print("ERROR: could not read OpenMIC CSVs"); return
+    }
+    let testKeys = Set(testList.split(separator: "\n").map(String.init))
+    var positives: [String: Set<String>] = [:]
+    for line in csv.split(separator: "\n").dropFirst() {
+        let cols = line.split(separator: ",")
+        guard cols.count >= 3, let relevance = Double(cols[2]) else { continue }
+        if relevance >= 0.5 { positives[String(cols[0]), default: []].insert(String(cols[1])) }
+    }
+
+    // Group eligible (single-coarse-class) test keys by true class first, then thin each
+    // class's list independently to `perClassLimit` — a plain global thin would under-sample
+    // small classes like Bass relative to large ones like Strings/Synth.
+    var keysByCoarse: [String: [String]] = [:]
+    var skippedAmbiguous = 0
+    for key in testKeys.sorted() {
+        guard let fine = positives[key] else { continue }
+        let mapped = Set(fine.compactMap { openmicToSingleCoarseForDiscrimination[$0] })
+        guard mapped.count == 1, let trueCoarse = mapped.first else { skippedAmbiguous += 1; continue }
+        keysByCoarse[trueCoarse, default: []].append(key)
+    }
+
+    var confusion: [String: [String: Int]] = [:] // [trueCoarse][predictedLabel] = count
+    var evaluated = 0, skippedMissing = 0
+
+    for coarse in coarseClasses {
+        let keys = thinned(keysByCoarse[coarse] ?? [], limit: perClassLimit)
+        for key in keys {
+            let prefix = String(key.prefix(3))
+            let audioURL = base.appendingPathComponent("audio/\(prefix)/\(key).ogg")
+            guard let buf = try? await AudioLoader.load(url: audioURL, targetSampleRate: 22050) else { skippedMissing += 1; continue }
+            let label = await predictInstrument(samples: buf.samples, sampleRate: 22050)
+            confusion[coarse, default: [:]][label, default: 0] += 1
+            evaluated += 1
+        }
+    }
+
+    print("\n=== OpenMIC-2018 TEST PARTITION eval (held-out, never used for prototype training) ===")
+    print("evaluated=\(evaluated) (single-coarse-class clips only), skipped ambiguous/multi-label=\(skippedAmbiguous), skipped missing=\(skippedMissing)")
+    print("⚠️  IN-DISTRIBUTION test — NOT comparable to IRMAS's cross-dataset numbers.\n")
+
+    for coarse in coarseClasses {
+        let row = confusion[coarse] ?? [:]
+        let total = row.values.reduce(0, +)
+        guard total > 0 else { print("  \(coarse): no test examples"); continue }
+        let correct = row[coarse] ?? 0
+        print(String(format: "  %@ recall: %d/%d (%.0f%%)", coarse, correct, total, Double(correct) / Double(total) * 100))
+    }
+    print("")
+    for coarse in coarseClasses {
+        var totalPredicted = 0, truePositive = 0
+        for trueCoarse in coarseClasses {
+            let c = confusion[trueCoarse]?[coarse] ?? 0
+            totalPredicted += c
+            if trueCoarse == coarse { truePositive += c }
+        }
+        guard totalPredicted > 0 else { continue }
+        print(String(format: "  %@ precision: %d/%d (%.0f%%)", coarse, truePositive, totalPredicted, Double(truePositive) / Double(totalPredicted) * 100))
     }
     print("")
 }
@@ -490,6 +916,35 @@ func renderTable(_ report: ReliabilityReport) -> String {
 @main
 struct ReliabilityAudit {
     static func main() async {
+        if ProcessInfo.processInfo.environment["RA_SCORE_BREAKDOWN"] == "1" {
+            let perClass = envLimit("RA_SCORE_BREAKDOWN_PER_CLASS", default: 5)
+            // cla->Piano, org->Vocals are the clearest "black hole" columns from the confusion
+            // matrix; gac/sax/pia are included to catch real Bass/Drums-winning misclassifications
+            // (both showed 0% precision — need to see what actually wins in their place).
+            await runScoreBreakdownDiagnostic(root: "Tests/Resources/IRMAS", codes: ["cla", "org", "gac", "sax", "pia"], perClass: perClass)
+            return
+        }
+        if ProcessInfo.processInfo.environment["RA_MFCC_HISTOGRAM"] == "1" {
+            let perClass = envLimit("RA_MFCC_HISTOGRAM_PER_CLASS", default: 0)
+            await runMFCCDistanceDiagnostic(root: "Tests/Resources/IRMAS", perClassLimit: perClass)
+            return
+        }
+        if ProcessInfo.processInfo.environment["RA_FEATURE_CHECK"] == "1" {
+            let perGroup = envLimit("RA_FEATURE_CHECK_LIMIT", default: 60)
+            await runFeatureDiscriminationDiagnostic(root: "Tests/Resources/OpenMIC", perGroupLimit: perGroup)
+            return
+        }
+        if ProcessInfo.processInfo.environment["RA_BASS_BREAKDOWN"] == "1" {
+            let limit = envLimit("RA_BASS_BREAKDOWN_LIMIT", default: 10)
+            await runBassScoreBreakdownDiagnostic(root: "Tests/Resources/OpenMIC", limit: limit)
+            return
+        }
+        if ProcessInfo.processInfo.environment["RA_OPENMIC_TEST_EVAL"] == "1" {
+            let perClassLimit = envLimit("RA_OPENMIC_TEST_PER_CLASS", default: 100)
+            await runOpenMICTestPartitionEval(root: "Tests/Resources/OpenMIC", perClassLimit: perClassLimit)
+            return
+        }
+
         print("🔎 AudioIntelligence Reliability Audit — starting (set RA_*_LIMIT env vars to size the run; 0 = full dataset)")
 
         var tasks: [TaskResult] = []

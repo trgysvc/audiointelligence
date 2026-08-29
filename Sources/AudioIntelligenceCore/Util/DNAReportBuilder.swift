@@ -245,7 +245,8 @@ public actor DNAReportBuilder {
                 allMFCC[idx] = mfccSubset
 
                 // Atomic Metric Push
-                let instMetrics = InstrumentEngine().predict(spectral: specRes, mfcc: mfccSubset) 
+                let lowBandRatio = DSPHelpers.lowBandEnergyRatio(stft: stft, cutoffHz: 250)
+                let instMetrics = InstrumentEngine().predict(spectral: specRes, mfcc: mfccSubset, lowBandEnergyRatio: lowBandRatio, percussiveEnergyRatio: hpss.percussiveEnergyRatio)
                 for p in instMetrics.predictions where instrumentPtr < 500 {
                     allInstruments[instrumentPtr] = p
                     instrumentPtr += 1

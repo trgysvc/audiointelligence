@@ -145,7 +145,7 @@ let package = Package(
         // `Examples/ReliabilityAudit/README.md`.
         .executableTarget(
             name: "ReliabilityAudit",
-            dependencies: ["AudioIntelligence", "AudioIntelligenceCore"],
+            dependencies: ["AudioIntelligence", "AudioIntelligenceCore", "AudioIntelligenceMetal"],
             path: "Examples/ReliabilityAudit",
             exclude: ["reliability_report.json", "history.jsonl", "README.md"]
         ),
@@ -157,7 +157,7 @@ let package = Package(
         // See DEVLOG Phase 16.
         .executableTarget(
             name: "PrototypeTrainer",
-            dependencies: ["AudioIntelligence", "AudioIntelligenceCore"],
+            dependencies: ["AudioIntelligence", "AudioIntelligenceCore", "AudioIntelligenceMetal"],
             path: "Examples/PrototypeTrainer"
         ),
 

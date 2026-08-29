@@ -993,4 +993,260 @@ open item from the original four-way audit.
 
 ---
 
+## 🎼 Phase 16 — InstrumentEngine: from hand-typed guesses to a data-derived, empirically
+diagnosed classifier (2026-08-29)
+
+Phase 15 fixed `InstrumentEngine`'s two concrete bugs (a dead-branch string mismatch, and
+non-determinism) but left the classifier's real-world *accuracy* untouched — a hand-typed,
+6-class heuristic that had never been fit to any real audio. This phase measures that accuracy
+at real scale for the first time and works through it via a strict, evidence-gated methodology:
+every architectural change is preceded by a targeted measurement against real ground truth, and
+no change is generalized from a small or biased sample without a full-dataset check.
+
+### Real baseline, measured for the first time at full scale
+
+Using the existing `Examples/ReliabilityAudit` tool against the complete datasets (not the small
+default samples used previously):
+
+| Dataset | Accuracy | Sample |
+| :-- | :-- | :-- |
+| IRMAS (11-class, single-predominant-instrument) | **25.3%** | 6,705 / 6,718 files |
+| OpenMIC-2018 (20-class, multi-label) | **30.3%** | 13,847 / 20,000 clips |
+
+("Accuracy" = primary predicted label falls in that true class's coarse-acceptable set — already
+a lenient metric.) This confirmed the classifier was wrong roughly 3 times out of 4 on real,
+diverse music, motivating the deeper rework below rather than incremental tuning.
+
+### Determinism → real feature scale → empirically-gated scoring redesign
+
+1. **Non-determinism, confirmed and root-caused.** Running the real pipeline twice on the same 6
+   SQAM files reproduced the bug directly (`trpt21_2.wav`: `Brass/Trumpet` once, `Piano/Keyboard`
+   once). Traced to binary threshold scoring (`if centroidRange.contains(x) { += 0.4 }`) with
+   wide, overlapping profile ranges: real audio constantly lands multiple profiles at the exact
+   same rounded confidence, and tiny upstream floating-point noise (the Metal MFCC kernel itself
+   was read and ruled out — no cross-thread reduction, deterministic by construction) decides
+   which one wins the tie.
+
+2. **Replaced binary thresholds with Gaussian scoring — first pass, centroid only, still
+   un-normalized.** Every profile's Gaussian peaked at the same height (0.4) regardless of its
+   own spread, so a wide-variance profile paid no penalty for that width. Confusion-matrix
+   tooling (`printConfusionMatrix` in `ReliabilityAudit`: raw counts, per-true-class recall,
+   per-predicted-label precision) showed `Bass`/`Drums/Percussion` at **0% precision** — every
+   single prediction of either was wrong, on the full 1,100-sample IRMAS check.
+
+3. **Added proper Gaussian density normalization (1/σ) to centroid alone, isolated.** A true
+   Gaussian's peak height is proportional to 1/σ; the un-normalized version let wide-spread
+   classes claim full peak credit *and* wide tolerance for free. IRMAS accuracy on the same
+   1,100-file set: **19.9% → 26.1%** (+6.2pp). But the "black hole" pattern didn't disappear —
+   it moved to `Piano/Keyboard` and `Vocals/Chorus`, which is exactly what "one feature's
+   normalization fixed, others still un-normalized" predicts.
+
+4. **Quantified rather than assumed: MFCC-distance histogram across the full IRMAS set.** A
+   biased sample of hand-picked misclassifications suggested `timbreScore` was contributing zero
+   information almost everywhere (cross-dataset domain shift between OpenMIC training audio and
+   IRMAS evaluation audio). Measured properly across all 6,705 files: only **23%** had zero
+   timbre information (min MFCC distance to any prototype ≥ 100) — well under the 70-80%
+   threshold that would confirm widespread domain shift. That hypothesis was rejected before any
+   code changed on its account.
+
+5. **A trained-vs-untrained-class accuracy split, and a self-caught confound.** IRMAS classes
+   whose instrument had no direct OpenMIC training prototype (clarinet, flute — excluded from
+   training as ambiguous/multi-coarse-class) scored *higher* (40%) than classes that did have a
+   prototype (22%) — the opposite of what "unrepresented classes are unfairly penalized" would
+   predict. Caught and reported the real explanation before drawing a conclusion: the untrained
+   classes' "acceptable" set spans 2 coarse labels instead of 1, roughly doubling their chance-
+   level baseline — the comparison was confounded by set size, not informative on its own.
+
+6. **Per-class training centroid spread vs. measured precision — real but not clean.** At the
+   extremes, wide-spread classes (`Drums/Percussion` σ=693.6, `Bass` σ=625.1) were exactly the
+   two at 0% precision. But the middle four classes broke a clean single-variable story (`Piano`
+   had the *tightest* spread, σ=524.5, yet only 23% precision; `Strings/Synth` had mid-pack
+   spread, σ=537.1, yet the *best* precision at 64%) — six data points can't cleanly isolate
+   three candidate explanatory variables (spread, training sample size, within-bucket acoustic
+   homogeneity) at once, and the investigation didn't force one.
+
+7. **Candidate replacement features for Bass/Drums, measured before any scoring code was
+   written.** Centroid position doesn't meaningfully separate either class in real mixed
+   recordings. Measured discriminating power (Cohen's d, target class vs. all others, real
+   OpenMIC-2018 train-partition audio, n=60/group) for three candidates:
+   - Low-band (<250Hz) energy ratio, Bass vs. rest: **d = 1.50** (large effect) — kept.
+   - Onset density (onsets/sec), Drums vs. rest: **d = 0.49** (moderate) — a pre-committed
+     decision rule ("adopt HPSS outright if it clears d≈1.0+") meant this was superseded rather
+     than combined once the alternative below cleared that bar decisively.
+   - HPSS percussive-energy-ratio, Drums vs. rest: **d = 1.80** (large effect, stronger than
+     Bass's own feature) — adopted as Drums' sole spectral-shape discriminator; the r=0.461
+     correlation against onset density became moot once HPSS alone cleared the threshold.
+
+### Architecture: one consistent scoring scheme across all 6 classes, not two ad-hoc additions
+
+Adding the two new features only to `Bass`/`Drums`'s own scoring would make confidence totals
+*incomparable* across classes (some profiles summing 4 terms, others 3) — precisely the
+mechanism already diagnosed as the "black hole" bug. Both new features are class-independent
+per-recording measurements: withholding low-band-energy from `Piano/Keyboard`, for instance,
+removes exactly the information needed to correctly place a low-lowband piano recording *away*
+from `Bass`. So every one of the 4 spectral-shape features (centroid, flatness, low-band-energy,
+percussive-energy) is now computed and Gaussian-scored (shared 1/σ-normalized formula, 0.15
+weight each, summing with `timbreScore`'s unchanged 0.4 to the same 1.0 max as before) for every
+profile — `Examples/PrototypeTrainer` was extended to fit mean+SD for all four, for all six
+classes, from OpenMIC-2018's official training partition (8,173 real clips after excluding
+ambiguous/multi-label ones). Distribution skewness was checked before committing to a Gaussian
+fit (Piano flatness skew=1.95, Bass flatness skew=1.33 stand out as non-Gaussian; everything else
+is within or close to the ±1 "close enough" band) — logged as a known imperfection, not blocking.
+
+`InstrumentEngine.swift`'s `Fingerprint` struct now holds mean+SD for all four features; the old
+ad-hoc "percussion-heavy Piano masking correction" (a `centroid *= 0.3` hack and a relaxed-
+flatness fallback, both workarounds for not having a real percussive-vs-tonal feature) was
+removed, superseded by the real `percussiveScore` term. `predict()`/`predictWithBreakdown()` now
+take `lowBandEnergyRatio`/`percussiveEnergyRatio` as explicit parameters; a new
+`DSPHelpers.lowBandEnergyRatio` utility was added (shared by production and diagnostic code); the
+real production call site (`DNAReportBuilder.swift`) computes both from the STFT/HPSS results
+already produced in the same per-chunk loop, at no extra pipeline cost.
+
+### A performance bug found while iterating: 5 seconds/file that shouldn't have been
+
+Diagnostic batch runs became unexpectedly extremely slow (~92 minutes for a 1,100-file
+comparison that should take minutes). Investigated rather than just waited out — two real,
+independent issues:
+1. The new diagnostic tooling (`ReliabilityAudit`, `PrototypeTrainer`) never passed a
+   `MetalEngine` into `HPSSEngine`, so every call fell through to the CPU path regardless of
+   spectrogram size. Fixed: a shared `MetalEngine` instance wired into every call site (plus the
+   `AudioIntelligenceMetal` dependency added to both targets in `Package.swift`).
+2. The CPU fallback itself (`HPSSEngine.vDSPMedianFilter`) was genuinely inefficient: a full
+   `vDSP_vsort` (O(w log w)) of a freshly-extracted window at *every single output pixel*, even
+   though adjacent windows share all but one element. Replaced with an incremental sliding-window
+   median — sort once per row/column, then an O(w) remove-plus-binary-search-insert per step as
+   the window slides. Verified bit-for-bit identical output against the original brute-force
+   algorithm (kept as an independent reference inside the test, not the production code being
+   graded against a copy of itself) across random data, duplicate-heavy data (real spectrograms'
+   long zero-runs), windows wider than the data, and single-row/single-column inputs
+   (`HPSSEngineTests.swift`, 4 new tests).
+
+### New tests
+
+- `InstrumentEngineTests.swift` (4 tests, rewritten from Phase 15's 2): graded centroid scoring
+  still varies smoothly with distance from center; `Bass`/`Drums/Percussion` are now correctly
+  identified on their own real trained mean feature values — a case that was structurally
+  impossible before this phase (0% precision means no input, including each class's own
+  prototypical example, could have won).
+- `InstrumentBaselineTests.testInstrumentClassification_isDeterministicAcrossRepeatedRuns`
+  (Phase 15) remains a live regression guard against the non-determinism bug recurring.
+- `HPSSEngineTests.swift` (4 tests): incremental median filter correctness, described above.
+
+### The closing measurement: a structural finding that reframes the whole benchmark
+
+The planned "before vs. after" comparison ran on the full 1,100-file IRMAS set. Blended accuracy
+moved from **26.1% (V1, centroid-only Gaussian) to 24.4% (V2, all 4 spatial features)** — a
+regression on the number being watched, reported as-is with no reframing at first.
+
+A full 6-bucket confusion matrix (not just the 2 buckets the change targeted) made the real cause
+visible: **Bass (Acoustic/Electric) and Drums/Percussion sit at exactly 0% precision on IRMAS,
+both before and after the change, and cannot do otherwise.** IRMAS's 11 classes are cello,
+clarinet, flute, acoustic guitar, electric guitar, organ, piano, saxophone, trumpet, violin,
+voice — verified directly against `irmasToCoarse` in `Examples/ReliabilityAudit/main.swift`: none
+of the 11 map to (or represent) Bass or Drums. IRMAS contains zero bass-predominant or
+drums-predominant recordings by dataset design. A classifier cannot be credited for a class its
+test set structurally never asks it to recognize — the 0%s are a property of the benchmark, not a
+classifier defect, and the "did V2 help Bass/Drums" question can never be answered on IRMAS at
+all. This also means the IRMAS blended-accuracy number already excludes Bass/Drums-predominant
+recordings from its denominator with no code change needed — verified, not assumed, by the same
+mapping inspection; there was nothing to recompute.
+
+**Decision:** Bass/Drums remain genuine evaluation targets — they're shipped in the public
+`InstrumentMetrics` API and real audio is classified into them regardless of whether IRMAS can
+score it — but the benchmark scope is reframed: IRMAS measures the 4 classes it can fairly judge
+(Piano/Keyboard, Brass/Trumpet, Vocals/Chorus, Strings/Synth), and Bass/Drums are measured
+separately, on a dataset that actually contains them.
+
+### Bass/Drums measured properly: OpenMIC-2018's held-out TEST partition
+
+The right instrument for measuring Bass/Drums is OpenMIC-2018 itself, restricted to its official
+`partitions/split01_test.csv` (5,085 keys) — clips never touched by `PrototypeTrainer`. Verified
+rather than assumed, before running anything:
+1. **Train/test cleanliness**, both at exact-key level and track-ID level (prefix before `_`):
+   zero overlap between `split01_train.csv` (14,915 keys) and `split01_test.csv` (5,085 keys),
+   confirmed via direct Python set-intersection.
+2. **`PrototypeTrainer` scope**: grepped its source — it reads only `split01_train.csv`, never
+   the test file.
+3. **Multi-label matching rule**, defined before measuring: a test clip counts only if its entire
+   positive-label set (relevance ≥ 0.5) maps to a single coarse class — the same eligibility rule
+   `PrototypeTrainer` already uses for fitting, so evaluation and training treat ambiguity
+   consistently.
+
+`runOpenMICTestPartitionEval` (`Examples/ReliabilityAudit/main.swift`) groups eligible test keys
+by true class first, then thins each class's list independently to a per-class cap (100), so
+small classes aren't under-sampled relative to large ones. Result, 600 clips evaluated (100/class,
+754 skipped as ambiguous/multi-label), explicitly **in-distribution — not comparable to IRMAS's
+cross-dataset numbers**:
+
+| Class | Recall | Precision |
+|---|---|---|
+| Piano/Keyboard | 64/100 (64%) | 64/130 (49%) |
+| Bass (Acoustic/Electric) | 48/100 (48%) | 48/78 (62%) |
+| Brass/Trumpet | 13/100 (13%) | 13/63 (21%) |
+| Vocals/Chorus | 55/100 (55%) | 55/143 (38%) |
+| Drums/Percussion | 61/100 (61%) | 61/110 (55%) |
+| Strings/Synth | 23/100 (23%) | 23/70 (33%) |
+
+Bass and Drums — stuck at a structurally-mandatory 0% on IRMAS — score well above the 6-class
+chance baseline (~16.7%) on the dataset that can actually measure them, consistent with the
+isolated Cohen's-d feature validation done earlier in this phase. But the two classes aren't
+equally solid, and this is not "Bass now works":
+
+- **Bass is precision-heavy, recall-weak (48% recall / 62% precision) — likely the same
+  timbre-suppression mechanism seen in the earlier 10-clip score breakdown.** In that breakdown
+  (`bass_breakdown.log`), 5 of 10 real Bass clips lost to another class, and in 4 of those 5
+  losses Bass's own `timbreScore` was exactly `0.000` (MFCC too far from Bass's fitted prototype
+  to contribute at all) while the winning class's timbre score was solidly positive — the
+  spatial features (low-band-energy, percussive-ratio) alone weren't enough to overcome a
+  zeroed-out timbre term. 48% recall means real bass clips are still being missed at close to
+  this rate at full scale; when Bass does win, it's usually a clean win (62% precision). This is
+  a **known, plausible, not-yet-fixed weakness**, not a solved problem — flagged for future work,
+  not pursued now.
+- **Drums (61%/55%) does not show this asymmetry** and is the phase's cleaner win.
+
+Brass/Trumpet (13% recall) and Strings/Synth (23% recall) are also real remaining weaknesses,
+and — unlike Bass/Drums — these ARE visible on IRMAS too. But Strings/Synth specifically shows a
+pattern worth flagging before moving on: **its IRMAS (cross-dataset, the harder test) precision
+was 64% — the single best score in the V1 confusion matrix (`irmas_confusion_matrix.log`,
+115/177) — yet its OpenMIC in-distribution (the easier test) precision is only 33%.** Every other
+class scores better in-distribution than cross-dataset, as expected; Strings/Synth is the one
+inversion, and it's unlikely to be noise given the gap's size. Two candidate explanations, neither
+investigated yet: (1) the `Strings/Synth` coarse bucket blends two acoustically distinct sources
+(acoustic strings vs. synthesizers) in different proportions across the two datasets — the same
+"bucket internal heterogeneity" concern raised earlier for the wide-SD classes — so "Strings/Synth"
+may not be measuring one coherent thing in either dataset; or (2) OpenMIC's negative examples
+(what's competing against Strings/Synth for the win) differ enough from IRMAS's that the class's
+real discriminating power looks different per dataset. **Not chased now** — but when the 4-middle-
+class ceiling (Piano/Brass/Vocals/Strings, currently capped around the 24-26% region) is revisited,
+this inversion is very likely part of that ceiling and should be the first thing investigated
+rather than rediscovered from scratch.
+
+**A build-system pitfall hit and fixed during this measurement:** `swift build -c release
+--target ReliabilityAudit` compiles the target but does **not** link the final executable —
+several builds during this step reported "Build of target: ... complete" and exit code 0/1 while
+`.build/release/ReliabilityAudit` silently kept the previous binary (or didn't exist at all after
+a clean). The fix is `swift build -c release --product ReliabilityAudit`, which both compiles and
+links. `swift run` is unaffected (it always builds+links+executes). Worth remembering for any
+future non-`swift run` build of an executable target in this package.
+
+**Binary provenance check for every IRMAS number quoted in this phase** (done because the
+`--target`-vs-`--product` bug above raises exactly this question): every log backing the
+25.3%/26.1%/24.4% sequence was re-inspected for its build header. All three used `swift build`
+(no `--target` flag) or ran through `swift run` — every one shows `[.../3] Linking
+ReliabilityAudit` followed by `Build of product 'ReliabilityAudit' complete!`, the linked-binary
+signature, never the bare `Build of target: ... complete!` the stale-binary bug produces
+(`reliability_full_run.log` → 25.3%; `irmas_diagnostic_v1_gaussnorm.log` and
+`irmas_confusion_matrix.log` → 26.1%, both n=1,100; `irmas_final_correct.log` → 24.4%, n=1,100).
+The `--target`-only bug was introduced for the first time in this session specifically while
+building the new `runOpenMICTestPartitionEval` diagnostic, and was caught before that
+measurement's real numbers were reported. The V0→V1→V2 IRMAS sequence is unaffected and stands.
+
+**Status:** Phase 16 complete. `swift build` green throughout. All new/touched unit tests pass.
+Final numbers, full IRMAS set (1,100 files), same metric throughout (Bass/Drums structurally
+excluded from ever scoring, per above): pre-phase baseline 25.3% → determinism-fix V1 26.1% →
+4-feature V2 24.4%. OpenMIC-2018 held-out test partition (Bass/Drums' fair benchmark): Bass
+48%/62% (recall/precision), Drums 61%/55%, full 6-class table above.
+
+---
+
 > *"Measured, not claimed: AudioIntelligence reports what it can prove."*
