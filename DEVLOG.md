@@ -1400,18 +1400,67 @@ The rare single-line splice found in tests 1 and 3 above (call it bug **(b)**, d
 unreproduced catastrophic loss, call it bug **(a)**) is real but low-impact (1 in 24,000–50,000
 lines, tied to `swift test`'s relay layer) — noted here, not worth code changes on its own.
 
-**Status:** Phase 17 complete. Root cause identified and fixed for the actual accuracy question
-(measurement tools realigned to the real production key path). README's Key row updated to 50.9%
-exact / 63.3% MIREX-weighted, N=599 verified full-set (up from 41.9%/57.7%, itself now understood
-to have been a stale, no-longer-representative number from Phase 6, not a target this phase needed
-to hit). The librosa 0.11 head-to-head comparison numbers previously in README's Validation Status
-table (for both tempo and key) were removed pending independent re-verification — the comparison
-script that produced them is not in this repo and could not be reproduced this session. The
-print-loss investigation is closed as **honestly partially-diagnosed**: a real, bounded, low-impact
-splice bug (b) is understood; the more serious tail-loss bug (a) has a verified trigger *profile*
-(real I/O + full scale + end-of-run large print, together) but no pinned-down mechanism, and a
-two-tier mitigation (short-term cross-check, permanent fix tracked separately) rather than a
-closed fix.
+### Print-loss bug (a): resolved. The four synthetic attempts above were the wrong axis — real scale, not print shape, was the variable that mattered
+
+The session did not stop at "partially diagnosed." Real-I/O incremental scale reduction (using
+`GS_LIMIT` on the actual `testGiantStepsKeyTempoAccuracy`, then temporary natural-order-preserving
+truncations of `Examples/Golden/manifest.json` — backed up and restored after every run) tested
+150, 300, 450, 550, and 590 real tracks (up to 98.5% of the full 599). **Every single one came back
+completely clean** — full summary table, no truncation — across both the `GS_LIMIT>0` reordering
+path and the real `GS_LIMIT<=0` path that had always failed at true 599. Only the genuine,
+complete, unmodified 599-track manifest ever reproduced the loss.
+
+To find out *where inside* that run things went wrong, a temporary diagnostic (`DIAGMARK
+total=<N> elapsed=<seconds>s`, written to `stderr` every 25 tracks) was added to the real full-599
+run. Result: **all 23 markers survived, from track 25 to track 575, in perfect linear sequence
+(~20.2s per 25 tracks, no slowdown, no anomaly, right to the end of the run)**. This proved two
+things at once: the per-track loop itself never loses data, no matter how long it runs or how much
+volume accumulates — and there is no resource-exhaustion/memory-pressure buildup happening over
+the course of the run. The loss is confined entirely to the last moment: the final
+`ValidationTable.printTable()` call and the `📊 Baseline: ...` line, printed immediately before
+the test function returns.
+
+With the loss narrowed to that exact spot, two fixes were tried and tested empirically, not
+assumed:
+1. **`fflush(stdout)` immediately after the final prints** — the obvious first guess. Tested on a
+   real full-599 run: **did not work**. The identical failure signature recurred (the last
+   per-track row's ID fragment glued mid-line to an XCTest `Test Case ... passed` status message,
+   the summary table missing entirely), despite DIAGMARK again proving the loop itself ran clean
+   to completion. This ruled out "just needed one more flush call" as the fix.
+2. **`setvbuf(stdout, nil, _IONBF, 0)` — fully unbuffered stdout for the whole test function**
+   (every `print()` becomes an immediate `write()` syscall, no buffering at all, added at the very
+   top of `testGiantStepsKeyTempoAccuracy`) — tested on a real full-599 run: **worked**. Full
+   summary table printed cleanly (Key exact 50.92% / MIREX-weighted 63.32%, matching the
+   independently-derived 50.9%/63.3% from `testGiantStepsKeyCQT` almost exactly), test suite ended
+   with normal, un-corrupted status messages. Re-verified a second time after removing the
+   now-redundant `fflush` call and the temporary `DIAGMARK` instrumentation, on the fully
+   cleaned-up code: still clean (Key exact 50.92% / weighted 63.32%, 486.2s).
+
+**Why `fflush` alone didn't work but full unbuffering did** is still not 100% pinned to a single
+sentence — the empirical result stands regardless: this was a genuine buffering-related race
+between the test process's stdout and `swift test`'s XCTest-relay/teardown mechanism, present
+*only* on long, real, full-scale runs, and eliminated by preventing any buffered content from
+existing at all rather than by flushing it after the fact. The rare splice bug (b) documented
+above is unrelated (much smaller scale, different signature) and remains a known, low-impact,
+undocumented-root-cause item — not addressed by this fix, not worth chasing further on its own.
+
+**Fix applied**: `import Darwin` + `setvbuf(stdout, nil, _IONBF, 0)` as the first line of
+`testGiantStepsKeyTempoAccuracy` in `Tests/GoldenDatasetValidationTests.swift`. `swift build` and
+`swift build --build-tests` both green. Not yet applied to `testGiantStepsKeyCQT`,
+`testGiantStepsTempoSuperflux`, or `Examples/ReliabilityAudit/main.swift` (all of which print
+similarly large summary tables and are plausibly vulnerable to the same bug, just not yet
+observed failing) — left as a follow-up decision rather than applied unilaterally everywhere.
+
+**Status:** Phase 17 complete. Both the accuracy question (measurement tools realigned to the real
+production key path) and the print-loss bug (a) that complicated verifying it are **genuinely
+fixed**, not just documented as a limitation — confirmed empirically on real, full-scale runs, not
+assumed. README's Key row updated to 50.9% exact / 63.3% MIREX-weighted, N=599 verified full-set
+(up from 41.9%/57.7%, itself now understood to have been a stale, no-longer-representative number
+from Phase 6, not a target this phase needed to hit). The librosa 0.11 head-to-head comparison
+numbers previously in README's Validation Status table (for both tempo and key) were removed
+pending independent re-verification — the comparison script that produced them is not in this
+repo and could not be reproduced this session. The rare splice bug (b) remains a known, low-impact,
+open item.
 
 ---
 

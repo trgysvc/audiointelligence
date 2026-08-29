@@ -1,5 +1,6 @@
 import XCTest
 import Foundation
+import Darwin
 @testable import AudioIntelligenceCore
 
 /// Multi-source accuracy validation against the GiantSteps Key+Tempo dataset
@@ -204,6 +205,12 @@ final class GoldenDatasetValidationTests: XCTestCase {
     }
 
     func testGiantStepsKeyTempoAccuracy() async throws {
+        // Root cause (DEVLOG Phase 17): long real-I/O runs with a large final printed summary
+        // could silently lose that summary (and sometimes the last per-track row) to a race with
+        // process/XCTest teardown. A single fflush(stdout) at the end did NOT fix it — verified
+        // empirically. Forcing stdout fully unbuffered for the whole test (every print() becomes
+        // an immediate write()) DID fix it — verified on the real, complete 599-track run.
+        setvbuf(stdout, nil, _IONBF, 0)
         let manifest = try loadManifest()
         let table = ValidationTable("GIANTSTEPS KEY+TEMPO ACCURACY (MIREX annotations)")
 
