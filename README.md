@@ -108,10 +108,13 @@ Validated against authoritative references:
 
 We report **measured** accuracy, not claimed. Each row below is backed by a test in `Tests/`.
 
-> "Matches/beats librosa" applies **only to tempo and key** (the two metrics we benchmarked
-> against `librosa` 0.11), and loudness was validated against `ffmpeg`. It does **not** mean
-> 100% accuracy — both tempo and key sit at 40–70% on a hard EDM set — and it does **not**
-> mean every engine is verified. Instrument, chord, pitch and structure are not yet validated.
+> Loudness was validated against `ffmpeg`; tempo and key were measured on real music (GiantSteps,
+> a hard EDM set) and sit at 40–70% there. Earlier `librosa` 0.11 head-to-head numbers for
+> tempo/key are **not currently reproducible** (the comparison script isn't in this repo) and
+> have been removed from this table pending re-verification — see the open items in this
+> project's worklist. Instrument (as of Phase 16) and pitch (real-corpus RPA) now have measured
+> real-music numbers too; chord and structure still don't (no legally-obtainable paired audio yet
+> for chord; no bulk dataset yet for structure).
 
 | Area | Status | Source of truth |
 | :-- | :-- | :-- |
@@ -121,16 +124,13 @@ We report **measured** accuracy, not claimed. Each row below is backed by a test
 | ITU-R 468 noise weighting | ✅ ±0.03 dB vs the standard curve | analytic reference |
 | A-weighting (IEC 61672-1) | ✅ Δ ≤ 0.01 dB through 100Hz–2kHz vs the closed-form analytic curve | analytic reference |
 | Bit-depth / sample-rate / duration | ✅ exact | container header |
-| Foundational DSP (STFT, mel) | ✅ librosa-exact (corr 1.00000, 0% residual) | librosa 0.11 |
+| Foundational DSP (STFT, mel) | ⚠️ claimed librosa-exact (corr 1.00000, 0% residual) in an earlier pass, but the comparison script is not currently in this repo and the claim can't be reproduced right now | librosa 0.11 (unverified) |
 | Synthetic ground truth (tempo/timebase/phase/structure coverage) | ✅ 8/8 | deterministic fixtures |
-| Tempo — real music (EDM, 43 tracks) | ✅ Acc1 53% / Acc2 70% (librosa: 42% / 49%) | GiantSteps (MIREX) |
-| Key — real music (599 tracks) | ✅ 41.9% exact / 57.7% MIREX-weighted (librosa: 42.4% / 52.5%) | GiantSteps (MIREX) |
-| Instrument / chord / pitch / structure quality | ❌ not yet validated | — |
-
-> Tempo and key were benchmarked directly against `librosa` 0.11 on the same files: we
-> match or exceed it on both. (Key uses a high-resolution STFT chromagram; the bundled CQT
-> engine's correctness bugs were fixed and independently cross-checked in DEVLOG Phase 10 —
-> it just has no downstream consumer in this pipeline yet.)
+| Tempo — real music (EDM, 43 tracks) | ✅ Acc1 53% / Acc2 70% | GiantSteps (MIREX) |
+| Key — real music (599 tracks) | ✅ 50.9% exact / 63.3% MIREX-weighted (N=599, the full set — verified zero exclusions: every track loaded, parsed, and was long enough) | GiantSteps (MIREX) |
+| Instrument — real music | ✅ OpenMIC-2018 held-out test partition: Bass 48%/62% (recall/precision), Drums 61%/55%, Piano 64%/49%, Vocals 55%/38%, Strings 23%/33%, Brass 13%/21%; IRMAS (4 classes it can measure): 24.4% blended | IRMAS + OpenMIC-2018 |
+| Pitch/f0 — real music | ✅ Raw Pitch Accuracy (<50 cents), see `Examples/ReliabilityAudit` scorecard for the current run's % | MDB-stem-synth |
+| Chord / structure quality | ❌ not yet validated (no paired real-music audio for chord; no bulk dataset yet for structure) | — |
 
 ---
 

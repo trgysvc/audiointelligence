@@ -235,11 +235,19 @@ final class GoldenDatasetValidationTests: XCTestCase {
             }
             total += 1
 
-            // One STFT shared by onset (tempo) and chroma (key) — avoids a second cached STFT.
+            // Tempo/onset uses the standard nFFT=2048 STFT (matches DNAReportBuilder's per-chunk
+            // analysis path). Key uses a SEPARATE nFFT=8192 high-resolution STFT for chroma —
+            // this matches the real production key path (DNAReportBuilder.swift ~line 182-183),
+            // not the coarser nFFT=2048 chroma that was measured here before. Using the 2048
+            // chroma for key silently tested a code path production doesn't use — see DEVLOG for
+            // the investigation this uncovered (real production key path scores materially
+            // higher: 599-track full run went from 37.2%/49.9% (wrong, nFFT=2048) to 50.9%/63.3%
+            // (correct, nFFT=8192)).
             let stft = await STFTEngine(nFFT: 2048, hopLength: 512, sampleRate: 22050).analyze(buf.samples)
+            let stftHi = await STFTEngine(nFFT: 8192, hopLength: 512, sampleRate: 22050).analyze(buf.samples)
 
-            // Key: mean chroma → Krumhansl key estimate.
-            let chroma = ChromaEngine(sampleRate: 22050).chromagram(stft: stft)
+            // Key: mean chroma (high-resolution, production path) → Krumhansl key estimate.
+            let chroma = ChromaEngine(nFFT: 8192, sampleRate: 22050).chromagram(stft: stftHi)
             let meanChroma = (0..<12).map { c in chroma[c].isEmpty ? 0 : chroma[c].reduce(0, +) / Float(chroma[c].count) }
             let detKey = ModulationEngine().detectKey(meanChroma)
             let refK = parseKey(e.key), detK = parseKey(detKey)

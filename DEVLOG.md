@@ -1241,11 +1241,177 @@ The `--target`-only bug was introduced for the first time in this session specif
 building the new `runOpenMICTestPartitionEval` diagnostic, and was caught before that
 measurement's real numbers were reported. The V0→V1→V2 IRMAS sequence is unaffected and stands.
 
-**Status:** Phase 16 complete. `swift build` green throughout. All new/touched unit tests pass.
-Final numbers, full IRMAS set (1,100 files), same metric throughout (Bass/Drums structurally
-excluded from ever scoring, per above): pre-phase baseline 25.3% → determinism-fix V1 26.1% →
-4-feature V2 24.4%. OpenMIC-2018 held-out test partition (Bass/Drums' fair benchmark): Bass
-48%/62% (recall/precision), Drums 61%/55%, full 6-class table above.
+**Status:** Phase 16 complete. `swift build` green throughout. Full `swift test` (post-phase
+checkpoint, all suites, not just touched ones): **117/117 passed, 0 failures** (755.9s, ~12.6min —
+down from Phase 15's ~75-80min for 111 tests, a further confirmation of this phase's HPSS
+performance fix; +6 tests vs. Phase 15's 111 is exactly `InstrumentEngineTests` 2→4 and the new
+`HPSSEngineTests`' 4). Final numbers, full IRMAS set (1,100 files), same metric throughout
+(Bass/Drums structurally excluded from ever scoring, per above): pre-phase baseline 25.3% →
+determinism-fix V1 26.1% → 4-feature V2 24.4%. OpenMIC-2018 held-out test partition (Bass/Drums'
+fair benchmark): Bass 48%/62% (recall/precision), Drums 61%/55%, full 6-class table above.
+
+---
+
+## 🔑 Phase 17 — Key accuracy: a "regression" that was actually a test/production skew
+(2026-08-29)
+
+Post-Phase-16 checkpoint work (full `swift test`, 117/117 green) prompted a routine check of
+README's Validation Status claims against the repo's own history. README claims Key (real music,
+599 tracks) at 41.9% exact / 57.7% MIREX-weighted, sourced to Phase 6 (2026-06-15). The repo's own
+`Examples/ReliabilityAudit/history.jsonl` showed 5 consecutive full-599-track runs today, all
+identical at **37.2% exact / 49.9% weighted** — a real, reproducible, ~4.7-7.8pp shortfall against
+the README claim, not noise. First hypothesis: a real accuracy regression introduced sometime
+between Phase 6 and now (CQTEngine Phase 10, HPSS work, InstrumentEngine Phase 15-16 all touched
+shared code in between).
+
+### The actual cause: two measurement tools were silently testing the wrong code path
+
+`DNAReportBuilder.swift` (the real production pipeline, lines ~182-183) computes key/chroma from
+a **high-resolution nFFT=8192 STFT** — this is exactly the fix DEVLOG Phase 6 documented as what
+raised key from 26.7% to 41.9%/57.7% in the first place. But grepping both places that measure key
+accuracy showed neither one uses it:
+- `Tests/GoldenDatasetValidationTests.swift`'s `testGiantStepsKeyTempoAccuracy` — the test behind
+  every "official" Key number in this project — computed chroma from a **plain nFFT=2048 STFT**.
+- `Examples/ReliabilityAudit/main.swift`'s `runKeyTask` — the source of every `history.jsonl` Key
+  entry — did the same.
+
+Both were silently measuring the coarser, pre-Phase-6-fix code path this whole time. A third test
+in the same file, `testGiantStepsKeyCQT`, already computed BOTH paths side-by-side for comparison
+(its own comment on the nFFT=8192 branch literally reads "Production key path... This is what the
+pipeline uses") — a 40-track quick sample from it showed the nFFT=8192 path at 42.5%/55.0%, already
+much closer to README's claim, confirming the direction of the hypothesis before committing to it.
+
+### Verified, not assumed: full 599-track measurement of the real production path
+
+`GS_LIMIT=0 swift test --filter testGiantStepsKeyCQT` (full 599-track set, no sampling):
+```
+📊 KEY over 599: STFT exact=223 (37.2%) mirex=49.9%  |  CQT exact=305 (50.9%) mirex=63.3%
+```
+The `STFT` (nFFT=2048, wrong path) column reproduces `history.jsonl`'s 37.2%/49.9% exactly,
+confirming both measurements are internally consistent. The `CQT`-labeled column (nFFT=8192, the
+real production path — the label is a holdover from an earlier exploratory version of this test
+and is a high-resolution STFT chromagram, not an actual CQT) gives **50.9% exact / 63.3%
+MIREX-weighted** — not just reproducing README's 41.9%/57.7% claim, but exceeding it by a wide
+margin (+9pp exact, +5.6pp weighted). There was no regression; real production key accuracy is,
+and very likely has been for some time, materially better than what README claimed — the
+measurement layer just couldn't see it.
+
+### Why this matters more than any single number
+
+Both `testGiantStepsKeyTempoAccuracy` (part of the checkpoint suite that just reported 117/117
+green) and `ReliabilityAudit` were validating a code path the library doesn't ship. This means the
+validation layer was decoupled from production for key detection specifically — a real key
+regression introduced by a future change could pass both tools silently while actually breaking
+the shipped pipeline. This is a more serious finding than the number itself, and was worth fixing
+regardless of what the full-599 verification showed.
+
+**Fix applied**: both `testGiantStepsKeyTempoAccuracy` (`Tests/GoldenDatasetValidationTests.swift`)
+and `ReliabilityAudit`'s `runKeyTask` (`Examples/ReliabilityAudit/main.swift`) now compute key
+chroma from a dedicated `nFFT=8192` STFT, matching `DNAReportBuilder.swift` exactly, while tempo/
+onset in the same functions keep their original `nFFT=2048` STFT (that path was already correct —
+tempo's measured numbers already tracked README closely: 58.1%/69.8% measured vs. 53%/70% claimed).
+`swift build` and `swift build --build-tests` both green after the change.
+
+### A recurring tooling problem, now with harder evidence
+
+Re-running the fixed `testGiantStepsKeyTempoAccuracy` on the full 599-track set to cross-check
+against `testGiantStepsKeyCQT`'s clean number hit the same print-output-loss problem documented
+earlier in Phase 16 — this time on a **single, isolated, filtered test** (no other test class
+running concurrently), ruling out cross-suite interleaving as the sole cause. The log ends mid-way
+through the per-track table (420 of 599 rows survived) with no trailing `ValidationTable` summary
+at all — the process's final, largest buffered print chunk appears to have been dropped before
+exit rather than reordered. Recovered a partial cross-check by independently re-implementing the
+test's own `keyRelation()` classification against the surviving 420 rows: 55.5% exact / 67.2%
+weighted — same direction and magnitude as `testGiantStepsKeyCQT`'s clean 50.9%/63.3% (some
+divergence expected/acceptable given this is a partial, non-random-loss subsample, not a full
+599 reproduction). The clean, complete `testGiantStepsKeyCQT` number remains the one this phase's
+conclusions are based on. Root cause of the print-loss itself is still not conclusively identified;
+treat any `swift test` run with a large printed table as unreliable for exact figures and always
+prefer `--filter` isolation plus a willingness to re-run if the tail looks truncated.
+
+### The 50.9% vs. 55.5% discrepancy: resolved, and the resolution corrected a wrong assumption
+
+The partial-reconstruction number above (55.5% exact / 67.2% weighted, from the 420 surviving
+per-track rows of a truncated log) doesn't match `testGiantStepsKeyCQT`'s clean 50.9%/63.3%. First
+hypothesis: `testGiantStepsKeyCQT`'s denominator (`total`) only counts tracks where the file
+exists, `parseKey` succeeds, and there are enough samples — while the real
+`testGiantStepsKeyTempoAccuracy` counts every loaded track regardless of key-parseability,
+scoring unparseable keys as automatic zero-credit misses. This is a real, verified code
+difference between the two functions — but checking whether it actually *fires* on this dataset
+disproved the hypothesis: `testGiantStepsKeyCQT`'s own log reads "📊 KEY over **599**", and
+`Examples/Golden/manifest.json` has exactly 599 entries. `total == 599 == manifest size` means
+**zero exclusions occurred** — every track passed every guard. The code-level denominator
+difference exists but had no effect on this run. The real explanation is simpler: the 420-row
+reconstruction used a *third*, narrower filter (only rows matching a strict regex — both ref-key
+and det-key well-formed) that doesn't correspond to either real test's denominator, so it was
+never comparable to begin with. **50.9% exact / 63.3% MIREX-weighted, N=599 (the full set, zero
+exclusions verified), is the reliable number** — added to README's Key row explicitly so this
+doesn't need re-deriving later.
+
+### Print-loss root cause: four targeted reproductions, a real but bounded finding, no full repro
+
+Two candidate environment-level fixes were tried and **both failed** to prevent the real key
+test's catastrophic tail loss (missing 150+ per-track rows and the entire closing
+`ValidationTable` summary): direct file redirection (`> file`, no pipe) lost the same tail at the
+same byte offset as the piped version, and a PTY wrapper (`script -q /dev/null`, which forces
+line-buffered stdio) made no difference either — ruling out both "the pipe is the cause" and "it's
+a stdio-buffering-mode issue," the two most obvious candidate explanations.
+
+Four synthetic reproductions were then run, each isolating one specific variable, to find what
+actually triggers it (all as a temporary `Tests/ZZExitFlushDiagnosticTests.swift`, deleted after):
+1. **8 GCD threads × 3,000 lines each, via `swift test`**: 23,999/24,000 survived — one line
+   spliced (lost its `T3|2961|` prefix, glued to a later line). The same test as a bare
+   `swift <script>.swift` process (no XCTest/SwiftPM relay involved) was 24,000/24,000 clean both
+   piped and direct-redirected — proving Swift's `print()`/GCD is not the culprit by itself; the
+   corruption is specific to running *through* `swift test`.
+2. **600 lines, single big `print()` vs. many small `print()`s, right after real async STFT work
+   on 60 real tracks (~33s)**: both variants 100% clean. Too small a scale to trigger anything.
+3. **50,000 lines, same shape, same 60-track workload**: many-small-prints stayed 100% clean;
+   single-big-print lost exactly one line (index 49,717) to a splice with a concurrent `stderr`
+   write (from `2>&1`). Confirms one giant `print()` call is measurably more fragile than many
+   small ones — but still nowhere near the real test's scale of loss.
+4. **20,000 iterations of `await Task.yield()` immediately followed by `print()`** (testing
+   whether Swift concurrency's thread-hopping after each `await` — the real key test's actual
+   per-track loop shape — is what matters): 100% clean, no loss, no splice.
+
+**None of the four reproduced the real failure.** This is itself informative, not a dead end: the
+loss appears to require all three of (a) genuine audio I/O (not synthetic `Task.yield()` or GCD
+busy-work), (b) the real test's duration/volume scale (~8 minutes, 599 tracks — not 60 tracks/33s
+or a few seconds of synthetic printing), and (c) a large table printed at the very end, right
+before the test function returns and the process tears down. No single one of these three, alone,
+reproduced the loss in four separate attempts that each isolated one or two of them. A future
+attempt at full root-causing should target *that* combination (a long real-I/O run ending in a
+large print), not another synthetic microbenchmark — the four attempts above collectively rule out
+"just print volume," "just thread concurrency," and "just process-exit timing" as sufficient
+causes in isolation.
+
+**Mitigation, two-tier, documented so the gap doesn't get lost:**
+- **Short-term (in effect now)**: cross-check any large printed summary table by independently
+  recomputing it from the surviving raw per-track lines (done twice this phase). This has a real
+  gap — it only works if the raw lines themselves survive; if a future loss takes the raw data too,
+  there's nothing left to recompute from.
+- **Permanent fix (not yet done, tracked as its own worklist item)**: write critical summary
+  metrics directly to a file via `FileHandle` with an explicit synchronous flush/close before the
+  test function returns, instead of relying on captured `stdout` at all. This sidesteps whatever
+  `swift test`/XCTest-relay behavior is dropping data, regardless of whether its exact mechanism
+  is ever pinned down.
+
+The rare single-line splice found in tests 1 and 3 above (call it bug **(b)**, distinct from the
+unreproduced catastrophic loss, call it bug **(a)**) is real but low-impact (1 in 24,000–50,000
+lines, tied to `swift test`'s relay layer) — noted here, not worth code changes on its own.
+
+**Status:** Phase 17 complete. Root cause identified and fixed for the actual accuracy question
+(measurement tools realigned to the real production key path). README's Key row updated to 50.9%
+exact / 63.3% MIREX-weighted, N=599 verified full-set (up from 41.9%/57.7%, itself now understood
+to have been a stale, no-longer-representative number from Phase 6, not a target this phase needed
+to hit). The librosa 0.11 head-to-head comparison numbers previously in README's Validation Status
+table (for both tempo and key) were removed pending independent re-verification — the comparison
+script that produced them is not in this repo and could not be reproduced this session. The
+print-loss investigation is closed as **honestly partially-diagnosed**: a real, bounded, low-impact
+splice bug (b) is understood; the more serious tail-loss bug (a) has a verified trigger *profile*
+(real I/O + full scale + end-of-run large print, together) but no pinned-down mechanism, and a
+two-tier mitigation (short-term cross-check, permanent fix tracked separately) rather than a
+closed fix.
 
 ---
 

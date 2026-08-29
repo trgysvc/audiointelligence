@@ -218,8 +218,13 @@ func runKeyTask(goldenRoot: String) async -> [TaskResult] {
         guard FileManager.default.fileExists(atPath: url.path),
               let buf = try? await AudioLoader.load(url: url, targetSampleRate: 22050) else { continue }
         let samples = buf.samples.count > 60 * 22050 ? Array(buf.samples.prefix(60 * 22050)) : buf.samples
-        let stft = await STFTEngine(nFFT: 2048, hopLength: 512, sampleRate: 22050).analyze(samples)
-        let chroma = ChromaEngine(sampleRate: 22050).chromagram(stft: stft)
+        // Key uses the real production chroma path: nFFT=8192 high-resolution STFT (matches
+        // DNAReportBuilder.swift ~line 182-183), not the coarser nFFT=2048 STFT used for
+        // tempo/onset elsewhere. Using nFFT=2048 here silently measured a code path production
+        // doesn't use — full-599 GiantSteps: 37.2%/49.9% (wrong, nFFT=2048) vs 50.9%/63.3%
+        // (correct, nFFT=8192, matches production).
+        let stft = await STFTEngine(nFFT: 8192, hopLength: 512, sampleRate: 22050).analyze(samples)
+        let chroma = ChromaEngine(nFFT: 8192, sampleRate: 22050).chromagram(stft: stft)
         let mean = (0..<12).map { c in chroma[c].isEmpty ? 0 : chroma[c].reduce(0, +) / Float(chroma[c].count) }
         guard let detK = parseKey(ModulationEngine().detectKey(mean)) else { continue }
         let rel = keyRelation(ref: refK, det: detK)
