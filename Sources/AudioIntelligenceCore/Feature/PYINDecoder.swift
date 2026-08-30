@@ -57,7 +57,24 @@ public final class PYINDecoder: Sendable {
     }
 
     /// Per-frame emission: `obsVoiced[m]` for each pitch bin, and a single scalar `unvoiced`
-    /// (identical across all bins, per eq. 6 — "unvoiced" doesn't distinguish which pitch).
+    /// (identical across all bins).
+    ///
+    /// NOT a literal reading of the paper's eq. 6 (`0.5*p*_m` / `0.5*(1-Sigma p*_k)`, a flat
+    /// prior applied identically to every unvoiced bin) — that formula was tried first and
+    /// caused a near-total collapse to "unvoiced" on real audio (verified on MDB-stem-synth: RPA
+    /// dropped to 2% vs. YIN's 50.6%, 4353/207887 frames ever both-voiced). Root cause: with a
+    /// fixed 0.5 split and the SAME unvoiced value repeated across all 480 bins, a single voiced
+    /// bin's `0.5*mass` routinely lost to `0.5*(1-mass)` unless one candidate held over half the
+    /// ENTIRE Beta-prior probability mass — a bar real (non-idealized) CMND troughs rarely clear.
+    ///
+    /// Fixed to match the actual reference implementation (librosa's `pyin`, the de facto
+    /// standard — verified against its source directly): no 0.5 prior factor, and the unvoiced
+    /// mass is *divided across all `nBins` states*, not repeated: `voicedProb = clip(sum of
+    /// per-bin candidate mass, 0, 1)`, `unvoicedPerBin = (1 - voicedProb) / nBins`. This makes
+    /// each individual unvoiced state's emission small (spread over 480 states) so a genuine
+    /// voiced candidate at a specific bin can win, which is what a standard multi-state HMM
+    /// requires — a single aggregated "background" state competing head-to-head against a single
+    /// specific state does not.
     private func observation(for candidates: [PYINFrequencyCandidate]) -> (voiced: [Float], unvoiced: Float) {
         var voiced = [Float](repeating: 0, count: nBins)
         var totalMass: Float = 0
@@ -66,8 +83,8 @@ public final class PYINDecoder: Sendable {
             voiced[bin] += c.probability
             totalMass += c.probability
         }
-        for i in 0..<nBins { voiced[i] *= 0.5 }
-        let unvoiced = 0.5 * max(0, 1 - totalMass)
+        let voicedProb = min(max(totalMass, 0), 1)
+        let unvoiced = (1 - voicedProb) / Float(nBins)
         return (voiced, unvoiced)
     }
 

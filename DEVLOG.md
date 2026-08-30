@@ -1883,4 +1883,245 @@ all green. Full `swift test` checkpoint re-run clean after the threshold correct
 
 ---
 
+## 🎸 Phase 26 — InstrumentEngine: MFCC-0 is recording-condition noise for Bass/Drums/Strings, a real discriminative signal for Vocals/Brass (2026-08-30)
+
+Open-items list item 4 (InstrumentEngine's weak Bass recall, 48%/62%) was investigated on real
+OpenMIC TRAIN-partition audio (train, not test — per this session's train/test separation rule:
+iterate and diagnose on train, touch test only once at the end for an honest final number) before
+assuming retraining was the answer. First hypothesis (a chord-scoring-bug-style hidden formula
+defect in `timbreScore = max(0, 0.4 - mfccDistance/250)`) was tested directly and **rejected**: on
+40 real held-out Bass clips, mean `mfccDistance` for correctly- vs. incorrectly-classified clips
+was statistically identical (117.3 vs. 116.1) — no hidden threshold bug, a genuine model-capacity
+question.
+
+**Confusion-matrix diagnostic** (80 unambiguous train-partition Bass clips): 39/80 (48.75%) hits,
+matching the known 48% baseline. Of the 41 misses, 26 (63%) had "timbre" (MFCC Euclidean distance)
+as the single largest contributing term to the wrongly-winning class's edge over Bass —
+concentrated, not spread evenly across the 5 scoring terms.
+
+**Root cause**: `mfccPattern[0]` (the DC/log-energy coefficient) ranges from -85.9 to -260.5
+across the 6 class profiles — a huge, energy-dominated spread. Real Bass clips' own MFCC-0 vs.
+their training-fit mean differs by 23.2 on average; Drums by 80.6. This is recording-condition
+noise (DI vs. mic'd, mix level, dynamic range), not timbre.
+
+**Symmetric case-by-case verification, not an aggregate guess** (the standard this investigation
+was explicitly held to): excluding MFCC-0 from the timbre distance was checked class-by-class,
+both directions.
+- **Bass/Drums/Strings-Synth: 15 clips gained (wrong->correct), 0 lost (correct->wrong)** across
+  train-partition samples of each — a completely one-sided win, not a trade-off.
+- **Vocals/Brass: excluding MFCC-0 LOSES real, case-by-case-verified discriminating power** — 6
+  Vocals and 4 Brass clips that were correctly classified flip to wrong when MFCC-0 is dropped, in
+  every case because the real input's MFCC-0 was close to that class's own trained mean (Vocals
+  clips: real MFCC-0 mean -95.8 vs. trained -85.9, diff 9.9 — the tightest of all 6 classes) while
+  far from the wrongly-winning class's mean. Vocal/wind-instrument recordings have a genuinely
+  stable, class-characteristic loudness envelope; Bass/Drums/Strings recordings don't.
+- **Piano: zero difference either way** (26.7% with or without) — left unchanged; branching the
+  architecture where measurement shows no benefit only adds complexity.
+
+**Fix**: `Fingerprint` gained `mfccExcludedCoefficients: Set<Int>`, set to `[0]` for Bass,
+Drums/Percussion, and Strings/Synth; `[]` (unchanged) for Piano/Keyboard, Brass/Trumpet,
+Vocals/Chorus. The reasoning (not just the "what") lives in the field's own doc comment in
+`InstrumentEngine.swift`, so a future reader doesn't have to rediscover why only three classes
+are special-cased.
+
+**Status:** Phase 26 complete for the diagnosed portion of open-items list item 4.
+`swift build`/`swift build --build-tests` green; `InstrumentEngineTests` (4/4),
+`InstrumentBaselineTests` (2/2) green, no regression. A full `RA_IRMAS_PER_CLASS=0
+RA_OPENMIC_LIMIT=0` `ReliabilityAudit` re-measurement was run per the user's request, recorded
+next to the historical baseline (Phase 16, pre-any-fix, same sample sizes — a fair, apples-to-
+apples comparison):
+
+| Dataset | Phase 16 baseline | Post-fix (today) | Change |
+| :-- | :-- | :-- | :-- |
+| IRMAS (6705/6718 files) | 25.3% | **28.5%** | +3.2pp |
+| OpenMIC-2018 (13847/20000 clips) | 30.3% | **44.8%** | +14.5pp (≈48% relative) |
+
+The first re-measurement attempt was interrupted mid-run by an unrelated external-disk migration
+(OpenMIC's `n` collapsed to 513/13847 as the dataset directory was relocated out from under the
+read) and was discarded, re-run once the migration completed and all `Tests/Resources/*` symlinks
+(plus a stale `Examples/Golden/audio` symlink outside that directory, which the same migration
+broke and which caused 4 unrelated `GoldenDatasetValidationTests` failures in the next full-suite
+checkpoint until found and re-pointed) were updated to the new location, for a valid number.
+
+### Per-class breakdown — the aggregate number alone would have hidden a real regression
+
+`Examples/ReliabilityAudit` gained two new verbose-mode additions to get this
+(`RA_IRMAS_VERBOSE=1`, already existed; `RA_OPENMIC_VERBOSE=1`, added — per-fine-class recall
+restricted to clips whose entire label set maps unambiguously to one coarse class, the same
+purity filter `PrototypeTrainer` itself uses, for a clean apples-to-apples comparison against the
+Phase 16 baseline numbers). Full IRMAS + full OpenMIC, both post-fix:
+
+| Class | OpenMIC recall (n) | Phase 16 baseline | Change |
+| :-- | :-- | :-- | :-- |
+| Bass (Acoustic/Electric) | **65%** (309/470) | 48% | **+17pp** |
+| Drums/Percussion | 78% (1405/1792) | — (not previously isolated) | — |
+| Piano/Keyboard | 55% (1113/2006) | — (not previously isolated) | — |
+| Strings/Synth | 41% (1675/4003) | — (33% was *precision*, a different metric — not directly comparable) | — |
+| Vocals/Chorus | 25% (236/925) | — (not previously isolated) | — |
+| **Brass/Trumpet** | **5%** (105/1757) | 13% | **-8pp (regression)** |
+
+IRMAS (which has no dedicated Bass class among its 11 — Bass's per-class number could only come
+from OpenMIC) confirms Brass/Trumpet is genuinely, severely weak from an independent dataset too:
+`sax` 3% (21/626), `tru` 5% (32/577) recall — both far below every other IRMAS class measured.
+
+Bass's real-world gain (+17pp, exceeding even the clean 15/0 train-partition case-by-case result)
+confirms Phase 26's fix generalizes. But Brass/Trumpet — deliberately left untouched by the MFCC-0
+fix, since Phase 26's own case-by-case check showed MFCC-0 is a genuine, reliable signal for
+Brass, not noise — got *worse*, not just unmoved. Plausible mechanism, not yet verified: Bass/
+Drums/Strings' scores strengthening from the fix may now out-compete Brass more often in the
+argmax step for genuinely-Brass audio (the profiles don't just compete independently; a stronger
+class can steal predictions from a weaker one). This is now open-items list item 5's concrete,
+measured starting point — no longer a stale 13%-with-no-recent-verification figure.
+
+---
+
+## 🎵 Phase 27 — pYIN implemented from the primary source; a severe emission-formula bug found and fixed via reference-implementation comparison (2026-08-30)
+
+Investigated the state of the art for monophonic pitch estimation before touching
+`InstrumentEngine`/`StructureEngine` further, per the user's own research-first instinct. Pitch
+estimation is a comparatively solved field where pure-Swift, zero-dependency, offline-only
+constraints (both explicitly confirmed) don't close off the best available *classical* method:
+pYIN (Mauch & Dixon, ICASSP 2014) — a direct DSP-only extension of the `YINEngine` this codebase
+already has, no CoreML/neural-net needed. Deep-learning approaches (CREPE, basic-pitch, PANNs/AST
+for instrument ID) were explicitly ruled out as incompatible with the confirmed pure-Swift
+constraint, not investigated further.
+
+Implemented directly from the original paper (`YINEngine.pyinCandidates`/
+`analyzePYINCandidates`, new `PYINDecoder.swift`), not a second-hand description:
+
+**Stage 1** (multi-candidate generation): instead of `YINEngine`'s existing single first-below-
+threshold candidate, sweep every threshold in the Beta(2,18) prior's support and return every
+period any threshold would select, each weighted by the probability mass of thresholds selecting
+it. Efficient exact algorithm (not a naive 100-threshold loop): sort CMND troughs by their own
+value ascending — this is exactly the order in which they become eligible as the threshold rises
+— and track a running-minimum-tau; each strict improvement is a new "winner" owning the threshold
+range up to the next winner. Beta(2,18)'s CDF has a closed polynomial form for integer alpha=2,
+derived directly: `CDF(x) = 1 - 19(1-x)^18 + 18(1-x)^19` — each winner's probability is the exact
+analytic CDF difference over its range, not a discretized 100-point sum (a first version used the
+discrete sum; switched to the analytic form since it's exact and grid-resolution-independent).
+
+**Stage 2** (HMM pitch tracking, `PYINDecoder`): 480 pitch bins (55Hz-880Hz, 10-cent/0.1-semitone
+resolution) x voiced/unvoiced per bin = 960 states — not the single shared "silence" state
+`ViterbiEngine.smoothPitchPath`'s existing simplified pYIN-relative uses. Triangular pitch-
+transition window (max 25-bin/2.5-semitone jump per frame), 0.99/0.01 voicing self-transition,
+initial probabilities uniform over unvoiced states only — all matching the paper's stated design.
+Deliberately NOT built on `ViterbiEngine.decode()`'s generic dense O(nStates^2) recursion (960^2 =
+~920K ops/frame) — a dedicated banded Viterbi exploiting the +-24-bin transition window brings this
+to ~188K ops/frame, since the paper itself notes the need for "an efficient version... that
+exploits the sparseness of the transition matrix."
+
+### A severe bug, invisible on synthetic data, caught by real-data validation
+
+A pure-tone sanity check (220Hz sine) passed cleanly (82/83 frames voiced, mean 220.5Hz) — but the
+real closing validation against MDB-stem-synth (synthesis-derived ground truth, the same dataset
+YIN's 56.5%/50.6% baseline was measured on) told a completely different story: **RPA<50cents
+collapsed to 2.0% (vs. YIN's 50.6%), with only 4353/207887 true-voiced frames ever decoded as
+voiced at all** — a near-total collapse to "unvoiced" that a clean synthetic tone could never
+reveal.
+
+Root cause: the first implementation followed the paper's eq. 6 literally — `p_{m,v=1}=0.5*p*_m`,
+`p_{m,v=0}=0.5*(1-Sigma p*_k)`, the SAME unvoiced value repeated identically across all 480 bins.
+With a fixed 0.5/0.5 prior split, a single voiced bin's `0.5*mass` only beats the repeated
+`0.5*(1-mass)` unvoiced value when that one candidate holds over half of the ENTIRE Beta-prior
+probability mass — a bar real (non-idealized, harmonically messy) CMND troughs rarely clear, since
+Beta(2,18) is heavily front-loaded (CDF(0.1) ≈ 58% of the whole distribution) and real troughs
+often sit past that point. Root-caused by comparing directly against librosa's `pyin` source (the
+de facto reference implementation) rather than re-deriving from the terse paper text alone: the
+real reference formula has **no 0.5 prior factor**, and unvoiced mass is **divided across all 480
+bins** (`(1-voicedProb)/nBins`), not repeated — making each individual unvoiced state's emission
+tiny (spread over 480 states) so a genuine voiced candidate at one specific bin can win, which is
+what a standard multi-state HMM requires.
+
+Fixed to match the reference formula. Re-verified on the same MDB-stem-synth set
+(`Tests/PYINEngineTests.swift`, 20 stems, 207,887 true-voiced ground-truth frames):
+
+```
+YIN : RPA<50cents=50.6%  GPE(>20% error)=2.1%   voicing accuracy=77.8%
+pYIN: RPA<50cents=61.6%  GPE(>20% error)=3.9%   voicing accuracy=85.3%
+```
+
+Reported honestly, not as a one-sided win: pYIN beats YIN substantially on RPA (+11.0pp) and
+voicing accuracy (+7.5pp) — recovering 27% more true-voiced frames as correctly voiced — but GPE
+rose (+1.8pp), consistent with the newly-recovered frames including some genuinely harder cases.
+This matches the literature's own characterization (pYIN's advantage is chiefly voicing/octave-
+error robustness, not raw cent-accuracy) rather than an unqualified improvement on every axis.
+
+**Status:** Phase 27 complete. `PYINEngineTests` promoted to permanent coverage with regression-
+guarding assertions (pYIN RPA/voicing-accuracy must exceed YIN's; RPA must stay above 55% — the
+exact signature of the emission-formula bug this phase found and fixed, verified to actually catch
+it: reverting to the 0.5-prior formula collapses RPA back to ~2%). `swift build`/`swift build
+--build-tests` green; `YINEngineTests` (8/8), `ViterbiPitchSmoothingTests` (4/4),
+`ViterbiRealPipelineTests` (1/1) unaffected — no regression on existing YIN/Viterbi behavior.
+Not yet wired into `DNAReportBuilder.swift`'s production pipeline (still YIN) — that integration,
+and the known 55-880Hz 4-octave range limitation's real-world impact (bass/high-register material
+outside that window can never be tracked as voiced by `PYINDecoder`, inherited directly from the
+paper's original vocal-range design target), are open follow-ups, not yet done.
+
+---
+
+## 🗂️ Phase 28 — SALAMI downloaded (444/476 tracks, legally, via a resolved Internet Archive index); StructureEngine gets its first-ever real ground-truth measurement (2026-08-30)
+
+Open-items list item 1 (SALAMI "requires per-track matching, no bulk download exists") was
+re-investigated before accepting that premise. SALAMI's own official metadata
+(`DDMAL/salami-data-public/metadata/id_index_internetarchive.csv`) turned out to already contain
+476 direct `archive.org/download/...` URLs — not a matching problem, a *stale-link* problem: the
+URLs are ~10-15 years old and Internet Archive items get re-derived/renamed over time. Resolved via
+`archive.org/metadata/{item}` (current file listing per item) with a stem-based match (strip
+`_vbr`/format-specific suffixes) — 462/476 resolved on the first pass; actual download (network
+retries, timeouts, occasional archive.org 500s) landed **444/476 (93.3%), 12GB**, all legally
+downloadable Live Music Archive material — no YouTube-matching or scraping needed, unlike the
+official README's own suggested fallback for other SALAMI audio sources. `Tests/Resources/SALAMI`
+symlinked, `annotations/`/`metadata/` from the CC0-licensed upstream repo included alongside.
+
+A mid-session external-disk migration (the 12GB+ total across all datasets needed to move off a
+nearly-full internal drive) interrupted and then relocated the whole `audiointelligence_tests`
+directory; all `Tests/Resources/*` symlinks (and one outside that directory, `Examples/Golden/
+audio` — see Phase 26) were re-pointed once the move completed, and the download resumed from
+where its own resumability logic left off (268 already-downloaded files skipped, 176 fetched in
+the final pass).
+
+### First-ever real ground-truth measurement for StructureEngine
+
+`StructureEngine.analyze()`'s boundary detection had never been checked against real human-
+annotated structure before (`DSPGroundTruthTests.testRecurrenceMatrixSymmetry` only checks
+self-similarity-matrix symmetry; `StructureEngineTests.swift`'s synthetic two-section track checks
+boundary detection in principle, not accuracy against real annotation). `Tests/
+StructureEngineSALAMITests.swift`: 15 real SALAMI tracks (evenly sampled), full production-
+equivalent pipeline (`ChromaEngine(nFFT: 8192)`, `MFCCEngine(nMFCC: 13)`), boundary times compared
+against SALAMI's "uppercase" large-scale structure layer at the two standard MIREX tolerance
+windows (0.5s, 3.0s):
+
+```
+@0.5s: precision=8.2%  recall=21.9%  F=11.9%
+@3.0s: precision=25.7% recall=68.7%  F=37.3%
+```
+
+**Real finding, not just a number**: predicted boundary counts run 2-3x the true counts per track
+(e.g. one track: 40 predicted vs. 12 true) — `StructureEngine` over-segments. The 3.0s recall
+(69%) shows most true boundaries have *some* nearby prediction, but the collapse at 0.5s (22%)
+shows those predictions are rarely precisely timed even when they're in the right neighborhood.
+Likely lever, not yet tested: `DSPHelpers.peakPick`'s `delta`/`wait` parameters in
+`StructureEngine.analyze` are almost certainly too permissive for real audio's novelty-curve noise
+floor — untouched since being hand-set, never calibrated against real annotated boundaries before
+this phase, because no real annotated audio existed to calibrate against.
+
+**Debugging note, for anyone touching this manifest format again**: the freshly-downloaded
+`ia_manifest.csv` was written with CRLF line endings (Python `csv.writer`'s default) and silently
+produced **zero** parsed entries in Swift — `String.split(separator: "\n")` treats `"\r\n"` as a
+single extended grapheme cluster, so a bare `"\n"` separator never matches anything in a CRLF file
+and the loop body never runs, with no error, no crash, just an instantly-empty result. Fixed three
+places: the manifest file itself (normalized to LF), the generating Python script
+(`csv.writer(..., lineterminator='\n')`), and the Swift parsing code
+(`.components(separatedBy: .newlines)`, which handles any line-ending convention correctly) — the
+third fix is defense in depth, not a substitute for the first two.
+
+**Status:** Phase 28 complete for open-items list item 1's download; StructureEngine boundary
+accuracy is now measured for the first time, not assumed. The over-segmentation investigation
+(peak-picking recalibration against this same real ground truth) is a concrete, well-defined
+follow-up, not yet done. `swift build`/`swift build --build-tests` green;
+`StructureEngineSALAMITests` (1/1) green with a loose sanity floor (catches a total collapse, not
+a tight regression contract on today's still-weak baseline numbers).
+
+---
+
 > *"Measured, not claimed: AudioIntelligence reports what it can prove."*

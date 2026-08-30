@@ -799,6 +799,14 @@ func runOpenMICTask(root: String) async -> TaskResult {
     let limit = envLimit("RA_OPENMIC_LIMIT", default: 60)
     let keys = thinned(candidateKeys, limit: limit)
 
+    // RA_OPENMIC_VERBOSE=1: per-fine-class recall, restricted to clips whose ENTIRE positive
+    // label set maps unambiguously to a single coarse class (same purity filter PrototypeTrainer
+    // uses for training) — the cleanest apples-to-apples per-class comparison against the
+    // Phase 16 baseline numbers (Bass 48%/62%, Brass 13%, etc.), not muddied by OpenMIC's
+    // multi-label "acceptable set" leniency.
+    let verbose = ProcessInfo.processInfo.environment["RA_OPENMIC_VERBOSE"] == "1"
+    var classHit: [String: Int] = [:], classN: [String: Int] = [:]
+
     var hit = 0, n = 0, loadFailures = 0
     for key in keys {
         guard let fine = positives[key] else { continue }
@@ -814,6 +822,21 @@ func runOpenMICTask(root: String) async -> TaskResult {
         let label = await predictInstrument(samples: buf.samples, sampleRate: 22050)
         if acceptable.contains(label) { hit += 1 }
         n += 1
+
+        if verbose {
+            let single = Set(fine.compactMap { openmicToSingleCoarseForDiscrimination[$0] })
+            if single.count == 1, let coarse = single.first {
+                classN[coarse, default: 0] += 1
+                if label == coarse { classHit[coarse, default: 0] += 1 }
+            }
+        }
+    }
+    if verbose {
+        print("  --- OpenMIC per-class recall (unambiguous single-coarse-class clips only) ---")
+        for cls in classN.keys.sorted() {
+            let c = classHit[cls] ?? 0, total = classN[cls] ?? 0
+            print("  [\(cls)] recall=\(c)/\(total) (\(total > 0 ? Int(Double(c)/Double(total)*100) : 0)%)")
+        }
     }
     guard n > 0 else {
         let note = loadFailures > 0
