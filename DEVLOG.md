@@ -1949,29 +1949,49 @@ checkpoint until found and re-pointed) were updated to the new location, for a v
 (`RA_IRMAS_VERBOSE=1`, already existed; `RA_OPENMIC_VERBOSE=1`, added — per-fine-class recall
 restricted to clips whose entire label set maps unambiguously to one coarse class, the same
 purity filter `PrototypeTrainer` itself uses, for a clean apples-to-apples comparison against the
-Phase 16 baseline numbers). Full IRMAS + full OpenMIC, both post-fix:
+Phase 16 baseline numbers).
 
-| Class | OpenMIC recall (n) | Phase 16 baseline | Change |
+**Methodology correction, caught before drawing conclusions from it**: the first `RA_OPENMIC_
+VERBOSE=1` run omitted `RA_OPENMIC_TEST_ONLY=1`, so it measured train+test combined — not
+comparable to the Phase 16 baseline, which was held-out-test-only. Re-run correctly:
+
+| Class | OpenMIC recall, held-out test only (n) | Phase 16 baseline | Change |
 | :-- | :-- | :-- | :-- |
-| Bass (Acoustic/Electric) | **65%** (309/470) | 48% | **+17pp** |
-| Drums/Percussion | 78% (1405/1792) | — (not previously isolated) | — |
-| Piano/Keyboard | 55% (1113/2006) | — (not previously isolated) | — |
-| Strings/Synth | 41% (1675/4003) | — (33% was *precision*, a different metric — not directly comparable) | — |
-| Vocals/Chorus | 25% (236/925) | — (not previously isolated) | — |
-| **Brass/Trumpet** | **5%** (105/1757) | 13% | **-8pp (regression)** |
+| Bass (Acoustic/Electric) | **59%** (71/120) | 48% | **+11pp** |
+| Drums/Percussion | 79% (364/457) | — (not previously isolated) | — |
+| Piano/Keyboard | 52% (240/456) | — (not previously isolated) | — |
+| Strings/Synth | 41% (444/1075) | — (33% was *precision*, a different metric — not directly comparable) | — |
+| Vocals/Chorus | 22% (46/207) | — (not previously isolated) | — |
+| **Brass/Trumpet** | **5%** (27/465) | 13% | **-8pp (regression)** |
 
 IRMAS (which has no dedicated Bass class among its 11 — Bass's per-class number could only come
 from OpenMIC) confirms Brass/Trumpet is genuinely, severely weak from an independent dataset too:
 `sax` 3% (21/626), `tru` 5% (32/577) recall — both far below every other IRMAS class measured.
 
-Bass's real-world gain (+17pp, exceeding even the clean 15/0 train-partition case-by-case result)
-confirms Phase 26's fix generalizes. But Brass/Trumpet — deliberately left untouched by the MFCC-0
-fix, since Phase 26's own case-by-case check showed MFCC-0 is a genuine, reliable signal for
-Brass, not noise — got *worse*, not just unmoved. Plausible mechanism, not yet verified: Bass/
-Drums/Strings' scores strengthening from the fix may now out-compete Brass more often in the
-argmax step for genuinely-Brass audio (the profiles don't just compete independently; a stronger
-class can steal predictions from a weaker one). This is now open-items list item 5's concrete,
-measured starting point — no longer a stale 13%-with-no-recent-verification figure.
+Bass's real-world gain (+11pp on the properly-restricted held-out set) confirms Phase 26's fix
+generalizes. Brass/Trumpet — deliberately left untouched by the MFCC-0 fix, since Phase 26's own
+case-by-case check showed MFCC-0 is a genuine, reliable signal for Brass, not noise — got *worse*,
+not just unmoved, and this holds under the corrected methodology too (5% either way).
+
+**"Scale unfairness" hypothesis tested directly and mostly rejected.** Suspected mechanism:
+excluding MFCC-0 for Bass/Drums/Strings shortens their distance sum to 9 terms while Brass/Piano/
+Vocals stay at 10 — since raw Euclidean distance mechanically shrinks with fewer terms (for almost
+any input, not just genuine matches), this could give the 9-term classes an unfair argmax edge
+regardless of true similarity. Tested on the same 80 train-partition Brass clips used to originally
+diagnose this regression: replacing the raw-sum distance with a term-count-independent RMS
+distance (root MEAN squared difference, not root SUM) only moved Brass's timbre-term win rate from
+2/80 to 4/80 — a real but small effect, nowhere near enough to explain a 75/80 loss rate. Scale
+incomparability is at most a minor contributor, not the primary cause.
+
+**Real, unresolved cause**: Brass's own `mfccPattern` is simply a poor match for real Brass audio
+— even restricted to the timbre term alone (ignoring the other 4 scoring terms entirely), Brass's
+own profile is the single closest match for only 2-4 of 80 real train-partition Brass clips.
+Plausible explanation, not yet verified: Brass/Trumpet's 3 constituent OpenMIC fine classes
+(saxophone, trombone, trumpet) may simply be too timbrally diverse for one shared mean+SD profile
+to represent well — a genuine model-capacity question, not a scoring-formula bug this time. This
+is now open-items list item 5's concrete, measured starting point — no longer a stale
+13%-with-no-recent-verification figure, and the two most obvious hypotheses (a hidden threshold
+bug, a scale-fairness artifact) have both been tested and ruled out rather than assumed.
 
 ---
 
