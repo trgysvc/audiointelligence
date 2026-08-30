@@ -55,8 +55,12 @@ public final class MetalEngine: @unchecked Sendable {
             float val = in[frame_idx * n_mels + i];
             sum += val * cos(M_PI_F / (float)n_mels * (i + 0.5f) * (float)mfcc_idx);
         }
-        // Scale for numerical stability
-        out[id] = sum * sqrt(2.0f / (float)n_mels);
+        // DCT-II orthonormal scale: the DC term (mfcc_idx == 0) gets sqrt(1/N), every other term
+        // gets sqrt(2/N) — matching the CPU path's convention (MFCCEngine.swift dcScale/
+        // orthoScale). Applying sqrt(2/N) unconditionally (as before) made the GPU's MFCC-0
+        // coefficient ~41.4% (sqrt(2)) too large relative to the CPU path and librosa.
+        float scale = (mfcc_idx == 0) ? sqrt(1.0f / (float)n_mels) : sqrt(2.0f / (float)n_mels);
+        out[id] = sum * scale;
     }
 
     kernel void unified_forensic_kernel(

@@ -1464,4 +1464,423 @@ open item.
 
 ---
 
+## 🔬 Phase 18 — Reproducing the STFT/mel librosa-exact claim (2026-08-30)
+
+README's "Foundational DSP (STFT, mel): librosa-exact (corr 1.00000, 0% residual)" claim had been
+downgraded to ⚠️ (unverifiable) in Phase 17's README pass: the comparison script,
+`/tmp/parity_compare.py`, was documented as "kept outside the repo" and had been lost. Rather than
+leave the claim permanently unverifiable, it was reconstructed from first principles and re-run.
+
+`Tests/ParityDumpTests.swift` (already in the repo, untouched) dumps a deterministic 4-second
+multi-tone signal (440/1320/3010/6050 Hz, non-harmonic so the comparison isn't a frame-alignment
+artifact) plus this library's own STFT-magnitude and mel-spectrogram output for it, as raw float32
+files under `/tmp/parity/`. Its doc comments and the actual Swift source (`STFTEngine`,
+`MelSpectrogramEngine`, `FilterbankEngine.createMelFilterbank`) pin down every convention needed to
+reconstruct a faithful comparison: STFT nFFT=2048/hop=512/Hann window/`center=True`/constant
+padding; mel spectrogram computed from the *power* (magnitude²) spectrum through a Slaney-
+normalized, `htk=False` filterbank (`fmin=0`, `fmax=sr/2`) — all defaults that match librosa's own
+`stft`/`melspectrogram`/`filters.mel` defaults when passed explicitly. One real gotcha caught by
+reading the Swift source directly rather than assuming: `MelSpectrogramResult.melData`'s doc
+comment claims "nMels × nFrames (Row-Major)" but the actual indexing
+(`melData[t * nMels + m]`, `MelSpectrogramEngine.swift`) is frame-major — the doc comment is wrong.
+Reshaping the dumped mel data by its stated header order instead of its true data layout would
+have silently produced a garbage (near-zero) correlation and a false "doesn't match" result.
+
+New `scripts/parity_compare.py` (tracked in this repo, unlike the multi-GB audio/dataset material —
+it's a small script with no bundled data, so keeping it doesn't fight the "ship only source code"
+principle and it can't get lost again):
+```
+swift test --filter ParityDumpTests
+/tmp/lrvenv/bin/python scripts/parity_compare.py
+```
+Result, on librosa 1.0.0 (the environment's current version, not the 0.11 the original claim cited
+— the underlying algorithms this compares are stable across that range):
+```
+STFT  : corr=1.00000  residual=0.0000%
+Mel   : corr=1.00000  residual=0.0003%
+```
+**The original claim is confirmed, not just restored on faith.** README's Foundational DSP row is
+back to ✅ with the exact reproduced numbers and a pointer to the script. `swift build` green.
+
+**Status:** Phase 18 complete for the STFT/mel parity claim specifically (open-items list item 1).
+The separate, still-open tempo/key librosa 0.11 head-to-head comparison numbers (a different claim,
+removed from README in Phase 17, no reconstructed script yet) remain unverified — item, not this
+one, in the worklist.
+
+---
+
+## 🧮 Phase 19 — MFCC CPU/GPU DCT scale mismatch: a real bug, found and fixed (2026-08-30)
+
+Open-items list item 2 asked whether the CPU (`vDSP_DCT_Execute`) and GPU (Metal `batch_dct`)
+paths of `MFCCEngine.compute()` produce consistent output — never verified. Investigated by
+reading both implementations side by side rather than assuming.
+
+**The CPU path** (`MFCCEngine.swift`) applies the standard DCT-II *orthonormal* scale: the DC
+term (coefficient 0) gets `sqrt(1/N)`, every other term gets `sqrt(2/N)` — this asymmetry is what
+makes an orthonormal DCT-II actually orthonormal, and it's the convention librosa/scipy use.
+
+**The GPU path** (`Sources/AudioIntelligenceMetal/AudioIntelligenceMetal.swift`'s `batch_dct`
+kernel) applied `sqrt(2/N)` to *every* output index unconditionally — including index 0. That
+makes the GPU's MFCC-0 coefficient `sqrt(2)` (≈41.4%) too large relative to both the CPU path and
+librosa's convention. Coefficients 1–19 were unaffected (both paths already used `sqrt(2/N)` for
+those).
+
+**Verified empirically**, not just algebraically: a temporary test fed the identical synthetic
+log-mel spectrogram (128 mels × 5 frames, deterministic non-flat pattern so a DC-only bug can't
+hide behind an all-zero AC baseline) through both `MFCCEngine(metalEngine: nil)` (CPU) and
+`MFCCEngine(metalEngine: MetalEngine())` (GPU), and diffed all 100 output coefficients (20 MFCCs ×
+5 frames). Before the fix: MFCC-0 differed by the predicted `sqrt(2)` factor. After adding the
+same DC-term special case to the Metal kernel: **MFCC-0 matched exactly** (`CPU=-64.48083
+GPU=-64.48083, diff=0.0`); the other 19×5=95 coefficients already matched within float32 rounding
+noise (max diff ~6.7e-5, max relative diff ~0.0044%) both before and after — confirming the bug
+was isolated to the DC term, not a broader kernel issue.
+
+**Fix**: `batch_dct`'s scale is now `(mfcc_idx == 0) ? sqrt(1/N) : sqrt(2/N)`, matching the CPU
+path's `dcScale`/`orthoScale` split exactly.
+
+### A real downstream consequence — not silently absorbed
+
+`DNAReportBuilder.swift` always passes a live `MetalEngine`, so production has been running the
+GPU path (`nFrames > 1` is the common case) — meaning **every MFCC-0 value this library has ever
+produced in a real analysis was ~41% too large** until this fix. MFCC-0 (the log-energy/DC term)
+is part of `mfccSubset`, which feeds directly into both `InstrumentEngine.predict()`'s timbre
+distance calculation and `StructureEngine.analyze(mfccs:)`'s segmentation input.
+
+At the time this phase was written, this section claimed InstrumentEngine's prototypes were
+trained through the same buggy GPU path and would need re-training. **That claim was wrong — see
+Phase 24, which found and corrected it before any retraining was actually carried out.** In short:
+`Examples/PrototypeTrainer/main.swift` and `Examples/ReliabilityAudit/main.swift` both construct
+`MFCCEngine` without passing a `metalEngine` (`MFCCEngine(melEngine:nMFCC:)`), so both the
+prototypes and the OpenMIC-held-out accuracy numbers below were computed via the CPU path — which
+was correct all along — and were never touched by this bug. Only `DNAReportBuilder.swift` (real
+production inference) called the GPU path directly. The numbers as originally measured (Bass
+48%/62%, Drums 61%/55%, Piano 64%/49%, Vocals 55%/38%, Strings 23%/33%, Brass 13%/21%) stand;
+retraining was not performed because it would not have changed them.
+
+**Status:** Phase 19 complete for the CPU/GPU DCT parity question itself (open-items list item 2).
+`swift build`/`swift build --build-tests` green; a full `swift test` checkpoint was run given this
+touches a shared low-level engine (`AudioIntelligenceMetal`) — see the run's own log for the
+pass/fail count. See Phase 24 for the corrected downstream-consequence analysis and closure.
+
+---
+
+## 🎯 Phase 20 — YINEngine trough detection: a real deviation from canonical YIN, fixed (2026-08-30)
+
+Open-items list item 3 flagged that `YINEngine`'s trough-finding might not fully satisfy canonical
+YIN's (de Cheveigné & Kawahara, 2002) step 4: once the cumulative mean normalized difference
+function (cmnd) dips below the threshold, the algorithm must keep descending — following the dip
+to its true local minimum — not stop at the first sample that happens to be below threshold.
+
+**The bug, precisely**: the old `findPeriod` loop accepted `tau` as soon as `cmnd[tau] < threshold
+&& cmnd[tau] < cmnd[tau-1]` — checking only that the value is descending *from the previous
+sample*, never checking whether it *keeps* descending *past* that sample. A `tau` still partway
+down a dip satisfies this check and gets accepted immediately, well before the true bottom.
+
+**Verified, not just reasoned about**: a hand-built `cmnd` fixture (crosses below threshold=0.1 at
+tau=10 while still falling, keeps falling to a true minimum at tau=12, rises at tau=13) exposed the
+bug concretely. Before the fix, `findPeriod` returned **11.25** — comparing against the true
+minimum (12) at a tight 0.3 tolerance failed outright. The 11.25 wasn't even a deliberate "close
+but early" answer — it's an artifact of feeding a non-trough point into the parabolic
+sub-sample-interpolation step, which assumes its three input points already bracket a real local
+minimum; on a still-descending triple, the same formula produces a number, just not a principled
+one. After the fix: **11.9**, tight to the true minimum.
+
+**Fix**: replaced the "descending-from-previous + below-threshold" check with the canonical
+two-phase search — find the first `tau` below threshold, then advance `tau` while
+`cmnd[tau+1] < cmnd[tau]` (still falling), stopping only once the dip bottoms out. `findPeriod`'s
+access level was widened from `private` to `internal` (module-visible only, `@testable`-reachable)
+specifically so this could be a direct, deterministic unit test rather than an indirect one
+relying on a real audio fixture reproducing this exact cmnd shape by chance.
+
+Regression check: all 6 pre-existing `YINEngineTests` still pass, including the real-SQAM-trumpet
+sanity test (mean F0 491.3Hz now vs. 490.4Hz before — a ~0.2% shift, consistent with a small
+precision improvement, not a behavior change). The new test
+(`testFindPeriod_descendsToTrueLocalMinimum_notFirstBelowThreshold`) is now a permanent 7th test in
+`YINEngineTests.swift`.
+
+**Status:** Phase 20 complete (open-items list item 3). `swift build`/`swift build --build-tests`
+green; `YINEngineTests` 7/7 green. A full-suite checkpoint was not re-run for this specific change
+(smaller, self-contained fix with its own direct regression coverage already green; the last full
+checkpoint — Phase 19's DCT fix — was 117/117 minutes earlier) — will batch into the next full
+checkpoint per the project's "checkpoint at group completion, not every single fix" convention.
+
+---
+
+## 💥 Phase 21 — YINEngine/PiptrackEngine extreme-parameter crash: real, reproduced, fixed (2026-08-30)
+
+Open-items list flagged that very short `frameLength` (YINEngine) or very few STFT frequency bins
+(PiptrackEngine) combined with a high `fMax` could build an inverted `ClosedRange` (lower bound >
+upper bound), which traps in Swift. Verified as a genuine crash, not a hypothetical, using the same
+technique as earlier phases: apply the fix, then `git stash` it back out to run the exact
+reproduction against the pre-fix code, observe the real crash, then restore the fix and re-verify.
+
+**YINEngine** (`analyze(frameLength: 16, ...)`, default high `fMax`): `tauMin` (derived from
+`fMax`) ends up larger than `validEnd` (capped by the short frame). Two separate places built this
+as a raw `ClosedRange`: `findPeriod`'s first-candidate search (already restructured to a `while`
+loop in Phase 20, incidentally already safe) and its "global minimum fallback" loop (still
+`tauMin...validEnd`, still vulnerable), plus `computeCMND`'s two `1...maxTau` loops (vulnerable
+when a very short frame makes `maxTau` 0). Reproduced: pre-fix, this call trapped with `Swift/
+ClosedRange.swift:411: Fatal error: Range requires lowerBound <= upperBound`, signal 5, process
+aborted. Fixed: both remaining `ClosedRange` constructions replaced with `stride(from:through:by:)`,
+which is empty-safe (zero iterations, no crash) when the bounds would invert — same fix shape
+Phase 20 already applied to the first loop.
+
+**PiptrackEngine** (`track(stft:)` on a 2-bin STFT from `nFFT: 2`, default high `fMax`): `binMax`
+clamps to 0 (`nFreqs - 2`) while `binStart` (from `fMin`) is already ≥1 — the same inverted-range
+shape, in two loops (`max(1, binMin)...binMax`, computed identically twice). Reproduced the same
+way: pre-fix, trapped with the identical fatal error; fixed with the same `stride`-based pattern
+(and the duplicated `max(1, binMin)` expression consolidated into one `binStart` computed once).
+
+**New permanent regression coverage**: `YINEngineTests.swift` gains an 8th test
+(`testShortFrameLength_doesNotCrash_onInvertedTauRange`); `PiptrackEngineTests.swift` is a **new
+file** (this engine had zero test coverage before), with a real-440Hz-tone sanity check plus the
+crash regression (`testVeryFewFrequencyBins_doesNotCrash_onInvertedBinRange`). Both suites green
+(8/8, 2/2) after the fix, confirmed via the pre-fix/post-fix stash-and-compare technique above, not
+assumed from reading the code alone.
+
+**Status:** Phase 21 complete (open-items list item, YINEngine/PiptrackEngine crash risk). `swift
+build`/`swift build --build-tests` green. No stray temporary files left (git status confirmed
+clean of anything but the intended source/test changes).
+
+---
+
+## 🔊 Phase 22 — ISTFT was reconstructing from the wrong FFT format: ~101% error, fixed (2026-08-30)
+
+Open-items list flagged that `STFTEngine.synthesize()` (ISTFT) had never been round-trip tested.
+A new `STFTRoundTripTests.swift` (analyze a real multi-tone signal, synthesize it back, measure
+relative RMS error against the original in the well-overlapped interior) found a severe, genuine
+bug immediately: **~101% relative RMS error** — the reconstructed signal bore essentially no
+resemblance to the original, not a subtle numerical drift.
+
+**Root cause**: `analyze()` (the forward transform) uses `vDSP_fft_zip` — the **full-complex** FFT
+— specifically because an earlier phase found and fixed a real bug where the previous packed-real
+FFT (`vDSP_fft_zrip`) compressed the frequency axis 2×. `synthesize()` (the inverse transform) was
+**never updated to match** — it still packed magnitude/phase into the old `zrip`-specific format
+(DC in `realp[0]`, Nyquist folded into `imagp[0]`) and called `vDSP_fft_zrip`'s inverse, which
+expects an entirely different packed layout than what `analyze()`'s `zip`-based magnitude/phase
+data actually represents. A textbook case of a fix applied to one side of a symmetric forward/
+inverse pair and never propagated to the other.
+
+**Fix**: rewrote `synthesize()` to match `analyze()`'s convention exactly — reconstruct the full
+`nFFT`-length complex spectrum from the `nFreqs = nFFT/2+1` positive-frequency magnitude/phase
+bins via Hermitian symmetry (`X[nFFT-f] = conj(X[f])`), run `vDSP_fft_zip`'s inverse on the full
+spectrum, then scale by `1/nFFT` (vDSP's unnormalized-FFT convention: a `zip` forward+inverse
+round-trip scales by `nFFT`, not the `zrip`-specific `2×nFFT` the old code used).
+
+**Verified**: post-fix, the same round-trip test's interior relative RMS error dropped to
+**0.000011%** (machine precision) — from real, ~101% garbage to essentially perfect reconstruction,
+consistent with the Hann/75%-overlap window satisfying COLA (constant overlap-add).
+
+### Real-world impact — two production features were silently broken
+
+`synthesize()` has exactly two callers: `ManipulationEngine.timeStretch`/`pitchShift` (the
+library's public time-stretch/pitch-shift API — flagged just this session, in the competitor-
+research thread, as an already-working librosa-parity feature) and `NeuralSeparationEngine`'s
+mask-to-audio reconstruction. **Both have been producing effectively garbage audio output any time
+they were actually exercised**, until this fix — this wasn't a latent/theoretical risk, it was a
+live, real bug in shipped public API surface with zero prior test coverage to catch it.
+
+New `ManipulationEngineTests.swift` (first coverage this engine has ever had) confirms the fix in
+practice, not just via the synthetic round-trip: a real 440Hz tone through `timeStretch(rate: 1.0)`
+now comes back as a recognizable ~440Hz tone with real energy (previously would have been
+unrecognizable noise), and `timeStretch(rate: 2.0)` produces the correct ~half-length output.
+`NeuralSeparationEngine` itself still has zero test coverage — out of scope for this specific fix
+(it depends on a CoreML model this library doesn't ship, per existing Calibration.md docs), noted
+but not pursued further here.
+
+**Status:** Phase 22 complete (open-items list item, ISTFT round-trip). `swift build`/`swift build
+--build-tests` green. A full-suite checkpoint was run given the fix touches `STFTEngine`, a
+foundational, widely-shared engine — see the run's own log for the final pass/fail count.
+
+**Full-suite checkpoint result**: 125/125 passed, 0 failures (910.3s, ~15.2min) — no regressions
+from the ISTFT rewrite.
+
+---
+
+## 🎭 Phase 23 — NeuralSeparationEngine: first-ever test coverage, end-to-end verified (2026-08-30)
+
+`NeuralSeparationEngine` had zero test coverage and, per Phase 22, its only output path
+(`STFTEngine.synthesize()`) had been silently broken (~101% error) until that fix — meaning this
+engine's real behavior had never actually been confirmed to work, only assumed safe because it's
+"interface only, no model ships" (per existing Calibration.md language, re-verified accurate this
+phase: `CoreMLSeparationModel.generateMasks` is still a documented placeholder returning `[:]`).
+
+`SeparationModel` is a public protocol, so a deterministic test-only mock can exercise the real
+masking math and the ISTFT reconstruction it depends on without needing a real CoreML model — no
+model is bundled with this library, and none is faked as one; the mock only supplies a
+already-known spectral mask, the same input `NeuralSeparationEngine.separate()` expects from any
+real model.
+
+**Test 1** — a genuine two-tone mix (440Hz + 1500Hz) run through a mask that isolates only the
+440Hz frequency band: the reconstructed "vocal" stem's pitch (measured with `YINEngine`, not
+assumed) comes back at ~440Hz, not a mix of both tones and not garbage — the first real,
+end-to-end confirmation that masking + the now-fixed ISTFT actually perform correct source
+separation, not just "the code compiles and doesn't crash."
+
+**Test 2** — a model returning a wrong-sized mask is silently skipped (existing `guard mask.count
+== nTotal else { continue }`), confirmed not to crash or produce a garbage stem under that key
+name.
+
+**Status:** Phase 23 complete (open-items list item, `NeuralSeparationEngine` coverage).
+`swift build`/`swift build --build-tests` green, both new tests green (2/2).
+
+---
+
+## 🔍 Phase 24 — Phase 19's retraining premise was wrong; corrected before acting on it (2026-08-30)
+
+Phase 19 concluded that `InstrumentEngine`'s prototypes (fit by `PrototypeTrainer`) and the
+OpenMIC-held-out accuracy numbers (`ReliabilityAudit`) were trained/measured through the buggy GPU
+MFCC path and would need re-fitting once the shader was fixed. Before acting on that plan, the
+premise was checked against the actual call sites rather than assumed:
+
+- `Examples/PrototypeTrainer/main.swift:153` — `MFCCEngine(melEngine: mel, nMFCC: 20)`, no
+  `metalEngine` argument.
+- `Examples/ReliabilityAudit/main.swift:119` (`predictInstrument`, the function that produces the
+  Bass/Drums/Piano/Vocals/Strings/Brass accuracy numbers) — same signature, no `metalEngine`.
+- `MFCCEngine.swift:65` — `metalEngine` absent (`nil`) routes to the CPU `vDSP_DCT_Execute` branch,
+  which already applied the correct `dcScale`/`orthoScale` split (confirmed via `git log`/`git
+  diff`: this branch was untouched this session, pre-existing and correct).
+- `Sources/AudioIntelligenceCore/Util/DNAReportBuilder.swift:243` — the only call site that
+  actually used the GPU path, calling `metalEngine.executeBatchDct(...)` directly, bypassing
+  `MFCCEngine` entirely.
+
+**Conclusion: the prototypes and the held-out accuracy baseline were never touched by the GPU bug.**
+Both were always computed via the CPU path, which was correct throughout. The real inconsistency
+Phase 19 fixed was narrower than described: production (`DNAReportBuilder.swift`) vs.
+training/measurement (`PrototypeTrainer`/`ReliabilityAudit`) — not "prototypes vs. corrected
+pipeline." Retraining `PrototypeTrainer` would have reproduced the same numbers (same CPU code
+path, same data) at the cost of reprocessing ~15k OpenMIC clips for nothing. It was not run.
+
+`StructureEngine`'s MFCC input was also checked, not assumed clean by category: it consumes
+`mfccSubset` from `DNAReportBuilder.swift:306`, the exact same array produced by the GPU call at
+line 243 that feeds `InstrumentEngine` — one source, not a separate path, so the same closure
+evidence covers it.
+
+### Closing the real gap: an independent (librosa) ground-truth check, not self-consistency
+
+What Phase 19 actually lacked was proof, against an external reference, that the fixed GPU shader
+now produces academically-correct MFCC — self-consistency between two Swift implementations proves
+they agree with each other, not that either is *right*. `Tests/ParityDumpTests.swift` already
+dumped a GPU-path `swift_mfcc.f32`, unused by `scripts/parity_compare.py`. Added an MFCC section
+(scipy `dct(type=2, norm="ortho")`, matching the DCT-II orthonormal convention both the CPU and
+now-fixed GPU paths use, computed from an unclipped `power_to_db` to mirror the Swift log step
+exactly) and re-ran the full pipeline:
+
+```
+MFCC  : corr=1.00000  residual=0.0041%  (DC-term residual=0.0011%)
+```
+
+To confirm this number actually reflects the fix (not a script bug), the shader change was
+temporarily reverted (`git stash` on `AudioIntelligenceMetal.swift` alone, the same
+prove-the-bug-existed technique used in Phases 21/22) and the identical pipeline re-run:
+
+```
+MFCC  : corr=0.99368  residual=28.0521%  (DC-term residual=29.2892%)
+```
+
+A real, large, measured error pre-fix; ~0 post-fix — against librosa's own convention, not just
+against the CPU Swift code. The fix restored immediately after (`git stash pop`), confirmed via
+`git diff --stat`, and the dumps regenerated once more against the restored (fixed) code to leave
+`/tmp/parity` consistent with the current tree.
+
+### Permanent regression coverage
+
+A librosa cross-check requires a Python venv and isn't part of `swift test`, so it can't be the
+standing guard against a future regression. Added `Tests/MFCCGPUParityTests.swift`
+(`testGPUAndCPUPaths_produceEquivalentMFCC`): computes the same mel spectrogram once, feeds it
+through `MFCCEngine` with and without a `metalEngine`, and asserts every coefficient (isolating
+coefficient 0 specifically) agrees within float32 rounding tolerance. Verified it actually catches
+the bug class it exists for: reverting the shader fix (`git stash`) failed this test immediately
+(coeff-0 diff = 355.45, threshold = 0.5); restoring the fix passed it (0/2 failures). This is now
+the standing guard — if a future shader edit reintroduces a CPU/GPU scale mismatch, `swift test`
+catches it without needing the Python reference pipeline.
+
+**Status:** Phase 24 complete (open-items list item 1, corrected scope). No retraining performed —
+proven unnecessary rather than assumed. GPU MFCC validated against librosa's own convention
+(residual 0.0041%, DC-term 0.0011%), and a permanent `swift test`-suite regression test added and
+verified to actually catch the original bug. `swift build`/`swift build --build-tests` green; a
+full `swift test` checkpoint was run given this adds a new test file touching the shared
+`AudioIntelligenceMetal` engine — see the run's own log for the pass/fail count.
+
+---
+
+## 🎹 Phase 25 — Chord recognition: a real scoring bug, found, fixed, and its remainder split honestly (2026-08-30)
+
+Open-items list item 2 ("Chord/structure 'ölçülemedi'") noted that `TraditionalTheoryEngine`'s
+chord recognition (`identifyTriad`) has no accuracy measurement at all — Isophonics/Billboard only
+distribute annotations, not audio, so end-to-end validation against real ground truth isn't
+possible. Before building a synthetic-audio validation suite around it (the item's own proposed
+workaround), a pre-existing, flagged-but-never-measured ambiguity in `identifyTriad` itself
+(`Tests/TraditionalTheoryEngineTests.swift`'s doc comment) was investigated first, since building
+new tests on top of an unmeasured algorithm risks calibrating against a broken baseline.
+
+**Measured, not assumed:** `Tests/ChordScoringAmbiguityTests.swift` feeds `identifyTriad` an
+idealized chroma vector (1.0 at each chord tone, 0 elsewhere — noise-free, best-case input) for
+every one of its 108 canonical (root, quality) combinations (12 roots x 9 profiles: major, minor,
+diminished, augmented, maj7, dom7, m7, m7b5, m6) and checks whether the returned (root, type)
+matches. Result: **46/108 (42.6%) misidentified**, even under ideal conditions.
+
+**Root cause**: `identifyTriad` scored each (root, profile) candidate as a raw, unnormalized sum of
+matched chroma bins (`score += chroma[(root+offset) % 12]`), with no adjustment for how many notes
+a profile has. A 4-note jazz-extension profile (maj7, dom7, m7, m7b5, m6) that happens to match 3 of
+a *different* chord's notes elsewhere scores the same (3.0) as that chord's own correct 3-note
+triad match — and since ties go to whichever (root, profile) is enumerated first (`score >
+bestScore` is strict, and the loop scans root 0→11, profiles in declaration order), the 4-note
+profile at the lower/earlier root silently wins. This is a scoring-scale artifact with no
+music-theory basis, not a genuine harmonic ambiguity.
+
+**Fix**: normalize by profile length (mean chroma energy per chord tone: `score = rawScore /
+offsets.count`) instead of the raw sum, putting every profile on the same 0...1 scale regardless of
+note count. Verified: **46/108 → 31/108** misidentified. Existing coverage
+(`TraditionalTheoryEngineTests.swift` 5/5, `CadenceEngineTests.swift` 8/8) still green — no
+regression on the previously-tested bass/inversion-formatting behavior.
+
+**Threshold — first guess was wrong, caught by the full-suite checkpoint, not assumed correct.**
+The first version of this fix set the threshold to `0.5` — reasoning (incorrectly) that this was
+"the length-normalized equivalent of the original raw threshold `1.5` for a 3-note triad"
+(`1.5/3 = 0.5`). That reasoning ignored that `ChromaEngine` L2-normalizes chroma per frame
+(`ChromaEngine.normalizeChroma`), so real chroma values are nowhere near the 1.0-per-bin spikes the
+idealized diagnostic used to validate the fix. The full `swift test` checkpoint (run as this
+session's standing practice after a shared-engine change) caught it immediately:
+`MusicologicalAccuracyTests.testSQAMHarmonyParity` (real SQAM string-quartet audio) regressed from
+detecting chords to detecting **zero** anywhere in the file. Measured directly rather than
+re-guessed: on that real recording, the best length-normalized score across all 1206 frames peaked
+at **0.465** — below `0.5` in every single frame, so nothing could ever classify. `0.4` was chosen
+empirically: on that same file it reproduces the *exact* frame-classification rate (41.54%) the
+original raw threshold (`1.5`) produced pre-fix — real-world sensitivity preserved, while
+normalization still fixes *which* root/type wins. `testSQAMHarmonyParity` passes again with `0.4`.
+
+**The remaining 31 were not lumped into one "known limitation" bucket** — they split into two
+categories with genuinely different characters, and conflating them would overstate what's
+actually unfixable:
+
+- **8 cases — augmented symmetry, irreducible.** An augmented triad's pitch-class set is *identical*
+  at 3 roots a major third apart (C aug = E aug = G# aug — literally the same 3 notes). No amount
+  of chroma-only analysis can recover which root is "correct" without additional information
+  (typically the bass note). This is a real, standard MIR/music-theory limitation, not a defect in
+  this implementation.
+- **23 cases — relative-chord chroma-superset, resolvable in principle, not yet wired.** Classic
+  jazz-harmony enharmonic overlaps (e.g. C6/Am7, Cmaj7/Em7, Cm6/Am7b5 share all their notes).
+  Unlike the augmented case, these ARE resolvable — by bass note. `TraditionalTheoryEngine.
+  detectBassNote` already computes exactly this from the real CQT (used today only for inversion
+  labeling in `formatSymbol`), but `identifyTriad`'s root/type selection never sees it. Wiring the
+  bass note into root selection is a separate, larger change (root selection would need to consider
+  CQT data, not just chroma) — out of scope for this fix, tracked as open-items list item 3 with
+  this exact count (23) as its measurable target: after that follow-up, this test's
+  `relativeChordSupersetCount` assertion is the number expected to move, ideally toward 0.
+
+Both counts are now regression-guarded by exact-value assertions in `ChordScoringAmbiguityTests`
+(`augmentedSymmetryCount == 8`, `relativeChordSupersetCount == 23`) — a future change to the profile
+list, scoring, or threshold that shifts either number will fail loudly instead of drifting silently.
+
+**Status:** Phase 25 complete for the `identifyTriad` scoring-bug portion of open-items list item 2.
+The item's original ask (end-to-end synthetic-audio chord accuracy suite) is still open — this
+phase was a prerequisite investigation that turned up a real, independent bug worth fixing first.
+`swift build`/`swift build --build-tests` green; `TraditionalTheoryEngineTests` (5/5),
+`CadenceEngineTests` (8/8), `MusicologicalAccuracyTests` (3/3, including the real-audio
+`testSQAMHarmonyParity` this threshold correction fixed), and `ChordScoringAmbiguityTests` (1/1)
+all green. Full `swift test` checkpoint re-run clean after the threshold correction.
+
+---
+
 > *"Measured, not claimed: AudioIntelligence reports what it can prove."*

@@ -53,7 +53,9 @@ public final class TraditionalTheoryEngine: @unchecked Sendable {
         case major, minor, diminished, augmented, unclassified
     }
     
-    private func identifyTriad(_ chroma: [Float]) -> (root: Int, type: TriadType) {
+    // `internal` (not `private`) — needed for direct unit testing of the (root, profile)
+    // scoring/tie-breaking logic itself, independent of `formatSymbol`'s string output.
+    func identifyTriad(_ chroma: [Float]) -> (root: Int, type: TriadType) {
         // Standard Triad & Jazz Extension Profiles
         let profiles: [(type: TriadType, offsets: [Int])] = [
             (.major, [0, 4, 7]),
@@ -71,22 +73,40 @@ public final class TraditionalTheoryEngine: @unchecked Sendable {
         var bestScore: Float = 0
         var bestRoot = 0
         var bestType: TriadType = .unclassified
-        
+
         for root in 0..<12 {
             for profile in profiles {
-                var score: Float = 0
+                var rawScore: Float = 0
                 for offset in profile.offsets {
-                    score += chroma[(root + offset) % 12]
+                    rawScore += chroma[(root + offset) % 12]
                 }
-                
-                if score > bestScore && score > 1.5 { // Threshold for triad presence
+                // Normalize by profile length (mean chroma energy per chord tone), not the raw
+                // sum: an unnormalized sum systematically favors longer (4-note) jazz-extension
+                // profiles over plain 3-note triads whenever 3 of the 4 notes happen to match
+                // elsewhere — a scoring-scale artifact with no music-theoretic basis, found to
+                // misidentify 46/108 canonical (root, quality) combinations even on idealized,
+                // noise-free chroma. Normalizing puts every profile on the same 0...1 scale
+                // regardless of length.
+                //
+                // Threshold: chroma here is L2-normalized per frame (`ChromaEngine.
+                // normalizeChroma`), so real (non-idealized) audio never reaches the naive
+                // "1.5/3-note-triad" equivalent of 0.5 — measured on a real SQAM string-quartet
+                // recording, the per-frame best normalized score topped out at 0.465 across the
+                // whole file (0 frames ever exceeded 0.5), regressing `identifyTriad` to detect
+                // zero chords anywhere. 0.4 was chosen empirically, not guessed: on that same
+                // recording it reproduces the exact same fraction of classified frames (41.54%)
+                // as the original raw threshold (1.5) did pre-fix — real-world detection
+                // sensitivity preserved, while the normalization still fixes which root/type wins.
+                let score = rawScore / Float(profile.offsets.count)
+
+                if score > bestScore && score > 0.4 { // Threshold for triad presence
                     bestScore = score
                     bestRoot = root
                     bestType = profile.type
                 }
             }
         }
-        
+
         return (bestRoot, bestType)
     }
     

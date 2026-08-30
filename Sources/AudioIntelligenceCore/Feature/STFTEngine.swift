@@ -267,59 +267,56 @@ public final class STFTEngine: @unchecked Sendable {
         let expectedLength = (nFrames - 1) * hopLength + nFFT
         var signal = [Float](repeating: 0, count: expectedLength)
         var windowSum = [Float](repeating: 0, count: expectedLength)
-        
-        // Log-based FFT setup for zrip
-        let log2n = UInt(round(log2(Double(nFFT))))
+
+        let log2n = vDSP_Length(round(log2(Double(nFFT))))
         let fftSetup = vDSP_create_fftsetup(log2n, FFTRadix(kFFTRadix2))!
         defer { vDSP_destroy_fftsetup(fftSetup) }
-        
-        var splitComplex = DSPSplitComplex(
-            realp: UnsafeMutablePointer<Float>.allocate(capacity: nFFT / 2),
-            imagp: UnsafeMutablePointer<Float>.allocate(capacity: nFFT / 2)
-        )
-        defer {
-            splitComplex.realp.deallocate()
-            splitComplex.imagp.deallocate()
-        }
-        
-        var timeDomainOut = [Float](repeating: 0, count: nFFT)
-        
+
+        // Full-complex layout (vDSP_fft_zip), matching analyze()'s forward transform — NOT the
+        // packed-real vDSP_fft_zrip convention this used to use (a real bug: analyze() switched
+        // to the full-complex FFT to fix a 2x frequency-axis compression, but synthesize() was
+        // never updated to match, silently reconstructing from the wrong FFT format). Verified
+        // as a real bug via round-trip test: ~101% relative RMS error before this fix.
+        var fftReal = [Float](repeating: 0, count: nFFT)
+        var fftImag = [Float](repeating: 0, count: nFFT)
+
         for t in 0..<nFrames {
-            // 1. Pack into DSPSplitComplex specialized layout for vDSP_fft_zrip
-            // DC in realp[0], Nyquist in imagp[0]
-            splitComplex.realp[0] = stft.magnitude[t * nFreqs + 0] * cosf(stft.phase[t * nFreqs + 0])
-            splitComplex.imagp[0] = stft.magnitude[t * nFreqs + (nFreqs - 1)] * cosf(stft.phase[t * nFreqs + (nFreqs - 1)])
-            
-            for f in 1..<nFreqs - 1 {
+            // 1. Positive-frequency bins (0...nFFT/2) directly from magnitude/phase.
+            for f in 0..<nFreqs {
                 let mag = stft.magnitude[t * nFreqs + f]
                 let phi = stft.phase[t * nFreqs + f]
-                splitComplex.realp[f] = mag * cosf(phi)
-                splitComplex.imagp[f] = mag * sinf(phi)
+                fftReal[f] = mag * cosf(phi)
+                fftImag[f] = mag * sinf(phi)
             }
-            
-            // 2. Inverse FFT
-            vDSP_fft_zrip(fftSetup, &splitComplex, 1, log2n, FFTDirection(kFFTDirection_Inverse))
-            
-            // 3. Unpack and Scale
-            // vDSP_fft_zrip Inverse scale: 1/(2N) or just handle it here
-            var scale = 0.5 / Float(nFFT) 
-            
-            timeDomainOut.withUnsafeMutableBufferPointer { buffer in
-                guard let baseAddress = buffer.baseAddress else { return }
-                baseAddress.withMemoryRebound(to: DSPComplex.self, capacity: nFFT / 2) { complexPtr in
-                    vDSP_ztoc(&splitComplex, 1, complexPtr, 1, vDSP_Length(nFFT / 2))
+            // 2. Mirror bins nFFT/2+1...nFFT-1 via Hermitian symmetry (X[N-f] = conj(X[f])) — a
+            // real time-domain signal's spectrum is fully determined by its positive-frequency
+            // half, and vDSP_fft_zip's inverse needs the full nFFT-length spectrum to work with.
+            for f in 1..<(nFFT - nFreqs + 1) {
+                fftReal[nFFT - f] = fftReal[f]
+                fftImag[nFFT - f] = -fftImag[f]
+            }
+
+            // 3. Inverse FFT
+            fftReal.withUnsafeMutableBufferPointer { rp in
+                fftImag.withUnsafeMutableBufferPointer { ip in
+                    var sc = DSPSplitComplex(realp: rp.baseAddress!, imagp: ip.baseAddress!)
+                    vDSP_fft_zip(fftSetup, &sc, 1, log2n, FFTDirection(kFFTDirection_Inverse))
                 }
             }
-            
-            vDSP_vsmul(timeDomainOut, 1, &scale, &timeDomainOut, 1, vDSP_Length(nFFT))
-            
-            // 4. Overlap-Add
+
+            // vDSP's FFT is unnormalized: a forward+inverse zip round-trip scales the result by
+            // nFFT, so divide by nFFT to recover the original amplitude.
+            var scale = 1.0 / Float(nFFT)
+            vDSP_vsmul(fftReal, 1, &scale, &fftReal, 1, vDSP_Length(nFFT))
+
+            // 4. Overlap-Add (real part only — the imaginary part is ~0 for a properly
+            // Hermitian-symmetric spectrum, since the original time-domain signal is real).
             let start = t * hopLength
             for i in 0..<nFFT {
                 let sIdx = start + i
                 if sIdx < expectedLength {
                     let win = window[i]
-                    signal[sIdx] += timeDomainOut[i] * win
+                    signal[sIdx] += fftReal[i] * win
                     windowSum[sIdx] += win * win
                 }
             }

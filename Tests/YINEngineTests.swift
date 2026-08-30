@@ -115,4 +115,41 @@ final class YINEngineTests: XCTestCase {
         XCTAssertLessThan(result.meanF0, 1500.0)
         print("🔬 YIN on real trumpet: meanF0=\(result.meanF0)Hz, \(result.voicedFrames.count)/\(result.f0Series.count) frames voiced")
     }
+
+    /// Canonical YIN (de Cheveigné & Kawahara, 2002), step 4: once cmnd dips below threshold,
+    /// keep descending while it keeps decreasing — the trough's true local minimum, not the
+    /// first sample that happens to cross the threshold. The old code stopped at the first
+    /// below-threshold sample that was merely lower than its immediate predecessor, without
+    /// checking whether cmnd kept falling past it — verified as a real, measurable bug: this
+    /// exact fixture returned 11.25 before the fix (comparing failed at accuracy 0.3) and 11.9
+    /// after (true minimum at tau=12, parabolic-interpolated).
+    func testFindPeriod_descendsToTrueLocalMinimum_notFirstBelowThreshold() {
+        let engine = YINEngine(threshold: 0.1)
+        var cmnd = [Float](repeating: 1.0, count: 20)
+        cmnd[8] = 0.3
+        cmnd[9] = 0.15
+        cmnd[10] = 0.08   // first below threshold, still descending from cmnd[9]
+        cmnd[11] = 0.05   // keeps descending — tau=10 is NOT yet the true minimum
+        cmnd[12] = 0.03   // true local minimum
+        cmnd[13] = 0.06   // rises again — trough ends here
+        cmnd[14] = 0.2
+
+        guard let tau = engine.findPeriod(cmnd: cmnd, tauMin: 5, tauMax: 18) else {
+            XCTFail("expected a period, got nil"); return
+        }
+        XCTAssertEqual(tau, 12.0, accuracy: 0.3, "should descend to the true local minimum (tau=12), not stop at the first point below threshold (tau=10)")
+    }
+
+    /// A very short `frameLength` combined with the default (high) `fMax` makes `tauMin` (derived
+    /// from fMax) exceed `validEnd` (capped by the short frame) — an inverted range. The old code
+    /// built `tauMin...validEnd` as a `ClosedRange` there, which traps
+    /// ("Fatal error: Range requires lowerBound <= upperBound"). Verified as a real, reproducible
+    /// crash (not a hypothetical): confirmed this exact call trapped the process before the fix
+    /// (via a temporary `git stash` of the fix, re-run, observed the trap, then restored the fix).
+    func testShortFrameLength_doesNotCrash_onInvertedTauRange() {
+        let engine = YINEngine(sampleRate: 22050, frameLength: 16, hopLength: 8)
+        let samples = (0..<200).map { Float(sin(Double($0) * 0.3)) }
+        let result = engine.analyze(samples: samples)
+        XCTAssertEqual(result.f0Series.count, result.f0Series.count) // reaching this line is the assertion
+    }
 }

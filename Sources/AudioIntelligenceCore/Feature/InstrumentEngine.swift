@@ -41,6 +41,19 @@ public final class InstrumentEngine: Sendable {
         let lowBandMean: Float, lowBandSD: Float
         let percussiveMean: Float, percussiveSD: Float
         let mfccPattern: [Float] // Reduced 10-coeff pattern
+        // MFCC coefficient indices excluded from the timbre-distance calculation (default: none).
+        // Coefficient 0 is log-energy, not spectral shape — for Bass/Drums/Strings it measures
+        // recording-condition loudness (DI vs. mic'd, mix level, dynamic range) rather than real
+        // timbre, and is pure noise there: verified case-by-case on real OpenMIC train clips,
+        // excluding it flips 15 clips wrong->correct across the three classes with ZERO clips
+        // flipping correct->wrong (0/15 net loss). For Vocals/Brass the opposite holds — their
+        // real-world energy level is a genuinely reliable, class-characteristic signal (vocals are
+        // consistently mixed forward, sustained wind tone has a stable energy envelope); excluding
+        // it there loses 6 and 4 case-by-case-verified clips respectively with only partial offsetting
+        // gains, a net loss. Piano showed neither gain nor loss (26.7% either way) — left unchanged,
+        // since branching the architecture where there's no measured difference just adds complexity
+        // for no benefit. See DEVLOG Phase 26 for the full investigation.
+        let mfccExcludedCoefficients: Set<Int>
         let basis: String
     }
 
@@ -52,6 +65,7 @@ public final class InstrumentEngine: Sendable {
             lowBandMean: 0.2697, lowBandSD: 0.2210,
             percussiveMean: 0.2455, percussiveSD: 0.0948,
             mfccPattern: [-254.0938, 200.2891, -27.6288, 21.4378, -8.3042, 5.9155, -12.8358, -0.2233, -12.0884, -1.6733],
+            mfccExcludedCoefficients: [],
             basis: "OpenMIC-2018 train prototype (n=1550): accordion, organ, piano"
         ),
         Fingerprint(
@@ -61,6 +75,7 @@ public final class InstrumentEngine: Sendable {
             lowBandMean: 0.7491, lowBandSD: 0.2008,
             percussiveMean: 0.3314, percussiveSD: 0.1223,
             mfccPattern: [-260.4742, 169.5767, 7.7181, 48.0809, 8.7370, 20.7677, 0.1662, 10.1528, -3.3805, 4.8324],
+            mfccExcludedCoefficients: [0],
             basis: "OpenMIC-2018 train prototype (n=350): bass"
         ),
         Fingerprint(
@@ -70,6 +85,7 @@ public final class InstrumentEngine: Sendable {
             lowBandMean: 0.3495, lowBandSD: 0.2502,
             percussiveMean: 0.3654, percussiveSD: 0.1098,
             mfccPattern: [-176.3196, 132.1528, -26.2923, 27.7467, -7.9017, 8.7645, -9.4724, 3.0261, -9.2911, 1.7307],
+            mfccExcludedCoefficients: [],
             basis: "OpenMIC-2018 train prototype (n=1292): saxophone, trombone, trumpet"
         ),
         Fingerprint(
@@ -79,6 +95,7 @@ public final class InstrumentEngine: Sendable {
             lowBandMean: 0.3444, lowBandSD: 0.2429,
             percussiveMean: 0.4064, percussiveSD: 0.0800,
             mfccPattern: [-85.9054, 116.4970, -23.1897, 25.9314, -9.8890, 5.3297, -6.9698, 4.7533, -9.3628, 5.9014],
+            mfccExcludedCoefficients: [],
             basis: "OpenMIC-2018 train prototype (n=718): voice"
         ),
         Fingerprint(
@@ -88,6 +105,7 @@ public final class InstrumentEngine: Sendable {
             lowBandMean: 0.5924, lowBandSD: 0.2355,
             percussiveMean: 0.4959, percussiveSD: 0.0845,
             mfccPattern: [-120.2319, 93.8670, -5.1137, 35.9895, -3.2795, 14.7737, -3.8496, 8.8711, -4.2021, 6.2101],
+            mfccExcludedCoefficients: [0],
             basis: "OpenMIC-2018 train prototype (n=1335): cymbals, drums"
         ),
         Fingerprint(
@@ -97,6 +115,7 @@ public final class InstrumentEngine: Sendable {
             lowBandMean: 0.3308, lowBandSD: 0.2599,
             percussiveMean: 0.3214, percussiveSD: 0.1109,
             mfccPattern: [-199.9608, 145.2058, -27.1025, 33.6395, -9.2643, 4.4564, -11.2757, 1.5405, -11.5215, -1.5284],
+            mfccExcludedCoefficients: [0],
             basis: "OpenMIC-2018 train prototype (n=2928): banjo, cello, guitar, mandolin, ukulele, violin"
         )
     ]
@@ -195,9 +214,10 @@ public final class InstrumentEngine: Sendable {
         let percussiveScore = gaussianScore(value: percussiveEnergyRatio, mean: profile.percussiveMean, sd: profile.percussiveSD,
                                              referenceSD: referencePercussiveSD, weight: 0.15)
 
-        // Timbre Score (MFCC Euclidean distance) — unchanged from the Phase 16 recalibration.
+        // Timbre Score (MFCC Euclidean distance) — Phase 16 recalibration, plus Phase 26's
+        // per-class MFCC-0 exclusion (see `Fingerprint.mfccExcludedCoefficients`'s doc comment).
         var mfccDistance: Float = 0.0
-        for i in 0..<min(inputPattern.count, profile.mfccPattern.count) {
+        for i in 0..<min(inputPattern.count, profile.mfccPattern.count) where !profile.mfccExcludedCoefficients.contains(i) {
             let diff = inputPattern[i] - profile.mfccPattern[i]
             mfccDistance += diff * diff
         }

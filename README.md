@@ -124,7 +124,7 @@ We report **measured** accuracy, not claimed. Each row below is backed by a test
 | ITU-R 468 noise weighting | ✅ ±0.03 dB vs the standard curve | analytic reference |
 | A-weighting (IEC 61672-1) | ✅ Δ ≤ 0.01 dB through 100Hz–2kHz vs the closed-form analytic curve | analytic reference |
 | Bit-depth / sample-rate / duration | ✅ exact | container header |
-| Foundational DSP (STFT, mel) | ⚠️ claimed librosa-exact (corr 1.00000, 0% residual) in an earlier pass, but the comparison script is not currently in this repo and the claim can't be reproduced right now | librosa 0.11 (unverified) |
+| Foundational DSP (STFT, mel) | ✅ librosa-exact (STFT corr 1.00000, 0.0000% residual; mel corr 1.00000, 0.0003% residual) — reproducible via `scripts/parity_compare.py` | librosa 1.0.0 |
 | Synthetic ground truth (tempo/timebase/phase/structure coverage) | ✅ 8/8 | deterministic fixtures |
 | Tempo — real music (EDM, 43 tracks) | ✅ Acc1 53% / Acc2 70% | GiantSteps (MIREX) |
 | Key — real music (599 tracks) | ✅ 50.9% exact / 63.3% MIREX-weighted (N=599, the full set — verified zero exclusions: every track loaded, parsed, and was long enough) | GiantSteps (MIREX) |
@@ -175,8 +175,10 @@ python3 -m venv --system-site-packages /tmp/lrvenv
 /tmp/lrvenv/bin/pip install librosa soundfile audioread
 # parity: dump features from Swift, compare with matched conventions
 swift test --filter ParityDumpTests
-/tmp/lrvenv/bin/python /tmp/parity_compare.py
+/tmp/lrvenv/bin/python scripts/parity_compare.py
 ```
+`scripts/parity_compare.py` is tracked in this repo (not `.gitignore`d, unlike the audio/dataset
+material above) — it's a small script with no bundled data, so it stays reproducible.
 
 Run the suites locally:
 ```bash

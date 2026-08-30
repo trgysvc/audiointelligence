@@ -113,8 +113,10 @@ final class ParityDumpTests: XCTestCase {
         writeF32(melOut, to: "\(dir)/swift_mel.f32")
         print("🎚️ Mel dump: \(mel.nMels)×\(melFrames)")
 
-        // MFCC = DCT of LOG-mel (librosa power_to_db → DCT). The pipeline currently DCTs the
-        // linear mel (missing the log) — dump the corrected log-mel version to confirm parity.
+        // MFCC = DCT of LOG-mel (librosa power_to_db → DCT). This was a real bug (DEVLOG Phase 7,
+        // 2026-06-15): DCT of the linear mel gave a −0.21 correlation against librosa; adding this
+        // log step fixed it to corr 0.99. Production (DNAReportBuilder.swift, MFCCEngine.swift)
+        // has done this correctly since — this dump mirrors production, not a pending fix.
         let logMel = mel.melData.map { 10.0 * log10f(max($0, 1e-10)) }
         let mfccRaw = MetalEngine().executeBatchDct(melSpectrogram: logMel, nMfcc: 20, nMels: 128)
         if !mfccRaw.isEmpty {

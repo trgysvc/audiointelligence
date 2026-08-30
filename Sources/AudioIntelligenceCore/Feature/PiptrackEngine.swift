@@ -41,6 +41,11 @@ public final class PiptrackEngine: Sendable {
         let binMin = Int(floorf(fMin * nFFT / sr))
         let binMax = Int(min(Float(nFreqs - 2), ceilf(fMax * nFFT / sr)))
         
+        // A very short frameLength (small nFFT → few nFreqs) combined with a high fMax can make
+        // binMax < binStart (e.g. binMax clamped to 0 while binMin is already ≥1) — a ClosedRange
+        // there traps. `stride` is empty-safe (0 iterations instead of a crash) when that happens.
+        let binStart = max(1, binMin)
+
         for t in 0..<nFrames {
             var framePitches: [Float] = []
             var frameMags: [Float] = []
@@ -48,14 +53,14 @@ public final class PiptrackEngine: Sendable {
             // Librosa piptrack: threshold = 0.1 * max(S[:, t]) in [fMin, fMax] range
             // This makes detection amplitude-invariant (same behaviour on quiet and loud signals)
             var frameMax: Float = 0
-            for f in max(1, binMin)...binMax {
+            for f in stride(from: binStart, through: binMax, by: 1) {
                 let v = stft.magnitude[t * nFreqs + f]
                 if v > frameMax { frameMax = v }
             }
             let dynamicThreshold = threshold * frameMax
 
             // 1. Find local maxima in [fMin, fMax] — parabolic interpolation
-            for f in max(1, binMin)...binMax {
+            for f in stride(from: binStart, through: binMax, by: 1) {
                 let current = stft.magnitude[t * nFreqs + f]
                 let prev    = stft.magnitude[t * nFreqs + (f - 1)]
                 let next    = stft.magnitude[t * nFreqs + (f + 1)]
