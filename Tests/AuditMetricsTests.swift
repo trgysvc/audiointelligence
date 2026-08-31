@@ -5,7 +5,9 @@ import XCTest
 /// `AuditMetrics` was entirely hardcoded — identical literal values on every single analysis
 /// regardless of what actually ran — and directly reachable via the public
 /// `AudioIntelligence.analyzeRawAggregate` API (not just internal). Now `engineCoverage`
-/// reflects real per-analysis data, `cqtStatus` honestly reports no consumer, and
+/// reflects real per-analysis data, `cqtStatus` honestly reports CQT's real consumer
+/// (`TraditionalTheoryEngine.detectBassNote` — this test's own original assertion, "no
+/// consumer", was itself stale by the time this comment was corrected; see DEVLOG Phase 29), and
 /// `melSpectrogramResolution` uses the real frame count.
 final class AuditMetricsTests: XCTestCase {
 
@@ -19,8 +21,8 @@ final class AuditMetricsTests: XCTestCase {
 
         print("🔬 audit: coverage=\(audit.engineCoverage) cqtStatus=\(audit.cqtStatus) melRes=\(audit.melSpectrogramResolution)")
 
-        XCTAssertEqual(audit.cqtStatus, "Not Used (no downstream consumer in this pipeline)",
-                        "must honestly report CQT's real status, not a hardcoded \"OK\"")
+        XCTAssertEqual(audit.cqtStatus, "Used (feeds TraditionalTheoryEngine bass-note detection)",
+                        "must honestly report CQT's real status, not a stale claim of no consumer")
 
         for engine in ["Structure", "HPSS", "Rhythm", "Contrast", "Chroma"] {
             XCTAssertEqual(audit.engineCoverage[engine], true, "\(engine) genuinely ran on this real audio and should report true")

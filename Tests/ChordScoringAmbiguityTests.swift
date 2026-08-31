@@ -97,4 +97,49 @@ final class ChordScoringAmbiguityTests: XCTestCase {
         XCTAssertEqual(augmentedSymmetryCount, 8, "augmented-symmetry count changed — expected exactly the 8 irreducible major-third-related root triples (4 symmetry classes x 2 other roots each)")
         XCTAssertEqual(relativeChordSupersetCount, 23, "relative-chord-superset count changed — this is exactly the count DEVLOG ties to the future bass-note-wiring follow-up; if this number moved, that follow-up's target moved too")
     }
+
+    /// Measures the bass-note-hint follow-up (DEVLOG Phase 29's open item): every chord tested
+    /// above is constructed as a ROOT-POSITION chord (`idealizedChroma(root:offsets:)` always
+    /// puts the intended root at chroma offset 0), so its true bass note is exactly `root` — the
+    /// same ground truth `identifyTriad`'s caller (`TraditionalTheoryEngine.analyzeVertical`, via
+    /// real `detectBassNote` CQT output) would have in practice. Passing that known-correct bass
+    /// note in and re-running the exact same 108-chord catalog measures how many of the earlier
+    /// mismatches actually get resolved by bass-aware tie-breaking, not just whether the code
+    /// compiles.
+    func testCatalogAmbiguity_withBassNoteHint_measuresResolution() {
+        let engine = TraditionalTheoryEngine()
+        var stillMismatched: [String] = []
+        var resolvedCount = 0
+        var totalOriginalMismatches = 0
+
+        for root in 0..<12 {
+            for p in profiles {
+                let chroma = idealizedChroma(root: root, offsets: p.offsets)
+                let (baselineRoot, baselineType) = engine.identifyTriad(chroma) // no bass hint — original behavior, unchanged
+                let wasOriginallyMismatched = (baselineRoot != root || baselineType != p.type)
+                guard wasOriginallyMismatched else { continue }
+                totalOriginalMismatches += 1
+
+                let (gotRoot, gotType) = engine.identifyTriad(chroma, bassNote: root)
+                let intendedName = "\(noteNames[root]) \(p.name)"
+                if gotRoot == root && gotType == p.type {
+                    resolvedCount += 1
+                } else {
+                    let gotName = "\(noteNames[gotRoot]) \(gotType)"
+                    stillMismatched.append("\(intendedName) -> \(gotName)")
+                }
+            }
+        }
+
+        print("=== BASS-NOTE-HINT RESOLUTION (DEVLOG Phase 29 follow-up) ===")
+        print("Originally mismatched (no bass hint): \(totalOriginalMismatches)/108")
+        print("Resolved by supplying the true bass note: \(resolvedCount)/\(totalOriginalMismatches)")
+        print("Still mismatched with bass hint: \(stillMismatched.count)/\(totalOriginalMismatches)")
+        stillMismatched.forEach { print("  \($0)") }
+
+        // Sanity: the baseline count this measures against must match the other test's locked
+        // total (31) — if it doesn't, something about the catalog or scoring changed and this
+        // test's own "how much did bass-hinting help" framing is no longer meaningful.
+        XCTAssertEqual(totalOriginalMismatches, 31, "the no-bass-hint mismatch baseline moved — re-check against testCatalogAmbiguity_acrossAllRootsAndQualities before trusting the resolution count below")
+    }
 }

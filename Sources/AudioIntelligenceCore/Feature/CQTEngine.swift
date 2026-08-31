@@ -47,8 +47,9 @@ import Accelerate
 ///    mean per-bin profile. Absolute magnitude scale differs (different normalization
 ///    convention between the two implementations), but pitch location and relative shape match.
 /// For key/tonal analysis the pipeline still uses a high-resolution STFT chromagram
-/// (nFFT 8192), independently validated — CQT here is validated as a standalone engine but has
-/// no downstream consumer yet.
+/// (nFFT 8192), independently validated — CQT here is validated as a standalone engine and feeds
+/// `TraditionalTheoryEngine.detectBassNote` (real bass-note detection for chord inversion
+/// labeling, and, as of DEVLOG Phase 29, root/quality tie-breaking on chroma-identical chords).
 public final class CQTEngine: @unchecked Sendable {
 
     public let nBins: Int

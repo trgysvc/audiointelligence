@@ -112,9 +112,10 @@ We report **measured** accuracy, not claimed. Each row below is backed by a test
 > a hard EDM set) and sit at 40–70% there. Earlier `librosa` 0.11 head-to-head numbers for
 > tempo/key are **not currently reproducible** (the comparison script isn't in this repo) and
 > have been removed from this table pending re-verification — see the open items in this
-> project's worklist. Instrument (as of Phase 16) and pitch (real-corpus RPA) now have measured
-> real-music numbers too; chord and structure still don't (no legally-obtainable paired audio yet
-> for chord; no bulk dataset yet for structure).
+> project's worklist. Instrument (held-out-test recall, re-verified) and pitch (real-corpus RPA)
+> now have measured real-music numbers too; structure now has a first real-ground-truth
+> measurement (SALAMI); chord identification is measured end-to-end on synthesized (not yet real)
+> audio — real paired chord/audio material still doesn't exist for this project (see worklist).
 
 | Area | Status | Source of truth |
 | :-- | :-- | :-- |
@@ -128,9 +129,10 @@ We report **measured** accuracy, not claimed. Each row below is backed by a test
 | Synthetic ground truth (tempo/timebase/phase/structure coverage) | ✅ 8/8 | deterministic fixtures |
 | Tempo — real music (EDM, 43 tracks) | ✅ Acc1 53% / Acc2 70% | GiantSteps (MIREX) |
 | Key — real music (599 tracks) | ✅ 50.9% exact / 63.3% MIREX-weighted (N=599, the full set — verified zero exclusions: every track loaded, parsed, and was long enough) | GiantSteps (MIREX) |
-| Instrument — real music | ✅ OpenMIC-2018 held-out test partition: Bass 48%/62% (recall/precision), Drums 61%/55%, Piano 64%/49%, Vocals 55%/38%, Strings 23%/33%, Brass 13%/21%; IRMAS (4 classes it can measure): 24.4% blended | IRMAS + OpenMIC-2018 |
+| Instrument — real music | ✅ OpenMIC-2018 held-out test partition recall: Drums 79%, Bass 59%, Piano 52%, Strings/Synth 41%, Vocals 22%, Brass/Trumpet 5% (precision not yet re-measured post-fix); IRMAS (4 classes it can measure): 28.5% blended | IRMAS + OpenMIC-2018 |
 | Pitch/f0 — real music | ✅ Raw Pitch Accuracy (<50 cents), see `Examples/ReliabilityAudit` scorecard for the current run's % | MDB-stem-synth |
-| Chord / structure quality | ❌ not yet validated (no paired real-music audio for chord; no bulk dataset yet for structure) | — |
+| Structure — real music (15 tracks) | ✅ boundary F-measure @3.0s tolerance: 41.1% (@0.5s: 21.3%) | SALAMI |
+| Chord identification — synthesized audio, real signal chain | ✅ 57–58/108 canonical (root, quality) chords correct end-to-end (STFT→Chroma→CQT→TraditionalTheoryEngine); real-corpus measurement still blocked (no legally-obtainable paired chord/audio material) | self-synthesized, 100%-exact ground truth |
 
 ---
 
@@ -153,7 +155,7 @@ fetching the material below into the indicated paths.
 | **MDB-stem-synth** | `Tests/Resources/MDBStemSynth/` | Zenodo <https://zenodo.org/records/1481172> | 230 real-instrument stems (from MedleyDB) re-synthesized with exactly known f0 — a synthesis-derived ground truth, not a human estimate. `YINEngine` (pitch/f0) validation. CC BY-NC 4.0. |
 | **Isophonics (Beatles)** | `Tests/Resources/Isophonics/` | <https://isophonics.net/content/reference-annotations-beatles> | Chord/key/structure/beat annotations for 179 Beatles songs. **Annotations only — no audio** (copyright); needs a legally-owned copy of the audio to pair with. `TraditionalTheoryEngine` (chord) validation target once paired. |
 | **McGill Billboard** | `Tests/Resources/McGillBillboard/` | <https://ddmal.ca/research/The_McGill_Billboard_Project_(Chord_Analysis_Dataset)/> | Chord/structure annotations for 890 Billboard chart slots (3 decades of pop). **Annotations only — no audio** (copyright), same pairing requirement as Isophonics. |
-| SALAMI (structure) | *(not fetched)* | <https://github.com/DDMAL/salami-data-public> | 1,359 tracks, hierarchical structure annotations by 10 expert annotators. Audio is **not** a single archive — it's split across several original sources (Internet Archive Live Music Archive, RWC, Codaich, Isophonics) requiring per-track matching; no bulk download exists. `StructureEngine` validation — open item, needs a dedicated matching effort before it's usable. |
+| **SALAMI** (structure) | `Tests/Resources/SALAMI/` | <https://github.com/DDMAL/salami-data-public> | 1,359 tracks, hierarchical structure annotations by 10 expert annotators. Audio is split across several original sources; 444/476 tracks (93.3%) resolved and legally downloaded via the Internet Archive Live Music Archive (the official metadata's stale-but-resolvable `archive.org` URLs — no per-track manual matching needed). `StructureEngine` boundary-detection validation. |
 
 ### Reference tools (test-time oracles — never shipped)
 
@@ -191,9 +193,13 @@ swift test --filter GoldenDatasetValidationTests   # GiantSteps key+tempo accura
 ### Reliability scorecard
 
 `Examples/ReliabilityAudit` is a single, repeatable tool that runs every engine with a real
-ground-truth dataset in one pass (tempo, key, instrument ×2, pitch/f0 — plus honest
-`not_available` rows for chord/structure, which currently lack legally-obtainable audio) and
-writes a dated, versioned scorecard. See `Examples/ReliabilityAudit/README.md`.
+ground-truth dataset in one pass (tempo, key, instrument ×2, pitch/f0) and writes a dated,
+versioned scorecard. Chord still reports `not_available` (no legally-obtainable paired chord/audio
+material exists — see Validation Status above for the synthesized-audio measurement that stands in
+for it). Structure's `not_available` row here is a known gap in the tool itself, not the data: real
+ground truth (SALAMI) now exists and `StructureEngine` is validated against it (see Validation
+Status), but this specific scorecard tool hasn't been updated to run that measurement yet. See
+`Examples/ReliabilityAudit/README.md`.
 ```bash
 swift run -c release ReliabilityAudit
 ```
@@ -227,7 +233,7 @@ From time-domain forensic analysis to frequency-domain source separation, AudioI
 - **Forensic DNA**: Bit-depth integrity and forgery audit.
 
 ### Music Information Retrieval (MIR)
-- **Mel / Chroma**: High-resolution timbral and tonal transforms (key uses a high-res STFT chromagram; the bundled CQT engine is a correctness-fixed, independently cross-checked standalone engine but has **no** downstream consumer in the pipeline yet).
+- **Mel / Chroma**: High-resolution timbral and tonal transforms (key uses a high-res STFT chromagram; the CQT engine, correctness-fixed and independently cross-checked, feeds `TraditionalTheoryEngine`'s real bass-note detection — used for chord inversion labeling and, as of this session, chord root/quality tie-breaking on chroma-identical chords).
 - **Viterbi Decoder**: Gaussian-emission HMM sequence modeling — smooths the raw per-frame pitch estimate into a stable note path (73-state MIDI space + a silence state).
 - **Onsets & Rhythm**: Multi-band rhythmic mapping, autocorrelation-based cyclic tempograms, and cross-rhythm/polyrhythm detection (3:2, 4:3, 5:4 and their inversions).
 - **Harmony & Tonnetz**: 6D Harmonic relationship mapping on the tonnetz grid.

@@ -25,10 +25,13 @@ public final class TraditionalTheoryEngine: @unchecked Sendable {
             guard isSafe else { continue }
             
             let frameChroma = (0..<12).map { chromagram[$0][t] }
-            let (root, type) = identifyTriad(frameChroma)
-            
+            // Bass note computed BEFORE root/type selection (not just for inversion labeling
+            // afterward) so `identifyTriad` can use it to break chroma-identical ties -- see its
+            // own doc comment (DEVLOG Phase 29's bass-note-wiring follow-up).
+            let bassNoteBin = detectBassNote(cqtMatrix: cqtMatrix, frameIndex: t)
+            let (root, type) = identifyTriad(frameChroma, bassNote: bassNoteBin)
+
             if type != .unclassified {
-                let bassNoteBin = detectBassNote(cqtMatrix: cqtMatrix, frameIndex: t)
                 let symbol = formatSymbol(root: root, type: type, bass: bassNoteBin)
                 
                 let (function, reasoning) = determineFunction(root: root, type: type, key: key)
@@ -55,7 +58,15 @@ public final class TraditionalTheoryEngine: @unchecked Sendable {
     
     // `internal` (not `private`) — needed for direct unit testing of the (root, profile)
     // scoring/tie-breaking logic itself, independent of `formatSymbol`'s string output.
-    func identifyTriad(_ chroma: [Float]) -> (root: Int, type: TriadType) {
+    //
+    // `bassNote`: real chord-tone sets can be chroma-identical at more than one (root, type) —
+    // e.g. C6 and Am7 share the exact same pitch classes, as do all 3 rotations of an augmented
+    // triad a major third apart. Chroma alone can't break those ties; the real bass note (already
+    // computed from CQT for inversion labeling, see `detectBassNote`) usually can, since the
+    // intended root is conventionally the one actually sounding in the bass. Default `nil`
+    // preserves the original chroma-only behavior exactly (`ChordScoringAmbiguityTests` relies on
+    // this for its own baseline numbers).
+    func identifyTriad(_ chroma: [Float], bassNote: Int? = nil) -> (root: Int, type: TriadType) {
         // Standard Triad & Jazz Extension Profiles
         let profiles: [(type: TriadType, offsets: [Int])] = [
             (.major, [0, 4, 7]),
@@ -73,6 +84,10 @@ public final class TraditionalTheoryEngine: @unchecked Sendable {
         var bestScore: Float = 0
         var bestRoot = 0
         var bestType: TriadType = .unclassified
+        // Floating-point tolerance for "effectively tied" scores -- idealized chroma inputs
+        // produce EXACTLY equal scores for chroma-identical (root, type) pairs, but real audio
+        // won't be bit-identical, so a strict `==` would miss real-world near-ties.
+        let tieEpsilon: Float = 0.001
 
         for root in 0..<12 {
             for profile in profiles {
@@ -98,9 +113,17 @@ public final class TraditionalTheoryEngine: @unchecked Sendable {
                 // as the original raw threshold (1.5) did pre-fix — real-world detection
                 // sensitivity preserved, while the normalization still fixes which root/type wins.
                 let score = rawScore / Float(profile.offsets.count)
+                guard score > 0.4 else { continue } // Threshold for triad presence
 
-                if score > bestScore && score > 0.4 { // Threshold for triad presence
+                if score > bestScore + tieEpsilon {
                     bestScore = score
+                    bestRoot = root
+                    bestType = profile.type
+                } else if let bass = bassNote, abs(score - bestScore) <= tieEpsilon, root == bass, bestRoot != bass {
+                    // Effectively tied with the current best, but THIS candidate's root matches
+                    // the real bass note and the current best's doesn't -- prefer it. Doesn't
+                    // touch `bestScore` (stays the same, since these ARE the same score) so a
+                    // later, non-bass-matching candidate at the same score can't un-do this.
                     bestRoot = root
                     bestType = profile.type
                 }

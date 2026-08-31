@@ -804,11 +804,14 @@ public actor DNAReportBuilder {
                 // the public `AudioIntelligence.analyzeRawAggregate` API, not just internal.
                 // `engineCoverage` now reflects whether each engine's array actually holds
                 // real per-chunk results for THIS analysis, `cqtStatus` honestly reports that
-                // CQTEngine has no consumer in this pipeline (see CQTEngine.swift's own doc
-                // comment), and `melSpectrogramResolution` uses the real frame count (mel and
-                // chroma share the same 512-sample hop, so `allChroma`'s frame count is exact).
-                // `utilityCheck`/`filterbankStatus` are left "OK": both underlying utilities
-                // are deterministic constructors with no defined failure mode to check against.
+                // CQTEngine feeds `TraditionalTheoryEngine.detectBassNote` (real bass-note
+                // detection for chord inversion labeling and root/quality tie-breaking — see
+                // CQTEngine.swift's own doc comment; this used to claim "no consumer", which was
+                // stale even before this session's bass-note-root-selection fix), and
+                // `melSpectrogramResolution` uses the real frame count (mel and chroma share the
+                // same 512-sample hop, so `allChroma`'s frame count is exact). `utilityCheck`/
+                // `filterbankStatus` are left "OK": both underlying utilities are deterministic
+                // constructors with no defined failure mode to check against.
                 let totalMelFrames = allChroma.reduce(0) { $0 + ($1.first?.count ?? 0) }
                 let coverage: [String: Bool] = [
                     "Structure": structureResult != nil,
@@ -817,7 +820,7 @@ public actor DNAReportBuilder {
                     "Contrast": !allContrast.isEmpty,
                     "Chroma": !allChroma.isEmpty,
                 ]
-                return AuditMetrics(engineCoverage: coverage, cqtStatus: "Not Used (no downstream consumer in this pipeline)", melSpectrogramResolution: "128x\(totalMelFrames)", utilityCheck: "OK", filterbankStatus: "OK")
+                return AuditMetrics(engineCoverage: coverage, cqtStatus: "Used (feeds TraditionalTheoryEngine bass-note detection)", melSpectrogramResolution: "128x\(totalMelFrames)", utilityCheck: "OK", filterbankStatus: "OK")
             }(),
             tonnetz: TonnetzMetrics(meanTonnetz: allTonnetz.first ?? [], harmonicStability: tonnetzStability),
             tempogram: TempogramMetrics(cyclicTempoMap: cyclicTempoMap, dominantPeriod: dominantPeriodReal),

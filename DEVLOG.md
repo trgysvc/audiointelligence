@@ -2257,4 +2257,53 @@ per-chunk-to-whole-track StructureEngine architecture change or the MFCC-reshape
 
 ---
 
+## 🎼 Phase 30 — First real-audio, end-to-end chord-identification measurement: 4-note "jazz extension" chords degrade sharply on real signal, 3-note triads don't (2026-08-31)
+
+Open-items list item 2's remaining ask ("synthesize known chord progressions, measure end-to-end
+accuracy through the real STFT->Chroma->CQT->TraditionalTheoryEngine chain, since Isophonics/
+Billboard have no legally obtainable paired audio") was picked up. `ChordScoringAmbiguityTests`
+(Phase 25) already measured `identifyTriad` in isolation against idealized chroma vectors (1.0 at
+each chord tone, 0 elsewhere) — 77/108 canonical (12 root x 9 quality) chords correct. What was
+never checked: does a REAL signal chain (synthesized audio -> windowed STFT -> `ChromaEngine`'s
+octave-folding -> the same `identifyTriad`) preserve that accuracy, or does real-world chroma
+degrade it?
+
+`Tests/ChordEndToEndSyntheticTests.swift`: the same 108 canonical chords, each synthesized as pure
+additive sines at the chord tones' true frequencies (`Tests/Support/SyntheticAudio.chord`, already
+existing infra), run through the exact STFT/Chroma/CQT parameters `DNAReportBuilder.swift` uses in
+production (nFFT=8192 chroma, hop=512, CQT nBins=84/binsPerOctave=12/fMin=32.7), then
+`TraditionalTheoryEngine.analyzeVertical`'s real per-frame chord detection (majority vote across
+each 3s clip's detected frames, so a single mis-tagged transient can't fail a chord the real
+pipeline mostly gets right).
+
+**Result: 57/108 (52.8%) correct** vs. the idealized-chroma baseline's 77/108 (71.3%) — a real,
+substantial 18.5pp drop. But the drop is NOT uniform across chord types:
+
+- **3-note triads (major/minor/diminished, 36 chords): essentially undegraded** — none of these
+  appear in the mismatch list at all.
+- **Augmented (12 chords): degrades in line with its already-known irreducible symmetry** (9/12
+  mismatched here vs. 8/12 in the idealized case — consistent, not a new failure mode).
+- **4-note "jazz extension" chords (dom7/m7/m7b5/m6, 48 chords): 42/48 mismatched** — these
+  collapse almost entirely on real audio, despite scoring correctly on idealized chroma.
+
+**Likely mechanism, not yet root-caused**: the synthesized frequencies are true 12-TET pitches,
+which don't land on exact STFT bin centers (nFFT=8192 at 22050Hz gives ~2.69Hz/bin) — a single
+sustained pure tone leaks energy into neighboring bins even after the analysis window. A 3-note
+chord has 3 tones' worth of leakage cross-talk; a 4-note chord has roughly twice as many pairwise
+leakage interactions, which is consistent with (but not yet proven to be) why exactly the 4-note
+chords are the ones that collapse. This mirrors a real acoustic phenomenon any real instrument
+mixture would also produce — it is not obviously a code bug, but it also hasn't been distinguished
+from one (e.g. `identifyTriad`'s 0.4 score threshold, itself empirically tuned on a single real
+SQAM recording per Phase 25's comment, may simply be miscalibrated for the specific chroma-leakage
+pattern 4-note chords produce).
+
+**Status:** Phase 30 complete for item 2's stated task — first-ever real-audio end-to-end chord
+measurement exists and is a permanent regression test (loose floor: total correct count must stay
+above 50%, catches a total collapse without locking in today's number as a target). The root cause
+of the 4-note-chord-specific degradation is a new, not-yet-investigated open item — not
+prioritized yet, pending user decision (same stability-first ordering as the rest of this list).
+`swift build`/`swift build --build-tests` green; new test passes (57/108, 7.2s).
+
+---
+
 > *"Measured, not claimed: AudioIntelligence reports what it can prove."*
