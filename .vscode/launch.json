@@ -159,6 +159,26 @@
             "target": "PrototypeTrainer",
             "configuration": "release",
             "preLaunchTask": "swift: Build Release PrototypeTrainer"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:audiointelligence}",
+            "name": "Debug StructureCalibration",
+            "target": "StructureCalibration",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug StructureCalibration"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:audiointelligence}",
+            "name": "Release StructureCalibration",
+            "target": "StructureCalibration",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release StructureCalibration"
         }
     ]
 }
