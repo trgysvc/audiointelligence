@@ -2144,4 +2144,117 @@ a tight regression contract on today's still-weak baseline numbers).
 
 ---
 
+## 🎯 Phase 29 — StructureEngine peak-picking calibrated against real SALAMI ground truth; two independent, previously-undiscovered production bugs found and fixed along the way (2026-08-31)
+
+Phase 28's open follow-up (recalibrate `DSPHelpers.peakPick`'s `delta`/`wait`, never tuned against
+real audio) was picked up. A new `Examples/StructureCalibration` tool was built for this:
+`StructureEngine.analyze()` was split into `prepareFeatures(chromagram:mfccs:)` (the expensive
+STFT->chroma/MFCC->Foote-novelty half) and `boundaries(from:config:)` (the cheap peak-picking
+half, taking a new `StructurePeakPickConfig`) so a grid search can compute each track's novelty
+curve ONCE and cheaply re-run peak-picking for hundreds of parameter combinations against it — the
+existing `StructureEngineSALAMITests.swift` pattern (STFT nFFT=8192 chroma, 13-dim MFCC, whole
+track) was reused for feature extraction, split 38 calibration / 19 held-out (disjoint) tracks.
+
+### Finding 1: the old `delta=0.03` was providing essentially no threshold at all
+
+A first grid search over `delta` in `[0.02, 0.35]` (a plausible-looking range for an unfamiliar
+parameter) found F@3.0s completely flat across the whole range (40.2%-40.3%) — `delta` wasn't
+doing anything. Printing the novelty curve's actual statistics revealed why: `streamingFooteNovelty`
+returns raw, unnormalized energy — pooled mean ≈668K, max ≈46.6M on real SALAMI tracks. An additive
+`delta=0.03` against a baseline in the hundreds-of-thousands was, in effect, zero. This is the real
+root cause behind Phase 28's over-segmentation finding: peak-picking was selecting almost every
+local maximum, gated only by `wait` and `localMax`, never by any meaningful novelty-height bar.
+
+### Finding 2 (independent bug, unrelated to peakPick): StructureEngine's real production call fed it a malformed MFCC array
+
+While reasoning about whether a fixed absolute `delta` would even transfer to production,
+`DNAReportBuilder.swift`'s actual per-chunk call (`mfccs: [mfccSubset]`) turned out to pass a
+single 20-coefficient vector — frame 0's full MFCC only (confirmed via the `batch_dct` Metal
+kernel's frame-major indexing, `id = frame_idx*n_mfcc + mfcc_idx`) — as if it were a **20-frame,
+1-dimensional time series** (`StructureEngine` reads `mfccs` as `[dim][time]`). Only the first ~20
+STFT frames of each ~45s chunk (out of possibly thousands) ever got a nonzero MFCC value; the rest
+of every chunk's timbre-novelty term was silently computed against all-zero data, for as long as
+this pipeline has existed. Fixed by reshaping `mfccRaw`'s real per-frame output into `[dim][time]`
+before passing it to `StructureEngine`.
+
+### Design change: absolute `delta` → `deltaMultiplier` (self-scaling)
+
+Since the novelty curve's absolute scale depends on feature dimensionality (13 vs. 20-dim MFCC)
+and whether it's computed whole-track or per-chunk, a fixed absolute delta calibrated under one
+configuration isn't guaranteed valid under another. `StructurePeakPickConfig.deltaMultiplier` was
+introduced instead: `boundaries(from:config:)` now computes `delta = deltaMultiplier *
+mean(features.novelty)` at call time, so the threshold self-scales to whatever novelty curve it's
+actually given. Re-running the grid search (`deltaMultiplier` in place of a fixed `delta`) found
+the same basic shape of optimum, now expressed portably.
+
+### Finding 3 (the self-scaling assumption was itself checked, not assumed): a real chunk-seam artifact
+
+Before accepting `deltaMultiplier` as sufficient, a direct two-pipeline comparison was run on 6
+real, multi-chunk SALAMI tracks: whole-track (calibration-style) boundaries vs. `DNAReportBuilder`-
+style boundaries (independent 45s chunks, each `StructureEngine` call analyzing from scratch, no
+continuity across the chunk edge). Result: only 15.2% of whole-track boundaries landed within 2s of
+a chunk-seam multiple (45s, 90s, ...) — plausible background rate — but **40.4%** of the chunked
+pipeline's boundaries did. Root cause: the Foote-novelty checkerboard kernel has no visibility past
+a chunk's own edge, so the very start/end of every independent chunk looks artificially
+"discontinuous," injecting a spurious boundary near almost every chunk seam — a real shape
+artifact that no amount of delta-scaling can fix, exactly as anticipated before running the check.
+
+**Fix:** matching the pattern already used for `ViterbiEngine.smoothPitchPath` (Phase "L") and
+`TempogramEngine.computeACT` (Phase "M") — accumulate the whole track's continuous features first,
+analyze once — `DNAReportBuilder.swift`'s per-chunk `StructureEngine(...).analyze(...)` call was
+removed entirely. Each chunk now only accumulates its per-frame MFCC into a whole-track
+`fullMFCCBins` buffer (mirroring the existing `fullChromagramBins` merge); `StructureEngine` runs
+ONCE on the complete track's chroma+MFCC after the chunk loop. `finalSegments` (both the
+`analyzeAggregate`-level and `assembleFinalDNA`-level copies — there were two independent
+implementations of the same per-chunk-offset logic) simplified to a direct read of the single
+result's segments, since they're already in true global time (no more `+ chunkIndex*45.0` offset
+needed, and no more instant chunk-edge artifact from `analyze()`'s Foote kernel seeing a
+discontinuity that was never really there).
+
+### Final calibrated numbers
+
+Best config (grid-searched on 38 calibration tracks, re-verified against the real unmodified
+`DSPHelpers.peakPick` on both calibration and a disjoint 19-track held-out set — not just the fast
+approximate search): `preMax=4 postMax=4 preAvg=24 postAvg=24 wait=12s deltaMultiplier=2.0`.
+
+```
+calibration set: F@3.0s 40.2% -> 44.7%   held-out set: F@3.0s 39.3% -> 45.7%
+```
+
+With the chunk-architecture fix also applied, `StructureEngineSALAMITests` (15 real SALAMI tracks,
+the same whole-track methodology `StructureEngine` itself now always uses in production too):
+
+```
+@0.5s: precision=8.2%->21.2%  recall=21.9%->21.4%  F=11.9%->21.3%
+@3.0s: precision=25.7%->40.9% recall=68.7%->41.3%  F=37.3%->41.1%
+```
+
+Recall@3.0s dropping from 69% to 41% alongside precision rising from 26% to 41% is the expected
+signature of fixing over-segmentation, not a regression: the old config's very high recall came
+from predicting far more boundaries than really exist (every true boundary had *something* nearby
+by sheer density), which is exactly what the ~2-3x predicted/true ratio (Phase 28) already showed
+was happening. Precision and recall converging together is consistent with the engine now
+predicting close to the right NUMBER of boundaries, not just scattering more of them.
+
+**Honest limitation:** the calibration/held-out split (38/19 tracks) and the chunk-artifact check
+(6 tracks) both come from the same SALAMI pool `StructureEngineSALAMITests` also draws its 15
+tracks from — there is no fully independent third dataset for structure (same constraint as
+Phase 28: Isophonics/Billboard have annotations but no legally obtainable audio). The relative-
+threshold design and the whole-track architecture fix are both principled, measured responses to
+real, checked failure modes (not just parameter-fit to whichever tracks were sampled) — but the
+absolute accuracy numbers above should be read as "measured on the best real data available," not
+as validated against a fully disjoint corpus.
+
+**Status:** Phase 29 complete. `StructurePeakPickConfig`/`StructureFeatures` are new public API
+(`Sources/AudioIntelligenceCore/Feature/StructureEngine.swift`); `Examples/StructureCalibration`
+is a new one-off tool (not part of `swift test`, matching `PrototypeTrainer`'s precedent) kept for
+future recalibration if the underlying feature pipeline changes. `swift build`/`swift build
+--build-tests` green. `StructureEngineTests`' synthetic two-section test needed its section width
+widened (400->700 frames) to stay comfortably over the new 12s minimum segment spacing — it was
+originally tuned to the old 8s default. Full `swift test` checkpoint run (DNAReportBuilder is
+widely shared): **131/131 tests passed, 0 failures** (1328s, ~22 minutes) — no regression from the
+per-chunk-to-whole-track StructureEngine architecture change or the MFCC-reshape fix.
+
+---
+
 > *"Measured, not claimed: AudioIntelligence reports what it can prove."*

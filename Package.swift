@@ -40,6 +40,10 @@ let package = Package(
             name: "PrototypeTrainer",
             targets: ["PrototypeTrainer"]
         ),
+        .executable(
+            name: "StructureCalibration",
+            targets: ["StructureCalibration"]
+        ),
         .library(
             name: "AudioIntelligenceUI",
             targets: ["AudioIntelligenceUI"]
@@ -159,6 +163,17 @@ let package = Package(
             name: "PrototypeTrainer",
             dependencies: ["AudioIntelligence", "AudioIntelligenceCore", "AudioIntelligenceMetal"],
             path: "Examples/PrototypeTrainer"
+        ),
+
+        // One-off tool: grid-searches StructureEngine's peak-picking parameters (delta, wait,
+        // preAvg/postAvg) against real SALAMI ground truth to replace the original hand-set
+        // (never-calibrated) defaults. Not part of `swift test` — run manually to regenerate
+        // the calibrated constants if the underlying features/novelty computation changes.
+        // See DEVLOG Phase 29.
+        .executableTarget(
+            name: "StructureCalibration",
+            dependencies: ["AudioIntelligence", "AudioIntelligenceCore", "AudioIntelligenceMetal"],
+            path: "Examples/StructureCalibration"
         ),
 
         .executableTarget(

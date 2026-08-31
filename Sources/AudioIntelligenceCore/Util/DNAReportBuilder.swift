@@ -69,6 +69,9 @@ public actor DNAReportBuilder {
         var fullPitchPath = [Int]()
         var fullBeatTimes = [Double]()
         var fullOnsetEnv = [Float]()
+        // Whole-track per-frame MFCC [20][TotalFrames], accumulated across chunks -- feeds a
+        // SINGLE whole-track `StructureEngine` pass after the loop (see that call site).
+        var fullMFCCBins = [[Float]](repeating: [], count: 20)
         
         var allLoudness = [LoudnessEngine.LoudnessResult?](repeating: nil, count: maxExpectedFragments)
         var allSpectral = [AdvancedSpectralMetrics?](repeating: nil, count: maxExpectedFragments)
@@ -90,7 +93,6 @@ public actor DNAReportBuilder {
         var allPiptrack = [Float?](repeating: nil, count: maxExpectedFragments)
         var allYIN = [PitchResult?](repeating: nil, count: maxExpectedFragments)
         var allMFCC = [[Float]?](repeating: nil, count: maxExpectedFragments)
-        var allStructure = [StructureResult?](repeating: nil, count: maxExpectedFragments)
         var allRhythm = [RhythmResult?](repeating: nil, count: maxExpectedFragments)
         var allContrast = [[Float]?](repeating: nil, count: maxExpectedFragments)
         var allStereo = [StereoEngine.StereoResult?](repeating: nil, count: maxExpectedFragments)
@@ -300,11 +302,27 @@ public actor DNAReportBuilder {
                     }
                 }
 
-                // Structural segmentation runs on EVERY chunk so coverage spans the
-                // whole track (previously idx==0 only → only the first 45s was analyzed).
-                let chromaCopy = chromaRaw.map { Array($0) }
-                let structureRes = StructureEngine(sampleRate: chunk.sampleRate).analyze(chromagram: chromaCopy, mfccs: [mfccSubset])
-                allStructure[idx] = structureRes
+                // Accumulate this chunk's per-frame MFCC into the whole-track buffer.
+                // `StructureEngine` now runs ONCE on the whole track after the loop (alongside
+                // `fullChromagramBins`) instead of once per independent 45s chunk -- each chunk
+                // used to be re-analyzed from scratch, and the Foote-novelty kernel has no
+                // visibility past a chunk's own edges, so that injected a spurious "boundary"
+                // near almost every chunk seam (measured on real SALAMI tracks: ~40% of chunked-
+                // pipeline boundaries landed within 2s of a chunk seam vs ~15% for a genuine
+                // whole-track analysis of the same tracks -- DEVLOG Phase 29 /
+                // Examples/StructureCalibration). Also fixes a separate, previously-undiscovered
+                // shape bug: the old per-chunk call passed `mfccs: [mfccSubset]` -- a single
+                // 20-coefficient vector for frame 0 only -- as if it were a 1-dimension/20-frame
+                // series (StructureEngine reads `mfccs` as [dim][time]), so only the chunk's
+                // first ~20 STFT frames out of possibly thousands ever got a nonzero MFCC value.
+                // `mfccRaw` (just above) already holds the GPU DCT's real per-frame output
+                // (frame-major: id = frame*20+coeff, see `batch_dct` in
+                // AudioIntelligenceMetal.swift) for the whole chunk -- reshape it into the
+                // [dim][time] layout and append to the whole-track accumulator.
+                let mfccFrameCount = mfccRaw.count / 20
+                for t in 0..<mfccFrameCount {
+                    for c in 0..<20 { fullMFCCBins[c].append(mfccRaw[t * 20 + c]) }
+                }
             }
             
             // --- AGGREGATION: Collect high-res chroma and beat data ---
@@ -338,22 +356,6 @@ public actor DNAReportBuilder {
         let meterEng = MeterEngine()
         let historicalEng = HistoricalEngine()
         
-        var finalSegments = [MusicSegment]()
-        var currentTimeOffset: Double = 0
-        for analysis in allStructure {
-            if let fragments = analysis?.segments {
-                for seg in fragments {
-                    finalSegments.append(MusicSegment(
-                        id: finalSegments.count + 1,
-                        start: seg.startSec + currentTimeOffset,
-                        end: seg.endSec + currentTimeOffset,
-                        label: seg.label
-                    ))
-                }
-            }
-            currentTimeOffset += 45.0 // Forensic slice duration
-        }
-        
         // Transpose and Merge global chromagram [12][TotalFrames]
         var fullChromagramBins = [[Float]](repeating: [], count: 12)
         for fragmentMapping in allChroma {
@@ -366,9 +368,30 @@ public actor DNAReportBuilder {
                 }
             }
         }
-        
+
         let totalChromaFrames = fullChromagramBins[0].count
         Swift.print("📊 [TRACE] Forensic Chroma Validation: \(totalChromaFrames) frames captured across 12 semitones.")
+
+        // Structural segmentation: ONE whole-track pass, using the whole-track chroma (just
+        // built above) and MFCC (`fullMFCCBins`, accumulated per-chunk in the loop) -- not once
+        // per independent 45s chunk. See the per-chunk loop's comment (where `fullMFCCBins` gets
+        // appended to) for why chunk-by-chunk re-analysis was replaced: each chunk's Foote-
+        // novelty kernel has no visibility past its own edges, which injected a spurious
+        // "boundary" near almost every chunk seam. Same pattern as `smoothedPitchPath`/
+        // `tempogramRes` below (accumulate whole-track, analyze once).
+        var structureResult: StructureResult? = nil
+        let structNFrames = min(fullChromagramBins[0].count, fullMFCCBins[0].count)
+        if structNFrames > 20 {
+            let structChroma = fullChromagramBins.map { Array($0.prefix(structNFrames)) }
+            let structMFCC = fullMFCCBins.map { Array($0.prefix(structNFrames)) }
+            let structEngine = StructureEngine(sampleRate: sampleRate)
+            if let feat = structEngine.prepareFeatures(chromagram: structChroma, mfccs: structMFCC) {
+                structureResult = structEngine.boundaries(from: feat)
+            }
+        }
+        let finalSegments: [MusicSegment] = (structureResult?.segments ?? []).enumerated().map { i, seg in
+            MusicSegment(id: i + 1, start: seg.startSec, end: seg.endSec, label: seg.label)
+        }
 
         // Transpose and merge the global CQT matrix [84][TotalFrames], same chunk order as
         // the chromagram above.
@@ -474,7 +497,7 @@ public actor DNAReportBuilder {
             allNMF: allNMF.compactMap{$0}, allPiptrack: allPiptrack.compactMap{$0}, 
             allViterbi: [smoothedPitchPath], allYIN: allYIN.compactMap{$0},
             cyclicTempoMap: cyclicTempoMapReal,
-            allMFCC: allMFCC.compactMap{$0}, allStructure: allStructure.compactMap{$0}, 
+            allMFCC: allMFCC.compactMap{$0}, structureResult: structureResult,
             allRhythm: allRhythm.compactMap{$0}, allContrast: allContrast.compactMap{$0},
             allChroma: allChroma.compactMap{$0},
             fullBeatTimes: fullBeatTimes,
@@ -515,7 +538,7 @@ public actor DNAReportBuilder {
                                   allScience: [ScienceMetrics], allTonnetz: [[Float]], allNMF: [Float], 
                                   allPiptrack: [Float], allViterbi: [[Int]], allYIN: [PitchResult],
                                   cyclicTempoMap: [Float],
-                                  allMFCC: [[Float]], allStructure: [StructureResult], 
+                                  allMFCC: [[Float]], structureResult: StructureResult?,
                                   allRhythm: [RhythmResult], allContrast: [[Float]],
                                   allChroma: [[[Float]]],
                                   fullBeatTimes: [Double],
@@ -572,20 +595,11 @@ public actor DNAReportBuilder {
         let contrastBandCount = allContrast.first?.count ?? 0
         let finalContrast = (0..<contrastBandCount).map { i in allContrast.map { $0[i] }.reduce(0, +) / Float(max(1, allContrast.count)) }
         
-        // Per-chunk segments are chunk-relative; shift each by its 45s chunk offset so
-        // the timeline spans the whole track instead of collapsing into the first 45s.
-        let chunkDuration = 45.0
-        var finalSegments = [MusicSegment]()
-        for (chunkIndex, structure) in allStructure.enumerated() {
-            let offset = Double(chunkIndex) * chunkDuration
-            for seg in structure.segments {
-                finalSegments.append(MusicSegment(
-                    id: finalSegments.count + 1,
-                    start: seg.startSec + offset,
-                    end: seg.endSec + offset,
-                    label: seg.label
-                ))
-            }
+        // `structureResult` comes from a single whole-track analysis (see analyzeAggregate's
+        // per-chunk loop / post-loop comments) -- segment times are already global, no per-chunk
+        // offset needed.
+        let finalSegments: [MusicSegment] = (structureResult?.segments ?? []).enumerated().map { i, seg in
+            MusicSegment(id: i + 1, start: seg.startSec, end: seg.endSec, label: seg.label)
         }
 
         // Global Beat Consistency (v7.1 Forensic upgrade)
@@ -797,7 +811,7 @@ public actor DNAReportBuilder {
                 // are deterministic constructors with no defined failure mode to check against.
                 let totalMelFrames = allChroma.reduce(0) { $0 + ($1.first?.count ?? 0) }
                 let coverage: [String: Bool] = [
-                    "Structure": !allStructure.isEmpty,
+                    "Structure": structureResult != nil,
                     "HPSS": !allHPSSData.isEmpty,
                     "Rhythm": !allRhythm.isEmpty,
                     "Contrast": !allContrast.isEmpty,

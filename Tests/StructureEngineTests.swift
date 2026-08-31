@@ -48,8 +48,8 @@ final class StructureEngineTests: XCTestCase {
     /// Real transitions must be detected within a generous tolerance (well under one section's
     /// width) — not missed entirely, and not just noise scattered anywhere in the track.
     func testAlternatingSections_boundariesDetectedNearKnownTransitions() {
-        let sectionFrames = 400 // ~9.3s per section at hop=512/sr=22050 — comfortably over the
-                                 // engine's built-in 8s minimum segment spacing.
+        let sectionFrames = 700 // ~16.3s per section at hop=512/sr=22050 — comfortably over the
+                                 // calibrated engine's 12s minimum segment spacing (DEVLOG Phase 29).
         let (chroma, mfcc, trueTransitions) = syntheticTrack(sectionFrames: sectionFrames)
 
         let result = StructureEngine(hopLength: hopLength, sampleRate: sampleRate).analyze(chromagram: chroma, mfccs: mfcc)
