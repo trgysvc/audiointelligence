@@ -101,7 +101,10 @@ public actor DNAReportBuilder {
         var nmfComponentEnergy: [Float] = []   // real NMF activation energy (set at idx==0)
         var nmfReconError: Float = 0           // real NMF reconstruction error (set at idx==0)
         var waveformEnvelope: [Float] = []     // downsampled peak envelope, accumulated per chunk
-        
+        // Stateless (no per-call caching) -- shared across chunks purely to avoid re-allocating
+        // it every iteration, not because it holds any cross-chunk state.
+        let pyinDecoder = PYINDecoder()
+
         Swift.print("🔍 Starting [Absolute Forensic Recalibration] Run (30 Engines - High-Res Path)")
         
         var idx = 0
@@ -195,7 +198,21 @@ public actor DNAReportBuilder {
             // `detectBassNote`'s existing bounds check already handles that safely.
             allCQT[idx] = CQTEngine(nBins: 84, binsPerOctave: 12, fMin: 32.7, sampleRate: chunk.sampleRate, hopLength: 512).transform(chunk.samples)
             
-            let yin = YINEngine(sampleRate: chunk.sampleRate).analyze(samples: chunk.samples)
+            // pYIN (Mauch & Dixon 2014), not plain YIN: measured on MDB-stem-synth real-audio
+            // ground truth to beat YIN on both Raw Pitch Accuracy (50.6%->61.6%) and voicing
+            // accuracy (77.8%->85.3%), at a small GPE cost (2.1%->3.9%) among the newly-recovered
+            // frames -- see DEVLOG Phase 27. Known, quantified limitation: `PYINDecoder`'s 480-bin
+            // HMM only represents 55-880Hz (4 octaves) -- candidates outside that window are
+            // silently invisible to it and get pushed toward "unvoiced". Measured directly against
+            // MDB-stem-synth's full ground truth (230 stems, 8.65M true-voiced frames, DEVLOG
+            // Phase 33): 8.8% of real voiced pitch content falls outside this window (6.5% too low
+            // e.g. bass register, 2.4% too high) -- a real, non-trivial cost, but the RPA/voicing
+            // gains above already reflect it (measured on the same real corpus), so this is a net
+            // win, not a hidden regression, for material resembling that corpus.
+            let pyinEngine = YINEngine(sampleRate: chunk.sampleRate)
+            let pyinCandidates = pyinEngine.analyzePYINCandidates(samples: chunk.samples)
+            let pyinPath = pyinDecoder.decode(candidatesPerFrame: pyinCandidates)
+            let yin = PitchResult.from(f0Series: pyinPath)
             allYIN[idx] = yin
             
             let piptrackRes = PiptrackEngine().track(stft: stft)
@@ -243,7 +260,24 @@ public actor DNAReportBuilder {
                 // power spectrum gave coefficients uncorrelated with the standard MFCC.
                 let logMel = melRes.melData.map { 10.0 * log10f(max($0, 1e-10)) }
                 let mfccRaw = metalEngine.executeBatchDct(melSpectrogram: logMel, nMfcc: 20, nMels: 128)
-                let mfccSubset = Array(mfccRaw.prefix(20))
+                // `mfccRaw` is the GPU DCT's real per-frame output for the WHOLE chunk
+                // (frame-major: id = frame*20+coeff, see `batch_dct` in AudioIntelligenceMetal.swift)
+                // -- `Array(mfccRaw.prefix(20))` used to take only frame 0's 20 coefficients (the
+                // chunk's first ~23ms) and pass that off as "the chunk's MFCC" to both this
+                // report's TimbreMetrics.mfcc field and InstrumentEngine.predict(), while
+                // spectral/lowBand/percussive below are genuine whole-chunk aggregates. Same bug
+                // class as the StructureEngine `mfccSubset` fix earlier this session (DEVLOG Phase
+                // 29) -- a second, independently-discovered instance, which is itself evidence a
+                // dedicated MFCC-input-integrity regression test is worth adding (open item).
+                // Fixed the same way: average every frame's coefficients across the whole chunk.
+                let mfccFrameCount = mfccRaw.count / 20
+                var mfccSubset = [Float](repeating: 0, count: 20)
+                if mfccFrameCount > 0 {
+                    for t in 0..<mfccFrameCount {
+                        for c in 0..<20 { mfccSubset[c] += mfccRaw[t * 20 + c] }
+                    }
+                    for c in 0..<20 { mfccSubset[c] /= Float(mfccFrameCount) }
+                }
                 allMFCC[idx] = mfccSubset
 
                 // Atomic Metric Push
@@ -318,8 +352,8 @@ public actor DNAReportBuilder {
                 // `mfccRaw` (just above) already holds the GPU DCT's real per-frame output
                 // (frame-major: id = frame*20+coeff, see `batch_dct` in
                 // AudioIntelligenceMetal.swift) for the whole chunk -- reshape it into the
-                // [dim][time] layout and append to the whole-track accumulator.
-                let mfccFrameCount = mfccRaw.count / 20
+                // [dim][time] layout and append to the whole-track accumulator. `mfccFrameCount`
+                // already computed above for the mfccSubset chunk-average fix.
                 for t in 0..<mfccFrameCount {
                     for c in 0..<20 { fullMFCCBins[c].append(mfccRaw[t * 20 + c]) }
                 }

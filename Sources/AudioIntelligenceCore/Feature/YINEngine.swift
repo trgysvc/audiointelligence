@@ -23,6 +23,26 @@ public struct PitchResult: Codable, Sendable {
     public let voicedFrames: [Int]    // Voiced frame indices
     public let meanF0: Float          // Mean of voiced frames only
     public let medianF0: Float        // Median of voiced frames (more robust)
+
+    /// Builds a `PitchResult` from a raw f0-per-frame series (NaN = unvoiced), deriving
+    /// `voicedFrames`/`meanF0`/`medianF0` the same way `YINEngine.analyze` does. Used to wrap
+    /// `PYINDecoder.decode(candidatesPerFrame:)`'s output (also a NaN-for-unvoiced `[Float]`)
+    /// into the same shape `YINEngine.analyze`'s callers already consume, so pYIN is a drop-in
+    /// replacement for YIN wherever a `PitchResult` is expected.
+    public static func from(f0Series: [Float]) -> PitchResult {
+        let voicedFrames = f0Series.indices.filter { !f0Series[$0].isNaN }
+        let voicedF0 = voicedFrames.map { f0Series[$0] }
+        let meanF0: Float
+        let medianF0: Float
+        if voicedF0.isEmpty {
+            meanF0 = Float.nan
+            medianF0 = Float.nan
+        } else {
+            meanF0 = voicedF0.reduce(0, +) / Float(voicedF0.count)
+            medianF0 = voicedF0.sorted()[voicedF0.count / 2]
+        }
+        return PitchResult(f0Series: f0Series, voicedFrames: voicedFrames, meanF0: meanF0, medianF0: medianF0)
+    }
 }
 
 /// One frame's pYIN candidate: a period estimate with the probability mass the Beta-weighted

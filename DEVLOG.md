@@ -2306,4 +2306,247 @@ prioritized yet, pending user decision (same stability-first ordering as the res
 
 ---
 
+## 🎹 Phase 31 — Bass note wired into chord root/quality selection: all 31 previously-ambiguous canonical chords resolved (2026-08-31)
+
+Open-items list item 2 (later renumbered item "3" mid-session, a direct follow-up to Phase 25's
+`identifyTriad` normalization fix): `TraditionalTheoryEngine.detectBassNote` already computed a
+real bass note from CQT data, but only for inversion labeling (`formatSymbol`) — `identifyTriad`'s
+own root/quality selection never saw it, even though the 23 "relative-chord superset" mismatches
+Phase 25 measured (e.g. C6/Am7, Cmaj7/Em7 — chroma-identical pairs) are, by the project's own
+prior analysis, resolvable in principle once the bass note is known.
+
+**Implementation**: `identifyTriad(_:bassNote:)` gained an optional `bassNote: Int? = nil`
+parameter (default preserves the original chroma-only behavior exactly — `ChordScoringAmbiguityTests`'
+existing 31-mismatch baseline is untouched, since it never passes a bass hint). Within the scoring
+loop, ties (or near-ties, epsilon 0.001 — real audio won't produce the bit-exact equality idealized
+chroma does) now prefer whichever candidate's root matches the real bass note, without disturbing
+`bestScore` so a later same-score-but-wrong-root candidate can't undo the match. `analyzeVertical`
+now computes the bass note FIRST and passes it into `identifyTriad`, instead of only using it
+afterward for the inversion suffix.
+
+**Measured result, not assumed**: a new test (`ChordScoringAmbiguityTests.
+testCatalogAmbiguity_withBassNoteHint_measuresResolution`) re-runs the exact same 108-chord
+catalog, this time supplying each chord's true bass note (= its root, since every catalog entry is
+constructed root-position) — **31/31 previously-mismatched chords now resolve correctly**. This
+exceeds the item's own original scope: the 8 augmented-symmetry cases were explicitly called out
+as "irreducible from chroma alone... without bass information" (Phase 25's own wording already
+anticipated this) but turn out to be resolvable WITH bass information after all, since the true
+bass note always matches exactly one of the three chroma-identical augmented-triad root candidates
+— tie-breaking naturally picks it. `ChordEndToEndSyntheticTests`' real-audio end-to-end number also
+ticked up slightly as a side effect (57->58/108) — `analyzeVertical`'s real pipeline call benefits
+from the same fix.
+
+**Status:** Phase 31 complete, fully verified. Targeted suite green:
+`ChordScoringAmbiguityTests`/`TraditionalTheoryEngineTests`/`ChordEndToEndSyntheticTests`/
+`CadenceEngineTests` (16/16, all pass, no regression on the existing bass-blind baseline test).
+Full `swift test` checkpoint (this touches `TraditionalTheoryEngine`, used throughout the
+musicology pipeline): **133/133 tests passed, 0 failures** (1322.5s, ~22 minutes) — up from
+Phase 30's 131 (this phase added 2 new tests: `ChordEndToEndSyntheticTests` and the bass-note-hint
+resolution test).
+
+### Side work: README/self-audit accuracy pass
+
+While investigating CQT's real usage for the bass-note fix above, found `AuditMetrics.cqtStatus`
+(reachable via the public `AudioIntelligence.analyzeRawAggregate` API) hardcoded to claim CQT has
+"no downstream consumer in this pipeline" — false, and had already been false before this session
+(CQT has fed `detectBassNote` since the Phase-25-adjacent `cqtMatrix` wiring fix). `CQTEngine.
+swift`'s own doc comment made the same stale claim. Both corrected, along with the locked-in
+`AuditMetricsTests` assertion that had been asserting the false string as expected behavior.
+
+Also brought `README.md`'s Validation Status table up to date against real, already-measured
+numbers that had drifted out of sync with the code: the Instrument row still showed Phase 16's
+original numbers instead of Phase 26's corrected held-out-test recall figures (Bass 48%->59%,
+Brass 13%->5%, etc. — Brass is a real regression, not just a re-measurement, per Phase 26); the
+Chord/Structure row still said "not yet validated" despite this session's Phase 29 (structure,
+SALAMI) and Phase 30 (chord, synthesized audio) measurements; the SALAMI dataset table row still
+said "(not fetched)". None of these were new numbers — all were already sitting in DEVLOG,
+just not reflected in the README a reader would actually see first.
+
+**Verification note**: this side work's edits (`DNAReportBuilder.swift`, `CQTEngine.swift`,
+`AuditMetricsTests.swift`) were made concurrently with the Phase-31-main-fix full-suite run above,
+which meant the 133/133 result predated them (`swift build --build-tests` confirmed this — it
+recompiled exactly those 3 files on the next invocation). Re-verified separately and cleanly
+afterward: a fresh `swift build --build-tests` + `swift test --filter AuditMetricsTests` (1/1
+pass) confirms `cqtStatus` now genuinely returns "Used (feeds TraditionalTheoryEngine bass-note
+detection)" from real, current code — not re-running the full 22-minute suite a third time for a
+single self-contained string constant, since its only assertion point is that one test, which now
+passes against fresh code.
+
+---
+
+## 🎻 Phase 32 — Strings/Synth IRMAS-vs-OpenMIC precision "anomaly" measured with corrected methodology: narrows from 31pp to 9pp, closed (2026-08-31)
+
+Open-items list item 3's remaining gap: Phase 26 re-measured Strings/Synth's OpenMIC **recall**
+under the corrected held-out-test-only methodology (41%, 444/1075) but never re-measured
+**precision** — the original flagged anomaly (IRMAS precision 64% vs. OpenMIC precision 33%, a
+31-point gap) had never been checked against the same methodology fix that recall got, so it was
+an open question whether the anomaly was real or another instance of the same stale-partition
+measurement artifact Phase 26 found for recall.
+
+`Examples/ReliabilityAudit`'s `runOpenMICTestPartitionEval` (`RA_OPENMIC_TEST_EVAL=1
+RA_OPENMIC_TEST_PER_CLASS=0`, full held-out test partition, no per-class thinning) already computes
+both recall and precision per class from a single confusion matrix — it just hadn't been run and
+recorded for this specific comparison before. Full run, 2780 evaluated clips (754 skipped as
+ambiguous/multi-label, 0 missing):
+
+```
+Strings/Synth recall:    444/1075 (41%)   [matches Phase 26's already-recorded number exactly]
+Strings/Synth precision: 444/803  (55%)
+```
+
+**Finding**: OpenMIC precision under the corrected methodology is 55%, not the originally-flagged
+33% — IRMAS 64% vs. OpenMIC 55% is a 9-point gap, well within the range of an unremarkable
+cross-dataset difference (different recording conditions, source distributions, label conventions
+across the two datasets), not something that needs a code-level explanation. The original 31-point
+gap was, like the recall-side anomaly Phase 26 diagnosed, most likely an artifact of measuring
+against the wrong (non-held-out, or otherwise inconsistent) partition rather than a genuine model
+weakness specific to Strings/Synth precision.
+
+Full corrected-methodology table recorded for completeness (all 6 classes, single run):
+
+| Class | Recall | Precision |
+| :-- | :-- | :-- |
+| Piano/Keyboard | 53% (240/456) | 43% (240/561) |
+| Bass (Acoustic/Electric) | 59% (71/120) | 22% (71/321) |
+| Brass/Trumpet | 6% (27/465) | 27% (27/99) |
+| Vocals/Chorus | 22% (46/207) | 15% (46/302) |
+| Drums/Percussion | 80% (364/457) | 54% (364/670) |
+| Strings/Synth | 41% (444/1075) | 55% (444/803) |
+
+**Status:** Phase 32 complete, open-items list item 3 closed — no code change, this was a
+pure-measurement item and the measurement is now done. No new bugs found; this table is also a
+useful by-product for future work on the other classes (e.g. Bass's precision, 22%, is the next
+most striking number here but is out of THIS item's scope).
+
+---
+
+## 🎤 Phase 33 — pYIN wired into production; its 55-880Hz range limitation's real cost measured at 8.8% of real voiced content (2026-08-31)
+
+Open-items list item 4's remaining task: Phase 27 implemented and validated pYIN
+(RPA 50.6%->61.6%, voicing accuracy 77.8%->85.3% vs. plain YIN, measured on MDB-stem-synth) but
+never wired it into `DNAReportBuilder.swift`'s real per-chunk pitch call, which still used plain
+`YINEngine.analyze()`. The item also asked for the known 55-880Hz (4-octave) `PYINDecoder` window
+limitation's real-world impact to be evaluated, not just noted as a caveat.
+
+**Wiring**: `PitchResult` gained a `static func from(f0Series:)` factory (derives
+`voicedFrames`/`meanF0`/`medianF0` from a raw NaN-for-unvoiced series, identical logic to what
+`YINEngine.analyze()`'s tail already did) so `PYINDecoder.decode(candidatesPerFrame:)`'s `[Float]`
+output — same NaN-for-unvoiced convention — slots into the same `PitchResult` shape every existing
+consumer (`fullF0Series`/`ViterbiEngine.smoothPitchPath`, the report's meanF0/minF0/maxF0/
+voiced-frame-ratio fields) already expects, with zero signature changes downstream. The per-chunk
+loop now calls `YINEngine.analyzePYINCandidates` + `PYINDecoder().decode(...)` instead of
+`YINEngine.analyze()`.
+
+**Range-limitation impact, measured, not assumed**: `PYINDecoder`'s 480-bin HMM only represents
+55-880Hz; anything outside is invisible to its emission model (`hzToBin` returns `nil`,
+silently dropped) and gets pushed toward "unvoiced" regardless of what YIN's wider-range Stage 1
+actually found. Measured directly from MDB-stem-synth's full ground-truth annotations (230 stems,
+no audio decoding needed — pure CSV read of the already-known true f0 per frame):
+
+```
+8,651,723 true-voiced frames total
+in [55, 880)Hz:  91.2%  (7,888,452)
+outside:          8.8%  (763,271)  -- 6.5% too low (bass register), 2.4% too high
+```
+
+**Reading**: a real, non-trivial cost — roughly 1 in 11 true-voiced frames in this real-music-
+derived corpus falls outside pYIN's representable window and would be forced toward "unvoiced"
+in production, mostly on the low/bass side. Not a hidden regression, though: Phase 27's RPA/
+voicing-accuracy comparison was measured on this SAME corpus (which already contains this 8.8%
+of out-of-range material), and pYIN still won on both axes — so the net benefit already prices in
+this cost. The honest characterization is a real, quantified trade-off (some genuinely low-bass or
+very-high material will be mis-marked unvoiced where plain YIN might at least attempt a — possibly
+still wrong — guess), not something to fix within this item's scope; a full fix would mean
+widening `PYINDecoder`'s pitch-bin range beyond the paper's original vocal-range design target, a
+separate, larger change not requested here.
+
+**Status:** Phase 33 complete, fully verified. Targeted suite green: `AuditMetricsTests`/
+`DNAReportBuilderHPSSTests`/`PYINEngineTests`/`ViterbiRealPipelineTests`/`YINEngineTests` (12/12,
+all pass) — confirms pYIN's real per-chunk output flows correctly through the whole production
+pipeline (HPSS/audit/Viterbi all still green against a changed pitch source). Full `swift test`
+checkpoint (`YINEngine.swift`/`DNAReportBuilder.swift` are both widely shared): **133/133 tests
+passed, 0 failures** (1390.1s, ~23 minutes) — no regression from switching production's pitch
+source.
+
+---
+
+## 🎸 Phase 34 — InstrumentEngine's second frame-0-snapshot bug found and fixed; a session methodology note tightened to close a real overfitting loophole (2026-08-31)
+
+While scoping the open-items list's new "polyphonic multi-instrument recognition" item, found a
+second, independent instance of the exact bug class Phase 29 fixed in `StructureEngine`:
+`DNAReportBuilder.swift`'s per-chunk `InstrumentEngine.predict()` call was fed `mfccSubset =
+Array(mfccRaw.prefix(20))` — frame 0's 20 MFCC coefficients (the chunk's first ~23ms) — as "the"
+MFCC representation for a whole 45-second chunk, while `spectral`/`lowBandEnergyRatio`/
+`percussiveEnergyRatio` (the other three inputs to the same `predict()` call) are genuine
+whole-chunk aggregates. Two independently-discovered instances of the same bug class across two
+different engines is itself a signal worth tracking (a dedicated MFCC-input-integrity regression
+test is now an open follow-up, not yet built).
+
+**Fix**: average every frame's coefficients across the whole chunk (`mfccRaw.count / 20` frames,
+mean per coefficient) instead of taking frame 0 alone — this single fix corrects both the report's
+`TimbreMetrics.mfcc` field and `InstrumentEngine.predict()`'s input, since both consumed the same
+`mfccSubset` variable. Reused the already-computed `mfccFrameCount` from the adjacent
+`fullMFCCBins` accumulation (added in Phase 29) rather than recomputing it, avoiding a duplicate
+declaration.
+
+**Real closing evidence, not just green tests** (`Examples/ReliabilityAudit`, same tool/methodology
+Phase 26 used for its own before/after comparison): a first attempt at an exact-replica full-corpus
+run (`RA_IRMAS_PER_CLASS=0 RA_OPENMIC_LIMIT=0`, matching Phase 26's IRMAS n=6705/OpenMIC n=13847)
+was killed by the OS (SIGKILL, exit 137) partway through — likely a memory/resource limit hit
+processing the full ~20,000-clip OpenMIC set combined with IRMAS's 6,718 files in one process, not
+investigated further here. Re-run at a large-but-bounded sample instead
+(`RA_IRMAS_PER_CLASS=300 RA_OPENMIC_LIMIT=3000`, n=3300/3000 respectively — smaller than Phase 26's
+full corpus, but still a real, substantial held-out sample):
+
+```
+IRMAS:   28.5% (Phase 26, n=6705) -> 30.9% (n=3300)   +2.4pp
+OpenMIC: 44.8% (Phase 26, n=13847) -> 44.4% (n=3000)  -0.4pp (within sampling noise at n=3000, SE~0.9%)
+```
+
+Reading: a real, modest improvement on IRMAS, no measurable change on OpenMIC (noise-bound at this
+sample size). Plausible mechanism: frame 0 often sits near a chunk's attack transient, a less
+timbre-representative moment than a proper whole-chunk average — fixing it should help or be
+neutral, not hurt, which is what was measured. This measurement was run to VERIFY an
+already-decided, unconditional bug fix, not to select among candidate fixes or tune toward a
+target number — see the methodology note below for why that distinction matters.
+
+### Methodology note: the project's founding directive on academic datasets was ambiguous, and could have licensed exactly the failure mode this whole session's discipline has avoided
+
+The user flagged that `~/Desktop/AudioIntelligence_Yapilacaklar.md`'s opening directive (added in
+an earlier session, instructing that academic sources like MIREX/GiantSteps be used to "make the
+engine produce the value it should") was genuinely ambiguous between two readings: (1) use these
+datasets as held-out evaluation oracles to MEASURE real accuracy (what this session's actual
+practice has consistently done — `PrototypeTrainer`'s OpenMIC train-partition, `StructureCalibration`'s
+calibration/held-out split, pYIN's librosa-source-code-verified formula fix, none of which tuned
+parameters against a single evaluation set's known answers), or (2) tune the engine's parameters
+until it reproduces the known answer on the SAME set used to report accuracy — which would silently
+convert every "measured" number in this project into an overfit, meaningless one, directly
+contradicting the project's own "measured, not claimed" identity.
+
+A self-audit of every measurement/calibration made this session (structure peak-picking, bass-note
+wiring, pYIN wiring, this Phase's own IRMAS/OpenMIC re-measurement) found no violation — but the
+audit itself was only possible because the ambiguity was raised and checked, not because the
+original wording made the correct practice obvious. The note was rewritten to state the held-out-
+vs-tune distinction explicitly, with concrete in-repo examples (`PrototypeTrainer`, `StructureCalibration`),
+and extended to cover a subtler version of the same failure the user identified before it could
+happen: **using a held-out set as a selection criterion among candidate hyperparameters/thresholds/
+architectural variants is itself tuning to that set**, even without hand-forcing a specific value —
+the moment a set is used to pick "whichever choice scores best," it stops being held-out. This is
+directly relevant to open-items list item 2's Stage 2 (OpenMIC multi-label threshold recalibration,
+not yet started): any threshold sweep there must happen on OpenMIC's TRAIN partition, with the
+resulting F1 reported on the held-out test partition — never sweep thresholds by looking at
+held-out scores directly, which would be the threshold-selection version of the same overfitting
+error the MFCC-0-exclusion decision (Phase 26) deliberately avoided by using causal case-by-case
+evidence instead of a held-out-score search.
+
+**Status:** Phase 34 (the bug fix, open-items list item 2's Stage 1) complete and fully verified.
+Targeted suite: `InstrumentEngineTests`/`InstrumentBaselineTests`/`AuditMetricsTests`/
+`DNAReportBuilderHPSSTests` (8/8). Full `swift test` checkpoint (`DNAReportBuilder.swift` is
+widely shared): **133/133 tests passed, 0 failures** (1506.1s, ~25 minutes) — no regression.
+Open-items list item 2's Stage 2 (OpenMIC multi-label F1 measurement, conditional threshold
+recalibration) is unaffected by this Phase and remains not started — its own methodology (train-set
+threshold selection, held-out-set reporting) is now explicit in the project's own founding note.
+
+---
+
 > *"Measured, not claimed: AudioIntelligence reports what it can prove."*
