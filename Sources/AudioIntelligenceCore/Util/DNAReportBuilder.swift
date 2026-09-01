@@ -122,6 +122,32 @@ public actor DNAReportBuilder {
             vDSP_vsmul(monoSamples, 1, &halfScale, &monoSamples, 1, vDSP_Length(monoSamples.count))
             let chunk = AudioBuffer(samples: monoSamples, sampleRate: stereoChunk.sampleRate, duration: stereoChunk.duration)
 
+            // Analytical-rate decode (DEVLOG Phase 35): `InstrumentEngine`'s fingerprints were
+            // fit at a fixed 22050Hz (`Examples/PrototypeTrainer`, always resamples there), but
+            // this whole file decodes at `chunk.sampleRate` -- the FILE's native rate (44100Hz for
+            // most real material), never resampled. A 150-file production-vs-isolated check found
+            // only 45.3% primaryLabel agreement and production 8.7pp LESS accurate (40.0% vs
+            // 48.7%) purely from this rate mismatch (same nFFT at 2x the sample rate roughly
+            // halves the analysis window and doubles Nyquist -- confirmed via direct feature dump:
+            // spectral flatness differed by ~15x on one file). A second measurement (same isolated
+            // pipeline, run at both rates) confirmed 22050Hz is genuinely the better-performing
+            // rate for this model (48.7% vs 38.0% at 44100Hz), not just "what training happened to
+            // use" -- so production is fixed to match, not the model retrained.
+            //
+            // Scope, deliberately narrow: only `InstrumentEngine`'s own dependency chain
+            // (STFT/spectral/mel/MFCC/HPSS below) uses this decode -- `chunk`/`stft` everywhere
+            // else in this loop (Loudness/Forensic/AudioScience need native-rate fidelity for
+            // true-peak/LUFS; Tempo/Key/Structure/CQT share shortcomings of their own, not yet
+            // migrated here) are untouched. Widening this to those engines is a separate,
+            // separately-verified follow-up -- see the open-items list.
+            let analyticalSampleRate = 22050.0
+            let stereoChunkAnalytical = try AudioLoader.loadNextChunkStereoManual(file: file, offset: readOffset, frameCount: currentReadCount, targetSampleRate: analyticalSampleRate)
+            var monoSamplesAnalytical = [Float](repeating: 0, count: stereoChunkAnalytical.left.count)
+            vDSP_vadd(stereoChunkAnalytical.left, 1, stereoChunkAnalytical.right, 1, &monoSamplesAnalytical, 1, vDSP_Length(monoSamplesAnalytical.count))
+            var halfScaleAnalytical: Float = 0.5
+            vDSP_vsmul(monoSamplesAnalytical, 1, &halfScaleAnalytical, &monoSamplesAnalytical, 1, vDSP_Length(monoSamplesAnalytical.count))
+            let analyticalChunk = AudioBuffer(samples: monoSamplesAnalytical, sampleRate: analyticalSampleRate, duration: stereoChunkAnalytical.duration)
+
             // Waveform peak envelope: max |sample| per bucket, accumulated across the whole
             // track for the report's downsampled overview (was hardcoded empty at build time).
             if !monoSamples.isEmpty {
@@ -254,7 +280,28 @@ public actor DNAReportBuilder {
             // StructureEngine's, fixed the same way, below.
             let hpss = HPSSEngine(winHarm: 31, winPerc: 31, metalEngine: metalEngine).analyze(stft: stft)
             allHPSS[idx] = hpss
-            
+
+            // InstrumentEngine's own dependency chain, computed on `analyticalChunk` (22050Hz —
+            // see its doc comment above) instead of the native-rate `chunk`/`stft`/`melRes`/`hpss`
+            // above, which stay native for Forensic/Loudness/AudioScience and everything else that
+            // still shares them. Mirrors Examples/ReliabilityAudit's `predictInstrumentGPU`
+            // construction exactly, just fed from this chunk's real decoded audio instead of a
+            // whole-file load.
+            let analyticalStftEngine = STFTEngine(nFFT: 2048, hopLength: 512, sampleRate: analyticalSampleRate, metalEngine: metalEngine)
+            let analyticalStft = await analyticalStftEngine.analyze(analyticalChunk.samples)
+            let analyticalSpecRaw = SpectralEngine(sampleRate: analyticalSampleRate).analyze(stft: analyticalStft, samples: analyticalChunk.samples)
+            let analyticalSpecRes = AdvancedSpectralMetrics(
+                centroid: analyticalSpecRaw.centroidHz, rolloff: analyticalSpecRaw.rolloffHz, flatness: analyticalSpecRaw.flatness,
+                flux: analyticalSpecRaw.flux, skewness: analyticalSpecRaw.skewness, kurtosis: analyticalSpecRaw.kurtosis,
+                bandwidth: analyticalSpecRaw.bandwidthHz, zcr: analyticalSpecRaw.zcr, dynamicRange: analyticalSpecRaw.spectralCrestFactor,
+                rmsMean: analyticalSpecRaw.rmsMean, rmsMax: analyticalSpecRaw.rmsMax, brightnessDescription: "", fullMagnitudes: []
+            )
+            let analyticalMel = MelSpectrogramEngine(stftEngine: analyticalStftEngine, nMels: 128, metalEngine: metalEngine)
+            let analyticalMfccEngine = MFCCEngine(melEngine: analyticalMel, nMFCC: 20, metalEngine: metalEngine)
+            let analyticalMfcc = await analyticalMfccEngine.createMFCC(from: analyticalChunk.samples)
+            let analyticalLowBand = DSPHelpers.lowBandEnergyRatio(stft: analyticalStft, cutoffHz: 250)
+            let analyticalHpss = HPSSEngine(winHarm: 31, winPerc: 31, metalEngine: metalEngine).analyze(stft: analyticalStft)
+
             autoreleasepool {
                 // MFCC = DCT of LOG-mel (power_to_db), not linear mel — DCT'ing the linear
                 // power spectrum gave coefficients uncorrelated with the standard MFCC.
@@ -280,9 +327,16 @@ public actor DNAReportBuilder {
                 }
                 allMFCC[idx] = mfccSubset
 
-                // Atomic Metric Push
-                let lowBandRatio = DSPHelpers.lowBandEnergyRatio(stft: stft, cutoffHz: 250)
-                let instMetrics = InstrumentEngine().predict(spectral: specRes, mfcc: mfccSubset, lowBandEnergyRatio: lowBandRatio, percussiveEnergyRatio: hpss.percussiveEnergyRatio)
+                // Atomic Metric Push -- analytical-rate (22050Hz) inputs, see the analytical
+                // pipeline's construction above (DEVLOG Phase 35). `allMFCC[idx]`/`TimbreMetrics.
+                // mfcc` above intentionally stays on the native-rate `mfccSubset`: it's an
+                // independently-reported field beyond InstrumentEngine's own scope, unaffected by
+                // this fix's deliberately narrow boundary (see `analyticalChunk`'s doc comment).
+                let analyticalMfccVec = Array(analyticalMfcc.mfcc.prefix(10))
+                if ProcessInfo.processInfo.environment["AI_DEBUG_INSTRUMENT_FEATURES"] == "1" {
+                    Swift.print("🔬 [INSTRUMENT-FEATURES] chunk=\(idx) centroid=\(analyticalSpecRes.centroid) flatness=\(analyticalSpecRes.flatness) lowBand=\(analyticalLowBand) percussive=\(analyticalHpss.percussiveEnergyRatio) mfcc[0..<5]=\(analyticalMfccVec.prefix(5))")
+                }
+                let instMetrics = InstrumentEngine().predict(spectral: analyticalSpecRes, mfcc: analyticalMfccVec, lowBandEnergyRatio: analyticalLowBand, percussiveEnergyRatio: analyticalHpss.percussiveEnergyRatio)
                 for p in instMetrics.predictions where instrumentPtr < 500 {
                     allInstruments[instrumentPtr] = p
                     instrumentPtr += 1
@@ -809,7 +863,17 @@ public actor DNAReportBuilder {
                     .map { InstrumentPrediction(label: $0.key, confidence: $0.value.0 / Float($0.value.1), technicalBasis: "Probabilistic Aggregation") }
                     .sorted { $0.confidence > $1.confidence }
                 
-                return InstrumentMetrics(predictions: Array(finalInstruments.prefix(5)), primaryLabel: finalInstruments.first?.label ?? "Unknown")
+                // No prefix/cap here: `finalInstruments` can never exceed 6 entries (one per
+                // coarse label -- `instrumentAccumulator` is keyed by `p.label`, and
+                // `InstrumentEngine.profiles` has exactly 6 coarse classes). An earlier
+                // `.prefix(5)` here silently dropped the 6th label whenever a real clip crossed
+                // threshold on all 6 -- found while designing DEVLOG item 2 Stage 2's
+                // production-vs-isolated multi-label agreement check: it would have measured a
+                // truncation artifact as a false disagreement, and would have suppressed a true
+                // positive from every API consumer for any track with 6 co-occurring
+                // instruments. No design rationale for capping below the max population was
+                // found anywhere in the code or git history.
+                return InstrumentMetrics(predictions: finalInstruments, primaryLabel: finalInstruments.first?.label ?? "Unknown")
             }(),
             science: {
                 let validLRA = allScience.map { $0.dynamicRangeLRA }.filter { !$0.isNaN }

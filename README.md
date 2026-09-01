@@ -127,8 +127,8 @@ We report **measured** accuracy, not claimed. Each row below is backed by a test
 | Bit-depth / sample-rate / duration | ✅ exact | container header |
 | Foundational DSP (STFT, mel) | ✅ librosa-exact (STFT corr 1.00000, 0.0000% residual; mel corr 1.00000, 0.0003% residual) — reproducible via `scripts/parity_compare.py` | librosa 1.0.0 |
 | Synthetic ground truth (tempo/timebase/phase/structure coverage) | ✅ 8/8 | deterministic fixtures |
-| Tempo — real music (EDM, 43 tracks) | ✅ Acc1 53% / Acc2 70% | GiantSteps (MIREX) |
-| Key — real music (599 tracks) | ✅ 50.9% exact / 63.3% MIREX-weighted (N=599, the full set — verified zero exclusions: every track loaded, parsed, and was long enough) | GiantSteps (MIREX) |
+| Tempo — real music (EDM, 43 tracks) | ✅ Acc1 69.8% / Acc2 81.4% (measurement correction, not a real improvement — the prior 53%/70% under-measured this same production algorithm at the wrong sample rate; see DEVLOG Phase 36) | GiantSteps (MIREX) |
+| Key — real music (599 tracks) | ✅ 48.8% exact / 61.4% MIREX-weighted (N=599, the full set — verified zero exclusions: every track loaded, parsed, and was long enough; measured at production's native sample rate, see DEVLOG Phase 36) | GiantSteps (MIREX) |
 | Instrument — real music | ✅ OpenMIC-2018 held-out test partition recall: Drums 79%, Bass 59%, Piano 52%, Strings/Synth 41%, Vocals 22%, Brass/Trumpet 5% (precision not yet re-measured post-fix); IRMAS (4 classes it can measure): 28.5% blended | IRMAS + OpenMIC-2018 |
 | Pitch/f0 — real music | ✅ Raw Pitch Accuracy (<50 cents), see `Examples/ReliabilityAudit` scorecard for the current run's % | MDB-stem-synth |
 | Structure — real music (15 tracks) | ✅ boundary F-measure @3.0s tolerance: 41.1% (@0.5s: 21.3%) | SALAMI |

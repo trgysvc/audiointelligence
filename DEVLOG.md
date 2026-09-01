@@ -2489,26 +2489,23 @@ mean per coefficient) instead of taking frame 0 alone — this single fix correc
 `fullMFCCBins` accumulation (added in Phase 29) rather than recomputing it, avoiding a duplicate
 declaration.
 
-**Real closing evidence, not just green tests** (`Examples/ReliabilityAudit`, same tool/methodology
-Phase 26 used for its own before/after comparison): a first attempt at an exact-replica full-corpus
-run (`RA_IRMAS_PER_CLASS=0 RA_OPENMIC_LIMIT=0`, matching Phase 26's IRMAS n=6705/OpenMIC n=13847)
-was killed by the OS (SIGKILL, exit 137) partway through — likely a memory/resource limit hit
-processing the full ~20,000-clip OpenMIC set combined with IRMAS's 6,718 files in one process, not
-investigated further here. Re-run at a large-but-bounded sample instead
-(`RA_IRMAS_PER_CLASS=300 RA_OPENMIC_LIMIT=3000`, n=3300/3000 respectively — smaller than Phase 26's
-full corpus, but still a real, substantial held-out sample):
-
-```
-IRMAS:   28.5% (Phase 26, n=6705) -> 30.9% (n=3300)   +2.4pp
-OpenMIC: 44.8% (Phase 26, n=13847) -> 44.4% (n=3000)  -0.4pp (within sampling noise at n=3000, SE~0.9%)
-```
-
-Reading: a real, modest improvement on IRMAS, no measurable change on OpenMIC (noise-bound at this
-sample size). Plausible mechanism: frame 0 often sits near a chunk's attack transient, a less
-timbre-representative moment than a proper whole-chunk average — fixing it should help or be
-neutral, not hurt, which is what was measured. This measurement was run to VERIFY an
-already-decided, unconditional bug fix, not to select among candidate fixes or tune toward a
-target number — see the methodology note below for why that distinction matters.
+**RETRACTED (2026-08-31, caught before moving on to Stage 2 — see the follow-up section below):**
+this DEVLOG entry originally reported an IRMAS/OpenMIC before/after re-measurement here
+(`RA_IRMAS_PER_CLASS=300 RA_OPENMIC_LIMIT=3000`, IRMAS 28.5%->30.9%, OpenMIC 44.8%->44.4%) and
+attributed the IRMAS change to this Phase's `mfccSubset` fix. **That causal claim was false.**
+`Examples/ReliabilityAudit`'s `predictInstrument()` helper (what `runIRMASTask`/`runOpenMICTask`
+actually call) never routes through `DNAReportBuilder.swift` at all — it builds its own
+independent STFT/spectral/HPSS pipeline and gets MFCC from `MFCCEngine.createMFCC()`, whose
+`.mfcc` field was already a correct whole-signal mean across frames (verified directly in
+`MFCCEngine.swift:90-98`), never the frame-0-snapshot bug this Phase fixed. That bug lived only in
+`DNAReportBuilder.swift`'s own separate MFCC computation. So the fix and the measurement never
+touched the same code path — the measured IRMAS/OpenMIC delta was sampling noise from `thinned()`
+selecting a different, smaller subset (n=3300/3000 vs. Phase 26's n=6705/13847), not evidence of
+anything the fix did. **What stays true**: the `mfccSubset` frame-0 bug in `DNAReportBuilder.swift`
+was and is real (unconditional, same class as the StructureEngine fix), and the code fix itself is
+correct and unaffected by this retraction — only the specific "here is its measured production
+impact" claim above was wrong, because no tool actually measures that path. See the follow-up
+section immediately below for what this implies and what's next.
 
 ### Methodology note: the project's founding directive on academic datasets was ambiguous, and could have licensed exactly the failure mode this whole session's discipline has avoided
 
@@ -2546,6 +2543,554 @@ widely shared): **133/133 tests passed, 0 failures** (1506.1s, ~25 minutes) — 
 Open-items list item 2's Stage 2 (OpenMIC multi-label F1 measurement, conditional threshold
 recalibration) is unaffected by this Phase and remains not started — its own methodology (train-set
 threshold selection, held-out-set reporting) is now explicit in the project's own founding note.
+
+---
+
+## 🔍 Phase 35 — Auditing `ReliabilityAudit` itself: does the scorecard tool actually measure production? (2026-08-31)
+
+Phase 34's retraction (an isolated evaluation helper couldn't have measured a bug that only lived
+in `DNAReportBuilder.swift`'s separate wiring) raised a bigger question worth answering before
+touching open-items list item 2's Stage 2: does `Examples/ReliabilityAudit` measure the real
+production pipeline at all, anywhere, or does it consistently call engines in isolation? Audited
+all 4 real (non-gap) tasks against `DNAReportBuilder.swift`'s actual wiring:
+
+- **Tempo**: ✅ matches. `RhythmEngine.analyze(onsetResult:)` (production's real call) internally
+  calls the exact same `RhythmEngine.estimateTempo(onsetStrength:sr:hopLength:)` static function
+  `runTempoTask` calls directly — same computation, just skipping the beat-tracking steps a
+  tempo-only measurement doesn't need.
+- **Key**: ✅ matches, already deliberately verified in Phase 17 (nFFT=8192 chroma, matching
+  production exactly — that phase's own fix was for this exact class of drift).
+- **Instrument (IRMAS/OpenMIC)**: ⚠️ blind spot. `predictInstrument()` never routes through
+  `DNAReportBuilder` — own independent STFT/MFCC/HPSS pipeline, MFCC via `MFCCEngine.createMFCC()`
+  (always correctly frame-averaged, confirmed in Phase 34's retraction). Not actively wrong, but
+  structurally unable to ever catch a `DNAReportBuilder`-side wiring bug like Phase 34's frame-0
+  fix — this is exactly why Phase 34's before/after numbers on this task were meaningless evidence
+  for that fix.
+- **Pitch (MDB-stem-synth)**: ❌ actively stale. `runPitchTask` called plain `YINEngine.analyze()`
+  — but Phase 33 switched `DNAReportBuilder.swift`'s real per-chunk pitch call to pYIN. The
+  scorecard was reporting YIN's ~50% RPA as "current" while production had already moved to pYIN's
+  ~62%. Not just an untested gap like instrument — an actively wrong "current" claim.
+
+**Reading**: both a deliberate, reasonable design choice (calling individual engines directly
+instead of running the full 30-engine `DNAReportBuilder` pipeline over 6,718-20,000 files each is
+a real, justified performance decision) AND a real gap — nothing keeps these isolated call sites in
+sync as production's own wiring evolves, and drift has now demonstrably happened at least once
+(pitch, this same session).
+
+### Fix 1: `runPitchTask` switched to pYIN, and given an official held-out measurement
+
+`analyzePYINCandidates` + `PYINDecoder` (matching `DNAReportBuilder.swift`'s real call) replace
+plain `YINEngine.analyze()`; the task now reports both RPA and voicing accuracy (previously RPA
+only) as separate `TaskResult` rows, since voicing accuracy is pYIN's larger real gain over YIN.
+This both re-syncs the tool AND provides pYIN's first *official*, scorecard-tracked measurement (a
+larger, 60-stem run, vs. Phase 27's original 20-stem `PYINEngineTests` sample):
+
+```
+RPA<50cents: 62.4% (n=566,732)   [Phase 27, 20 stems: 61.6%]
+voicing acc: 86.3% (n=123,881)   [Phase 27, 20 stems: 85.3%]
+```
+
+Consistent with Phase 27's original finding, now on a 3x larger sample — real, additional
+confirmation, not just a re-run.
+
+### Fix 2: a small, class-balanced production-vs-isolated parity check for instrument classification
+
+Running the full `DNAReportBuilder` pipeline over IRMAS/OpenMIC's full 6,718/20,000-file corpora
+isn't practical (that's exactly why the isolated tasks exist). Instead, added
+`runInstrumentProductionParityCheck` (`RA_INSTRUMENT_PARITY=1`): a small, class-balanced,
+held-out-only sample (25/class x 6 classes = 150 files) run through BOTH `predictInstrument()`
+(isolated) and the real `AudioIntelligence().analyzeRawAggregate()` (production) on the exact same
+files, comparing (a) whether the two paths agree on `primaryLabel`, and (b) each path's own
+accuracy against ground truth. This is also, incidentally, the first REAL closing evidence for
+Phase 34's frame-0 fix (the isolated path could never see it; this one does) — result in the next
+DEVLOG entry once the run completes.
+
+### Result: only 45.3% agreement, production 8.7pp worse than isolated — the frame-0 fix alone did not close the gap
+
+```
+evaluated=150 (single-coarse-class, held-out test partition)
+agreement (isolated primaryLabel == production primaryLabel): 68/150 (45.3%)
+isolated accuracy vs ground truth:   73/150 (48.7%)
+production accuracy vs ground truth: 60/150 (40.0%)
+```
+
+Disagreements skewed systematically toward Piano/Keyboard and Bass (Acoustic/Electric) -- both
+low-spectral-centroid classes -- and production occasionally returned "Unknown" (no profile
+clearing the 0.3 threshold at all). A systematic directional skew plus outright non-classification
+is not the signature of small numerical noise; it points at a real, structural mechanism, not
+float-level GPU/CPU rounding.
+
+### Eliminating the GPU/CPU hypothesis in one cheap run before investigating it
+
+Before spending real time chasing a specific hypothesis, ran a discriminator: `predictInstrumentGPU`
+-- byte-for-byte identical to `predictInstrument` except `STFTEngine`/`MelSpectrogramEngine`/
+`MFCCEngine` are given `sharedMetalEngine` (matching production's real GPU construction) instead of
+defaulting to CPU -- re-run on the same 150 files.
+
+```
+agreement isolated-CPU vs isolated-GPU: 150/150 (100.0%)
+agreement isolated-GPU vs production:    68/150 (45.3%)  -- unchanged from isolated-CPU
+```
+
+GPU/CPU compute backend makes zero difference (confirming Phase 19's DCT-scale fix holds at the
+label-decision level, not just the raw-coefficient level checked at the time) -- eliminated in
+minutes rather than hours spent chasing the wrong layer.
+
+### Feature-level dump finds the real mechanism: a sample-rate mismatch, not a subtle bug
+
+Added `runInstrumentFeatureDump` (dumps `InstrumentEngine.predict()`'s exact inputs from both
+paths for one file) and a matching gated diagnostic print in `DNAReportBuilder.swift`
+(`AI_DEBUG_INSTRUMENT_FEATURES=1`). On one disagreement file (`004508_176640`, true=Strings/Synth):
+
+```
+                isolated      production
+centroid        1473.6        1895.5      (+29%)
+flatness        0.185         0.0125      (~15x LOWER)
+lowBand         0.107         0.086       (-19%)
+percussive      0.417         0.292       (-30%)
+mfcc[2]         +4.5          -52.7       (SIGN FLIPPED)
+mfcc[4]         +2.7          -47.4       (SIGN FLIPPED)
+```
+
+Differences this large (sign flips, 15x on flatness) are not GPU/CPU rounding -- they're the
+signature of a structurally different analysis. `afinfo` on the file confirmed its native rate:
+44100Hz, stereo. Checking the actual code: `predictInstrument()` (isolated) always calls
+`AudioLoader.load(url:, targetSampleRate: 22050)`; `DNAReportBuilder.swift`'s real chunk decode
+calls `AudioLoader.loadNextChunkStereoManual(..., targetSampleRate: inputFormat.sampleRate)` --
+the file's OWN native rate, no resampling at all. Same nFFT=2048 at 44100Hz vs. 22050Hz roughly
+halves the analysis window and doubles Nyquist -- a structurally different spectral analysis,
+exactly matching the magnitude of divergence measured.
+
+**The deeper problem**: `Examples/PrototypeTrainer` (which fit `InstrumentEngine`'s Fingerprint
+profiles) *also* always resamples to 22050Hz. So the model was fit on a 22050Hz feature
+distribution, but production was feeding it native-rate (typically 44100Hz) features -- a real
+train/production mismatch, not just a measurement-tool blind spot. This would have been a live bug
+even if `ReliabilityAudit` had never existed.
+
+### Direction-determining measurement before fixing anything: which rate does the model actually prefer?
+
+Two candidate fixes point opposite directions -- resample production to 22050Hz (if the model
+performs better there), or retrain the model's profiles at native rate (if native performs
+better) -- and picking wrong makes things worse, not better. Measured rather than assumed: the
+same isolated pipeline (`predictInstrument`, unchanged), run at two internally-consistent rates
+(every file in the 150-file sample loaded at 22050Hz, then the identical set reloaded at 44100Hz),
+scored against ground truth:
+
+```
+accuracy @ 22050Hz (PrototypeTrainer's fitting rate): 73/150 (48.7%)
+accuracy @ 44100Hz (typical native rate):             57/150 (38.0%)
+```
+
+22050Hz wins decisively (+10.7pp) in aggregate -- confirming (not assuming) that production should
+resample to match the model's fitting rate. Per-class breakdown was NOT uniform (Piano/Keyboard
+56%->84% and Vocals/Chorus 20%->44% actually improved at 44100Hz; Drums/Percussion 92%->32% and
+Strings/Synth 44%->4% collapsed) -- an interesting, honestly-recorded observation (possibly:
+Piano/Vocals' discriminative timbre partly lives above 11kHz, while Drums/Strings' high-frequency
+content is comparatively more noise-like for this classifier) but NOT pursued further here -- the
+aggregate verdict (22050 wins) is what determines the fix; a class-dependent-bandwidth refinement
+is a separate, much later, unscoped idea, not this phase's job.
+
+### Fix: a narrow, dedicated analytical-rate branch for InstrumentEngine only -- not a global resample
+
+A global "resample everything in `DNAReportBuilder` to 22050Hz" fix was considered and rejected:
+`LoudnessEngine`/`ForensicEngine`/`AudioScienceEngine` need native-rate fidelity for true-peak/LUFS
+measurement (already validated to Δ≤0.08 LU vs. ffmpeg at native rate) -- downsampling before
+measuring near-Nyquist content would likely have broken that guarantee outright, trading a real fix
+for a new, unmeasured regression in a different, already-solid area.
+
+Instead: `DNAReportBuilder.swift`'s chunk loop now decodes a SECOND, parallel buffer per chunk
+(`analyticalChunk`, via a second `AudioLoader.loadNextChunkStereoManual` call at a fixed 22050Hz --
+reusing the same production-grade `AVAudioConverter` resampling path already used elsewhere, not a
+new hand-rolled resampler) alongside the existing native-rate `chunk`. `InstrumentEngine`'s entire
+dependency chain (STFT, `SpectralEngine`, `MelSpectrogramEngine`, `MFCCEngine`, `HPSSEngine`'s
+`percussiveEnergyRatio`, `lowBandEnergyRatio`) is now computed independently on `analyticalChunk`,
+mirroring `Examples/ReliabilityAudit`'s `predictInstrumentGPU` construction exactly -- fed by this
+chunk's real decoded audio instead of a whole-file load. Deliberately scoped narrow: the
+independently-reported `allSpectral`/`TimbreMetrics.mfcc` fields (which other parts of the report
+also read, beyond just `InstrumentEngine`) are untouched, still native-rate, so this fix cannot
+have silently changed any OTHER already-reported metric. HPSS itself was checked for a native-rate-
+validated guarantee before moving it (none found -- `DNAReportBuilderHPSSTests` only checks chunk
+coverage, not harmonic/percussive separation quality against any ground truth; `HPSSEngineTests`'
+own synthetic validation already uses 22050Hz) -- safe to move without risking anything measured.
+
+### Real closing evidence: the 150-file check re-run after the fix
+
+```
+                                            before      after
+agreement isolated-CPU vs production:      45.3%       88.7%
+production accuracy vs ground truth:       40.0%       50.0%   (now slightly ABOVE isolated's 48.7%)
+```
+
+This is the actual closing evidence Phase 34's retracted claim was missing -- measured on the
+identical 150-file, class-balanced, held-out sample, through the real production entrypoint.
+
+### Collateral-damage checks (native-rate zone, should be untouched)
+
+- `EBUReferenceValidationTests`/`ScientificAuditorTests`/`AES17ValidationTests`: 6/6 pass -- the
+  Δ≤0.08 LU loudness guarantee is confirmed intact, not just assumed to be (these engines never
+  touch `analyticalChunk`).
+- Full `swift test` checkpoint (`DNAReportBuilder.swift` is widely shared): **133/133 tests passed,
+  0 failures** (1386.4s, ~23 minutes) -- no regression anywhere else in the suite.
+- Pitch (`runPitchProductionParityCheck`, new): isolated pYIN's whole-track mean F0 vs.
+  production's real `analysis.pitch.meanF0`, 10 MDB-stem-synth files -- mean relative delta 1.6%,
+  confirming (not assuming) Pitch was already correctly aligned (`runPitchTask` and
+  `DNAReportBuilder.swift` both already use pYIN at native rate, no forced-22050 resample on either
+  side, unlike Instrument's case).
+
+### Scope note: Tempo, Key, and Structure share the exact same root cause, not yet fixed
+
+Checked (not assumed) each analytical engine's actual fitting/validation rate against its real
+production rate:
+
+| Engine | Isolated/validation rate | Production rate | Status |
+| :-- | :-- | :-- | :-- |
+| Instrument | 22050 (`PrototypeTrainer`) | native | **fixed this phase** |
+| Tempo | 22050 (`GoldenDatasetValidationTests`) | native | not yet fixed |
+| Key/Chroma | 22050 (`GoldenDatasetValidationTests`) | native | not yet fixed |
+| Structure | 22050 (`StructureCalibration`/`StructureEngineSALAMITests`, Phase 29) | native | not yet fixed |
+| Pitch | native (`PYINEngineTests`) | native | confirmed matched, no fix needed |
+
+GiantSteps (Tempo/Key's dataset) and SALAMI (Structure's dataset) were both confirmed natively
+44100Hz via `afinfo`, same as the OpenMIC file that exposed Instrument's mismatch -- so Tempo, Key,
+and Structure most likely carry the exact same train/production sample-rate mismatch Instrument
+just had, unverified and unfixed. Phase 29's own StructureCalibration numbers are a special case
+worth naming directly: they were calibrated at 22050Hz, so this same class of fix (once applied to
+`StructureEngine`) would actually make Phase 29's calibration *newly valid* against production
+rather than invalidating it -- production doesn't yet run at the rate Phase 29 calibrated for.
+
+Deliberately not fixed in this phase -- the user's explicit caution: migrating Tempo/Key/Structure
+in the same change as Instrument would make it impossible to attribute a regression (if any) to a
+specific engine, mirroring exactly why the frame-0 fix and the sample-rate fix needed to be
+verified as SEPARATE, individually-attributed causes rather than one bundled change. Each remains
+an open, honestly-labeled follow-up with a known, concrete fix pattern (a second `analyticalChunk`-
+style decode, migrating each engine's dependency chain one at a time, each with its own 150-file-
+style closing evidence) -- not a mystery, just not yet done.
+
+**Status:** Phase 35 complete for Instrument (fixed and verified) and Pitch (confirmed already
+correct). Tempo/Key/Structure identified as carrying the same root cause, tracked as open follow-up
+work, not fixed here.
+
+---
+
+## Phase 36 (2026-09-01): Tempo/Key/Structure sample-rate mismatch — direction measured per engine, NOT assumed; the fix was the opposite of Instrument's for two of the three
+
+Direct follow-up to Phase 35's open item. The user was explicit going in: do not assume this is a
+mechanical copy of Instrument's fix (resample the analytical branch to 22050). Instrument is a
+fitted prototype-matcher, trained at 22050 -- Tempo/Key/Structure are algorithmic (onset
+autocorrelation, chroma correlation, novelty peak-picking), with no training step to be consistent
+with. Direction was measured for each engine independently, at full unthinned sample sizes, before
+any code changed.
+
+### Method
+
+For each engine, the exact isolated pipeline (`GoldenDatasetValidationTests`'s onset/chroma path
+for Tempo/Key, `StructureEngine.analyze()` with the Phase 29 `.calibrated` config for Structure)
+was run at both 22050Hz and 44100Hz over the full annotated set, no `thinned()` subsampling:
+GiantSteps' 43 MIREX-BPM tracks and all 599 MIREX-key tracks; SALAMI's same 15-track sample Phase
+29 was calibrated against.
+
+A live lesson landed mid-measurement: the first Key pass used a 60-track `thinned()` sample and
+showed 44100 slightly ahead (+1.7pp). The full 599-track pass **reversed** that -- 22050 came out
+ahead by +2.2pp. The 60-track read was noise, not signal, in the wrong direction. This is exactly
+why direction gets measured at full scale before any conclusion is drawn, not estimated from a
+convenient subsample.
+
+### Results
+
+| Engine | @22050Hz | @44100Hz (native) | Direction | N |
+| :-- | :-- | :-- | :-- | :-- |
+| Tempo | Acc1 58.1% / Acc2 69.8% | Acc1 69.8% / Acc2 81.4% | **native decisively better** (+11.7/+11.6pp) | 43 (full) |
+| Key | exact 50.9% / MIREX 63.3% | exact 48.7% / MIREX 61.4% | 22050 slightly better (+2.2/+1.9pp) | 599 (full) |
+| Structure | F@3.0s 41.1% (p=40.9 r=41.3) | F@3.0s 41.3% (p=36.1 r=48.3) | tied on F-measure, composition differs | 15 (full) |
+
+Production for all three engines has never been touched -- it has always run at the file's native
+rate (unlike Instrument, which was migrated onto a separate 22050 `analyticalChunk` branch in Phase
+35). So the question these numbers actually answer is: was production wrong, or was the isolated
+test wrong? For all three, it was the test.
+
+### Tempo: production was already right; the test under-measured it (not a real improvement) -- plus a correction on the exact number, caught by the user
+
+Tempo's onset-autocorrelation algorithm benefits from native-rate high-frequency content --
+percussive transients (hi-hat, ride, snare attack) stay sharper at 44100Hz, giving cleaner onset
+peaks and more accurate autocorrelation-period estimates than 22050Hz's mild low-pass/decimation
+blur. This is the opposite of Instrument's case because Tempo has no training step to be consistent
+with -- it's the raw signal quality that matters, and native has more of it. That's the explanation
+for why this engine's correct rate is the opposite of Instrument's: one is a fitted model needing
+train/serve consistency, the other is a from-scratch DSP algorithm that just wants more signal.
+
+**Measurement evolution (corrected in place, not silently):**
+
+1. Direction was first measured with `runTempoSampleRateComparison` (`Examples/ReliabilityAudit`),
+   whose onset computation is `OnsetEngine(sampleRate: rate).onsetStrength(samples)` -- the exact
+   same call `DNAReportBuilder.swift:186` makes in production (default SuperFlux + mel). Full
+   43-track, unthinned result at 44100Hz: **Acc1 69.8% / Acc2 81.4%**. This number was reviewed and
+   approved as the basis for the README update.
+2. For "closing evidence" through the permanent test suite, `GoldenDatasetValidationTests.
+   testGiantStepsKeyTempoAccuracy` was fixed to measure at native 44100Hz and re-run. It reported
+   **Acc1 65.1% / Acc2 74.4%** -- a third, different number from either the old 22050 baseline or
+   the just-approved 69.8%/81.4%. This got written into the README without being checked against
+   step 1's number first. **That was the mistake:** two different measurements were treated as
+   interchangeable without verifying they measured the same thing.
+3. The user caught the discrepancy and asked where each number came from. Investigation found the
+   real cause was not sample size or thinning -- it was an algorithm mismatch, independent of the
+   sample-rate fix this phase was about. `testGiantStepsKeyTempoAccuracy` computed its onset
+   envelope via `RhythmEngine.onsetStrength(from: stft)`, a simple linear-STFT rectified
+   spectral-flux function. `grep -rn "RhythmEngine.onsetStrength" Sources/` confirms this function
+   is called **nowhere in production code** -- it exists only in this one test. Production's real
+   algorithm is `OnsetEngine`'s SuperFlux+mel (step 1's method). The two functions are genuinely
+   different computations (mel-spectrogram multi-band flux with max-filtering vs. raw linear-STFT
+   rectified difference), not two views of the same one -- this is why they gave different numbers
+   at the *same* sample rate. This mismatch predates this phase; it was only surfaced now because
+   the sample-rate fix required re-running this specific test and its number was checked against
+   an independent measurement.
+4. Fixed `testGiantStepsKeyTempoAccuracy` to call `OnsetEngine(sampleRate: sr).onsetStrength(...)`
+   instead (matching `DNAReportBuilder.swift:186` exactly), removing the now-redundant standalone
+   nFFT=2048 STFT it no longer needs. Re-ran the full 599-track suite: **Acc1 69.77% (30/43) / Acc2
+   81.40% (35/43)** -- matching step 1's approved number (69.8%/81.4%) to within rounding. Key's
+   numbers (48.75%/61.40%) are unaffected -- Key's chroma computation was never part of this
+   mismatch.
+
+**Final, verified number: Acc1 69.8% / Acc2 81.4%.** This is a measurement correction, not an
+accuracy improvement -- production's tempo detection did not get better today; it was always this
+good, and this is the first time it was measured correctly, through the algorithm production
+actually runs. The 58.1%→69.8%/69.8%→81.4% jump in the README must not be read as "we fixed tempo"
+-- nothing about `RhythmEngine.estimateTempo` or `OnsetEngine` itself changed; only which onset
+function the *test* calls changed, to match what production always called.
+
+### Key: 2.2pp measured, inside tolerance, left on the table on purpose
+
+Two separate decisions here, not one:
+
+1. **Does this trigger an architecture change (migrate Key onto its own analytical-22050 branch,
+   like Instrument)?** No. +2.2pp exact / +1.9pp MIREX-weighted, at N=599, sits inside the
+   established tolerance band ([[feedback-closure-tolerance-standard]]: >300 samples → 10pp
+   acceptable gap). Instrument's fix closed a 45%→89% agreement gap and a 40%→50% accuracy gap --
+   this is a different order of magnitude. Adding a second per-chunk analytical decode purely for
+   Key, at real per-track compute cost, is not justified by a gain this small.
+2. **What does the README report?** Production has always run Key at native rate, so the README
+   must report what production actually produces: native's 48.75% exact / 61.40% MIREX-weighted
+   (`testGiantStepsKeyTempoAccuracy`, full 599 tracks, now fixed to measure at native 44100Hz
+   instead of the old forced 22050). This number is *lower* than the old 22050-measured 50.9%/63.3%
+   -- an honest downward correction, the opposite direction from Tempo's.
+
+These two decisions combine into a specific, deliberate engineering choice, and it's the choice
+itself -- not just the corrected number -- that belongs in the record: **production leaves ~2.2pp
+of measured Key accuracy on the table, on purpose, because the architecture cost of capturing it
+(a second analytical-rate decode path, mirroring Instrument's) exceeds the value of a gain this
+small relative to our own tolerance standard.** If someone re-measures Key at 22050 in six months
+and gets 50.9%, sees production reporting 48.75%, and asks "why are we leaving accuracy on the
+table" -- the answer is already here: it was measured, it was small, and taking it wasn't worth the
+added architecture. This is not an unresolved discrepancy; it's a closed decision with its
+reasoning attached.
+
+### Structure: F-measure tied, but not identical underneath -- and that's now on record too
+
+F@3.0s came back statistically equal (41.1% vs 41.3%, 15/15 tracks usable at both rates) --
+**this equality is what confirms Phase 29's seconds-based `.calibrated` `StructurePeakPickConfig`
+(waitSeconds/preAvg/postAvg etc.) correctly self-adjusts to native sample rate**, since those
+parameters are expressed in seconds and converted to frame counts via hopLength/sampleRate
+internally rather than being frame-count constants tuned at one specific rate. No recalibration is
+needed, and this is now the specific measurement backing that claim (`testStructureEngine_
+sampleRateComparison_onRealSALAMI`, new test in `StructureEngineSALAMITests.swift`) -- not an
+assumption.
+
+The F-measure equality hides a real composition difference the aggregate score can't see:
+22050Hz is balanced (precision 40.9%, recall 41.3%), native is recall-weighted (precision 36.1%,
+recall 48.3%) -- native finds more of the true boundaries but with a worse hit rate on what it
+predicts. F stays flat because the precision loss and recall gain happen to offset. No action taken
+now -- production is native and stays native, nothing here crosses the fix-it bar -- but if a
+future product decision favors precision over recall (or vice versa) for Structure's boundaries,
+this composition shift is the first place to look, and the measurement to re-run is already built.
+
+### The bigger pattern across all three (plus Pitch, plus Instrument): test-rate ≠ production-rate, in either direction
+
+Four times this session, an engine's isolated/validation test turned out to be measuring at a
+different sample rate than its real production path:
+
+| Engine | Isolated/test rate | Production rate | Who was wrong | Resolution |
+| :-- | :-- | :-- | :-- | :-- |
+| Instrument | 22050 (fitted) | was native, now 22050 (`analyticalChunk`) | **production** | migrated production to match the fitted rate (Phase 35) |
+| Pitch | native | native | neither | confirmed already aligned (Phase 35) |
+| Tempo | was 22050, now native | native | **the test** | fixed the test to match production (this phase) |
+| Key | was 22050, now native | native | **the test** | fixed the test to match production (this phase) |
+| Structure | 22050 (unchanged) | native | neither, in effect | F-measure equal at both rates, no fix needed, but confirmed rather than assumed |
+
+The common root across every row is the same: nothing in this codebase enforces or checks that a
+given engine's test/calibration sample rate equals its real production sample rate. The direction
+of the mismatch (production wrong vs. test wrong) had to be independently discovered each time.
+This has now surfaced by hand four times in one session. `Yapilacaklar.md` gets a new, separate
+open item for a permanent test-vs-production sample-rate parity check (not built in this phase --
+scope discipline; recorded so a fifth occurrence doesn't slip through silently).
+
+**Status:** Phase 36 complete. Tempo and Key: `GoldenDatasetValidationTests.
+testGiantStepsKeyTempoAccuracy` fixed to measure at native 44100Hz; README updated with the new
+numbers and the measurement-correction-vs-improvement distinction for Tempo. Structure: no code
+change, calibration-validity claim now backed by an explicit same-config two-rate measurement.
+Tempo's number went through one in-place correction after the user caught a discrepancy between
+the approved direction-measurement (69.8%/81.4%) and the first XCTest closing-evidence run
+(65.1%/74.4%) -- root cause was an independent onset-algorithm mismatch in the test (not the
+sample-rate fix itself), now also fixed; final verified number is Acc1 69.8% / Acc2 81.4%, matching
+the originally-approved measurement. Yapilacaklar.md item 3 closed with per-engine evidence; new
+item opened for the durable sample-rate parity check.
+
+---
+
+## Phase 37 (2026-09-01, pre-registration): Instrument Stage 2 (OpenMIC multi-label F1) — proxy-legitimacy threshold fixed BEFORE running Step A
+
+Open item 2's Stage 2 (multi-label F1 against OpenMIC's real ground truth) starts here. Before
+writing any measurement code, three methodology gaps were closed:
+
+**1. Found and fixed a second production bug while designing the check, not as part of it.**
+`DNAReportBuilder.swift` (previously line 866) truncated the production-exposed
+`InstrumentMetrics.predictions` to `.prefix(5)`, even though `finalInstruments` can never exceed 6
+entries (`instrumentAccumulator` is keyed by label, and `InstrumentEngine.profiles` has exactly 6
+coarse classes). No comment or git history anywhere justifies capping below the maximum possible
+population -- this reads as an arbitrary leftover (a generic "top-5" idiom applied to a 6-class
+domain), not a deliberate product decision. Left in place, it would have (a) made the multi-label
+agreement check misdiagnose a truncation artifact as a real isolated-vs-production divergence on
+any clip where all 6 classes crossed threshold, and (b) silently dropped a true positive from
+every real API consumer on such a clip, artificially lowering recall for whichever class landed
+6th. Fixed: `return InstrumentMetrics(predictions: finalInstruments, primaryLabel: ...)`, no cap.
+Verified: `swift build -c release --product ReliabilityAudit` succeeds.
+
+**2. The existing 88.7% agreement number does not cover what Stage 2 needs.**
+`runInstrumentProductionParityCheck`'s 88.7% (Phase 35) compares only `primaryLabel` (top-1
+argmax) between isolated and production. Stage 2's F1 depends on the FULL predicted label set --
+including secondary labels that cross the 0.3 threshold without being the top pick. Argmax
+agreement and threshold-crossing agreement are different questions; the latter is inherently
+noisier (profiles near 0.3 can flip on small feature differences) and has never been measured.
+Reporting one blended "Jaccard similarity" number would hide exactly this: primary could measure
+95% while secondary measures 60%, and Stage 2's whole value is in the secondary labels (that's
+what makes it multi-label instead of single-label). So Step A measures primary and secondary
+agreement SEPARATELY, not as one pooled figure.
+
+**3. Ground-truth partial-label handling, verified against OpenMIC's official arrays.**
+`openmic-2018-aggregated-labels.csv` was previously parsed for positives only (relevance≥0.5),
+discarding which (clip, instrument) pairs were reviewed-and-negative vs. never-reviewed. Rebuilt
+to track all three states (positive / known-negative / unknown) and cross-checked the
+reconstruction against the official `openmic-2018.npz`'s `Y_true`/`Y_mask`: 41,268/41,268 known
+pairs match exactly, 5-pair rounding disagreement at the 0.5 boundary (negligible). Coarse-level
+aggregation extends the existing OR-for-positive convention (`openmicToCoarse`'s
+`fine.flatMap { ... }`) symmetrically: a coarse class is positive if any mapped fine label is
+positive; known-negative if any mapped fine label was reviewed and none was positive; unknown
+(excluded from F1 entirely -- not counted as TP/FP/FN/TN) if no mapped fine label was ever
+reviewed for that clip. Real counts in the held-out test partition (5,085 clips) confirm no
+sample-size problem: even the smallest class (Bass) has 134 positive + 329 known-negative = 463
+evaluable clips; the rest have 900-3,000+.
+
+**Proxy-legitimacy threshold -- fixed now, before Step A runs, specifically so the result cannot
+retroactively influence the criterion:**
+
+Step A measures per-class agreement (isolated vs. production, full label set, i.e. does each
+path's above/below-0.3-threshold decision for each of the 6 coarse classes match, on a
+~30-per-class held-out-test sample). The isolated path is a legitimate proxy for Stage 2's
+larger-scale F1 measurement **if and only if every one of the 6 coarse classes' per-class
+agreement is ≥85%.** A class scoring below 70% is separately flagged as "collapsed" -- a stronger
+failure than a borderline miss, useful for diagnosis, but any class below 85% already fails the
+overall legitimacy bar regardless of the 70% flag. If all 6 clear 85%: proceed to Stage 2's F1
+measurement on the isolated path at a larger sample, documented as a proxy backed by this specific
+number. If any class fails: stop, do not compute a proxy-based F1 for that class (or at all, if
+the failure looks systemic) -- investigate the specific divergence first, the same way Phase 35's
+initial 45.3% agreement was investigated rather than accepted.
+
+**Status:** threshold and methodology fixed; Step A not yet run. Results and the pass/fail verdict
+against this pre-registered threshold will be appended below, not used to adjust the threshold
+itself.
+
+### Step A results (measured against the threshold above, not the other way around)
+
+`runInstrumentMultiLabelParityCheck`, 180 held-out-test files (30/class × 6 classes), isolated
+(CPU) vs. real production (`DNAReportBuilder` via `AudioIntelligence().analyzeRawAggregate`),
+full multi-label prediction set on both sides:
+
+| | agreement |
+| :-- | :-- |
+| primaryLabel (argmax) | 168/180 (93.3%) -- re-confirms, doesn't just repeat, Phase 35's 88.7% (different sample) |
+| secondary-label only (non-top-1 in either path) | 847/892 (95.0%) |
+| mean per-clip Jaccard (informational) | 93.7% |
+
+| class | agreement | verdict |
+| :-- | :-- | :-- |
+| Piano/Keyboard | 178/180 (98.9%) | PASS |
+| Bass (Acoustic/Electric) | 172/180 (95.6%) | PASS |
+| Brass/Trumpet | 170/180 (94.4%) | PASS |
+| Vocals/Chorus | 168/180 (93.3%) | PASS |
+| Drums/Percussion | 176/180 (97.8%) | PASS |
+| Strings/Synth | 171/180 (95.0%) | PASS |
+
+All 6 classes clear the pre-registered 85% bar, with margin (lowest is Vocals/Chorus at 93.3%,
+still 8.3pp above the bar). **The specific worry the threshold was designed to catch --
+secondary/threshold-crossing labels agreeing worse than the primary argmax -- did not happen**:
+secondary agreement (95.0%) is if anything slightly higher than primary (93.3%), not lower. No
+class shows any sign of the "high average hides one collapsed class" failure mode this whole
+check was built to catch.
+
+**Verdict: PASSES.** The isolated path is a legitimate, evidence-backed proxy for Stage 2's
+larger-scale OpenMIC multi-label F1 measurement. Proceeding to Step B.
+
+### Step B results: real multi-label F1, and why Stage 2 stays OPEN, not closed
+
+`runInstrumentMultiLabelF1`, full held-out test partition (5,085/5,085 clips, 0 load failures,
+isolated path -- legitimate proxy for production per Step A above, run after the `.prefix(5)`
+truncation fix). Ground truth: three states per (clip, fine-instrument) -- positive
+(relevance≥0.5), known-negative (reviewed, relevance<0.5), unknown (never reviewed, excluded
+entirely from F1, never counted as negative) -- aggregated to coarse level via `openmicToCoarse`'s
+existing OR-for-positive convention, extended symmetrically for known-negative. Cross-validated
+against an independent Python reconstruction of the same CSV (itself verified against OpenMIC's
+official `Y_true`/`Y_mask`, 41,268/41,268 exact match): for all 6 classes, TP+FN and FP+TN from
+the Swift run match the Python positive/known-negative totals exactly (e.g. Piano 749+228=977,
+590+413=1003, both exact) -- strong evidence the aggregation logic is correct, not coincidental.
+
+| class | TP | FP | FN | TN | precision | recall | F1 |
+| :-- | --: | --: | --: | --: | --: | --: | --: |
+| Piano/Keyboard | 749 | 590 | 228 | 413 | 55.9% | 76.7% | 64.7% |
+| Bass (Acoustic/Electric) | 123 | 220 | 11 | 109 | 35.9% | 91.8% | 51.6% |
+| Brass/Trumpet | 614 | 864 | 147 | 403 | 41.5% | 80.7% | 54.8% |
+| Vocals/Chorus | 206 | 71 | 18 | 79 | 74.4% | 92.0% | 82.2% |
+| Drums/Percussion | 564 | 224 | 142 | 259 | 71.6% | 79.9% | 75.5% |
+| Strings/Synth | 1488 | 1168 | 204 | 311 | 56.0% | 87.9% | 68.4% |
+
+**Macro-F1: 66.2%.** Labeled here as **production-representative** (not merely an isolated-engine
+number), because Step A's per-class agreement check (all 6 classes ≥85%, see above) was measured
+AFTER the top-5 truncation fix and specifically validates that the isolated path's full label set
+matches what production actually returns.
+
+**The finding: recall is high and uniform (76.7%-92.0%, every class, no exceptions); precision is
+low and volatile (35.9%-74.4%).** This is not noise -- the same asymmetry appears in all 6 classes
+independently, with no counter-example. It directly measures what open item 2 Stage 2's own
+closure note only suspected: *"0.3 eşiği tek-etiket rejimi için ayarlanmış olabilir; çoklu-etikette
+çok fazla ... yanlış davranabilir."* It does. The finding also resolves an apparent contradiction
+with open item 4 (Brass/Trumpet argmax recall measured at 5%, OpenMIC held-out): 80.7%
+threshold-crossing recall + 5% argmax recall are consistent, not contradictory -- Brass/Trumpet's
+profile clears 0.3 often, it just rarely wins the argmax against a higher-scoring competitor on
+the same clip. Confirms items 2-Stage-2 and 4 are measuring genuinely different things (absolute
+threshold-crossing vs. relative ranking) and should stay separate items, not be merged.
+
+**Framing, deliberately: this is a wrong OPERATING POINT, not an engine failure.** High
+recall/low precision is what a threshold set too low for the regime it's being used in produces --
+not evidence the underlying scoring is broken. The fix implied is moving the threshold (likely
+per-class, given precision varies 35.9%-74.4% across classes -- a single global threshold cannot
+be right for all of them at once), not redesigning `InstrumentEngine`. Raising the threshold would
+trade recall for precision; which trade is correct depends on product intent (for a
+recommendation-style output, showing a wrong instrument is probably costlier than missing one,
+i.e. precision likely matters more than recall here) -- a product decision, not something this
+measurement can answer on its own.
+
+**Why Stage 2 does NOT close here:** open item 2's own stated closure condition was "eşik
+çoklu-etikette iyi çalışıyorsa madde kapanır; bozuksa hedefli kalibrasyon gerekir." This
+measurement answered that question -- the threshold does not work well in the multi-label
+regime -- so by the item's own logic, closure requires the calibration, which has not been done.
+**Deliberately not done in this phase**: searching the calibration on this same 5,085-clip
+held-out set the F1 above was measured on would be exactly the held-out-contamination the
+methodology notes forbid -- any threshold search must run on OpenMIC's TRAIN partition only, with
+F1 re-reported on held-out afterward, or the 66.2% (and everything derived from a re-tuned
+threshold) becomes meaningless as an evaluation number. Tracked as new, separate Yapilacaklar.md
+open item (per-class threshold recalibration, train-search/held-out-report discipline,
+precision-priority operating point, NOT started).
+
+**Status:** Stage 2 measured, not closed. Macro-F1 66.2% (production-representative, per Step A).
+Precision/recall asymmetry recorded as Stage 2's substantive finding. New follow-up item opened
+for threshold recalibration; not built this phase.
 
 ---
 

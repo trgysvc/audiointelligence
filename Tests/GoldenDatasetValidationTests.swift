@@ -226,6 +226,19 @@ final class GoldenDatasetValidationTests: XCTestCase {
             entries = withBpm + noBpm.prefix(max(0, limit - withBpm.count))
         }
 
+        // Sample rate (DEVLOG item 3 / Phase 36): this test used to force-resample to 22050Hz,
+        // which does NOT match `DNAReportBuilder`'s real per-chunk decode (native file rate —
+        // GiantSteps is natively 44100Hz, confirmed via afinfo). Direction was measured, not
+        // assumed, on the full 599-track set before changing this: Tempo native decisively
+        // better (Acc1 58.1%→69.8%, Acc2 69.8%→81.4%) — production was already correct, only
+        // this test under-reported it. Key: 22050 slightly better (+2.2pp exact / +1.9pp MIREX
+        // at n=599) but within the established >300-sample/10pp tolerance band — not enough to
+        // justify migrating Key onto Instrument's separate analytical-decode branch, so
+        // production stays native and this test now measures what production actually runs,
+        // consciously leaving that ~2pp on the table. See DEVLOG Phase 36.
+        let sr = 44100.0
+        let cap = Int(60 * sr)
+
         var keyExact = 0, keyFifth = 0, keyRelative = 0, keyParallel = 0
         var tempoA1 = 0, tempoA2 = 0, total = 0, tempoTotal = 0
         print("\n  id        ref-key    det-key     ref-bpm  det-bpm  key  A1  A2")
@@ -234,27 +247,26 @@ final class GoldenDatasetValidationTests: XCTestCase {
             guard FileManager.default.fileExists(atPath: url.path) else {
                 table.checkExact("\(e.id): present", expected: "yes", measured: "MISSING", pass: false); continue
             }
-            var buf = try await AudioLoader.load(url: url, targetSampleRate: 22050)
+            var buf = try await AudioLoader.load(url: url, targetSampleRate: sr)
             // Analyze the first 60s — plenty for tempo/key, and keeps STFT size (hence the
             // disk-cache write) modest so a multi-file batch stays fast.
-            if buf.samples.count > 60 * 22050 {
-                buf = AudioBuffer(samples: Array(buf.samples.prefix(60 * 22050)), sampleRate: 22050, duration: 60)
+            if buf.samples.count > cap {
+                buf = AudioBuffer(samples: Array(buf.samples.prefix(cap)), sampleRate: sr, duration: 60)
             }
             total += 1
 
-            // Tempo/onset uses the standard nFFT=2048 STFT (matches DNAReportBuilder's per-chunk
-            // analysis path). Key uses a SEPARATE nFFT=8192 high-resolution STFT for chroma —
-            // this matches the real production key path (DNAReportBuilder.swift ~line 182-183),
-            // not the coarser nFFT=2048 chroma that was measured here before. Using the 2048
-            // chroma for key silently tested a code path production doesn't use — see DEVLOG for
-            // the investigation this uncovered (real production key path scores materially
-            // higher: 599-track full run went from 37.2%/49.9% (wrong, nFFT=2048) to 50.9%/63.3%
-            // (correct, nFFT=8192)).
-            let stft = await STFTEngine(nFFT: 2048, hopLength: 512, sampleRate: 22050).analyze(buf.samples)
-            let stftHi = await STFTEngine(nFFT: 8192, hopLength: 512, sampleRate: 22050).analyze(buf.samples)
+            // Key uses a high-resolution nFFT=8192 STFT for chroma — this matches the real
+            // production key path (DNAReportBuilder.swift ~line 182-183), not the coarser
+            // nFFT=2048 chroma that was measured here before. Using the 2048 chroma for key
+            // silently tested a code path production doesn't use — see DEVLOG for the
+            // investigation this uncovered (real production key path scores materially higher:
+            // 599-track full run went from 37.2%/49.9% (wrong, nFFT=2048) to 50.9%/63.3%
+            // (correct, nFFT=8192, but still at the wrong 22050 sample rate — see the sr note
+            // above for the subsequent native-rate correction)).
+            let stftHi = await STFTEngine(nFFT: 8192, hopLength: 512, sampleRate: sr).analyze(buf.samples)
 
             // Key: mean chroma (high-resolution, production path) → Krumhansl key estimate.
-            let chroma = ChromaEngine(nFFT: 8192, sampleRate: 22050).chromagram(stft: stftHi)
+            let chroma = ChromaEngine(nFFT: 8192, sampleRate: sr).chromagram(stft: stftHi)
             let meanChroma = (0..<12).map { c in chroma[c].isEmpty ? 0 : chroma[c].reduce(0, +) / Float(chroma[c].count) }
             let detKey = ModulationEngine().detectKey(meanChroma)
             let refK = parseKey(e.key), detK = parseKey(detKey)
@@ -267,10 +279,19 @@ final class GoldenDatasetValidationTests: XCTestCase {
             default: break
             }
 
-            // Tempo: spectral-flux onset (from the shared STFT) → autocorrelation tempo.
-            // Scored only where a BPM annotation exists.
-            let onsetEnv = RhythmEngine.onsetStrength(from: stft)
-            let bpm = Double(RhythmEngine.estimateTempo(onsetStrength: onsetEnv, sr: 22050, hopLength: 512).bpm)
+            // Tempo: production's real onset algorithm (`OnsetEngine`'s default SuperFlux+mel
+            // mode, matches `DNAReportBuilder.swift` ~line 186) → autocorrelation tempo. This
+            // used to call `RhythmEngine.onsetStrength(from:)` -- a simpler linear-STFT
+            // rectified spectral-flux function that is never called anywhere in Sources/
+            // production code (test-only). That mismatch was independent of, and separate from,
+            // the sample-rate mismatch this test was fixed for -- discovered only when a
+            // Phase-36 closing-evidence number (Acc1 65.1%/Acc2 74.4%, from this test at native
+            // rate but the WRONG onset algorithm) didn't match the already-approved direction-
+            // measurement number (Acc1 69.8%/Acc2 81.4%, from `OnsetEngine` at native rate,
+            // matching production). See DEVLOG for the correction. Scored only where a BPM
+            // annotation exists.
+            let onset = await OnsetEngine(sampleRate: sr).onsetStrength(buf.samples)
+            let bpm = Double(RhythmEngine.estimateTempo(onsetStrength: onset.envelope, sr: sr, hopLength: 512).bpm)
             var a1 = false, a2 = false
             if let refBpm = e.bpm {
                 tempoTotal += 1

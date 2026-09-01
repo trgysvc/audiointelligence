@@ -136,4 +136,101 @@ final class StructureEngineSALAMITests: XCTestCase {
         // today's mediocre-but-nonzero performance as acceptable.
         XCTAssertGreaterThan(m3.f, 0.15, "F-measure@3.0s dropped well below its last-measured 37.3% -- investigate before assuming this is fine")
     }
+
+    /// Direction check for DEVLOG item 3 (Tempo/Key/Structure sample-rate mismatch): does
+    /// `StructureEngine.analyze()` — using the Phase 29 seconds-based `.calibrated`
+    /// `StructurePeakPickConfig` (waitSeconds/preAvg/postAvg etc. converted to frame counts via
+    /// hopLength/sampleRate internally) — perform as well at native 44100Hz as it does at the
+    /// 22050Hz it was grid-searched at? Unlike Instrument (a fitted-threshold model) or Tempo
+    /// (a from-scratch onset/tempo algorithm), Structure's config is expressed in SECONDS, so it
+    /// should in principle self-adjust to any sample rate — this test measures whether that
+    /// theoretical self-adjustment actually holds, rather than assuming it.
+    func testStructureEngine_sampleRateComparison_onRealSALAMI() async throws {
+        let salamiRoot = URL(fileURLWithPath: "Tests/Resources/SALAMI")
+        let manifestURL = salamiRoot.appendingPathComponent("metadata/ia_manifest.csv")
+        guard let manifest = try? String(contentsOf: manifestURL, encoding: .utf8) else {
+            throw XCTSkip("SALAMI manifest not available")
+        }
+
+        struct Entry { let songID: String; let localFile: String }
+        var entries: [Entry] = []
+        for line in manifest.components(separatedBy: .newlines).dropFirst() {
+            let cols = line.split(separator: ",")
+            guard cols.count >= 4 else { continue }
+            entries.append(Entry(songID: String(cols[0]), localFile: String(cols[3])))
+        }
+
+        let hop = 512
+        let limit = 15
+        let selected = stride(from: 0, to: entries.count, by: max(1, entries.count / limit)).map { entries[$0] }.prefix(limit)
+
+        func measure(sr: Double) async -> (p: Double, r: Double, f: Double, usable: Int) {
+            var overall = BoundaryMetrics()
+            var usable = 0
+            for entry in selected {
+                let audioURL = salamiRoot.appendingPathComponent("audio/\(entry.localFile)")
+                let annotURL = salamiRoot.appendingPathComponent("annotations/\(entry.songID)/parsed/textfile1_uppercase.txt")
+                guard FileManager.default.fileExists(atPath: audioURL.path),
+                      let annotText = try? String(contentsOf: annotURL, encoding: .utf8),
+                      let buf = try? await AudioLoader.load(url: audioURL, targetSampleRate: sr) else { continue }
+
+                var trueBoundaries: [Double] = []
+                for line in annotText.split(separator: "\n") {
+                    let cols = line.split(separator: "\t")
+                    guard cols.count >= 1, let t = Double(cols[0]) else { continue }
+                    trueBoundaries.append(t)
+                }
+                guard trueBoundaries.count >= 2 else { continue }
+
+                let stftEngine = STFTEngine(nFFT: 8192, hopLength: hop, sampleRate: sr)
+                let stft = await stftEngine.analyze(buf.samples)
+                let chroma = ChromaEngine(nFFT: 8192, sampleRate: sr).chromagram(stft: stft)
+
+                let mel = MelSpectrogramEngine(stftEngine: STFTEngine(nFFT: 2048, hopLength: hop, sampleRate: sr), nMels: 128)
+                let mfccEngine = MFCCEngine(melEngine: mel, nMFCC: 13)
+                let mfccResult = await mfccEngine.createMFCC(from: buf.samples)
+                let nMFCCFrames = mfccResult.fullData.count / 13
+                var mfcc2D = [[Float]](repeating: [Float](repeating: 0, count: nMFCCFrames), count: 13)
+                for t in 0..<nMFCCFrames {
+                    for c in 0..<13 { mfcc2D[c][t] = mfccResult.fullData[t * 13 + c] }
+                }
+
+                let nFrames = min(chroma[0].count, mfcc2D[0].count)
+                guard nFrames > 20 else { continue }
+                let chromaAligned = chroma.map { Array($0.prefix(nFrames)) }
+                let mfccAligned = mfcc2D.map { Array($0.prefix(nFrames)) }
+
+                let result = StructureEngine(hopLength: hop, sampleRate: sr).analyze(chromagram: chromaAligned, mfccs: mfccAligned)
+                guard !result.boundaryTimes.isEmpty else { continue }
+
+                usable += 1
+                var matched05 = Set<Int>(), matched3 = Set<Int>()
+                for pt in result.boundaryTimes {
+                    for (i, tt) in trueBoundaries.enumerated() {
+                        let d = abs(pt - tt)
+                        if d <= 0.5 { matched05.insert(i) }
+                        if d <= 3.0 { matched3.insert(i) }
+                    }
+                }
+                overall.hits05 += matched05.count
+                overall.hits3 += matched3.count
+                overall.predictedTotal += result.boundaryTimes.count
+                overall.trueTotal += trueBoundaries.count
+            }
+            let p = overall.predictedTotal > 0 ? Double(overall.hits3) / Double(overall.predictedTotal) : 0
+            let r = overall.trueTotal > 0 ? Double(overall.hits3) / Double(overall.trueTotal) : 0
+            let f = (p + r) > 0 ? 2 * p * r / (p + r) : 0
+            return (p, r, f, usable)
+        }
+
+        let at22050 = await measure(sr: 22050)
+        let at44100 = await measure(sr: 44100)
+
+        print("\n=== Structure: which sample rate does the calibrated peak-pick perform better at? ===")
+        print("SALAMI, \(selected.count)-track sample, same isolated pipeline (Phase 29 .calibrated config) at two rates")
+        print(String(format: "  @ 22050Hz (%d usable): F@3.0s=%.1f%% (p=%.1f%% r=%.1f%%)", at22050.usable, at22050.f*100, at22050.p*100, at22050.r*100))
+        print(String(format: "  @ 44100Hz (%d usable): F@3.0s=%.1f%% (p=%.1f%% r=%.1f%%)", at44100.usable, at44100.f*100, at44100.p*100, at44100.r*100))
+
+        XCTAssertTrue(at22050.usable > 0 && at44100.usable > 0, "no SALAMI tracks usable at one of the two rates")
+    }
 }
