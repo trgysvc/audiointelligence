@@ -3,6 +3,18 @@ import Foundation
 /// Historical & Contextual Analysis Engine (Tarihsel ve Bağlamsal Analiz).
 /// Infers composition period, artistic movements, and global implications.
 /// Cross-references timbre and structural findings with musicological patterns.
+///
+/// **Deliberately NOT wired into the public `AudioReport`** (`AudioReportMapping.swift`'s
+/// `MusicologyReport` construction omits this engine's output entirely) -- found and documented
+/// 2026-09-03 during a repo-wide audit. Same reasoning as the mood/genre/danceability exclusion
+/// (Yapilacaklar.md's "BİLİNÇLİ KAPSAM DIŞI" section): this engine infers subjective, uncalibrated
+/// claims ("Romantic/Classical Era", "Jazz Age") from generic signal features (loudness threshold,
+/// instrument-label substring match, tempo), stamped with confidence values that were never fit
+/// against any ground truth -- exactly what this library's "measured, not claimed" identity rules
+/// out for a public field. This class and `inferContext` still run on every `analyze()` call
+/// (their result is computed and stored on the internal `MusicDNAAnalysis`, just never mapped
+/// through) -- wasted work, not a correctness risk, and a separate low-priority cleanup item.
+/// Do not add a mapping from this to `AudioReport` without revisiting that decision first.
 public final class HistoricalEngine: Sendable {
     
     public init() {}

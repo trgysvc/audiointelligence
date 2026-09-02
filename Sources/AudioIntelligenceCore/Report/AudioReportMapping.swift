@@ -10,7 +10,7 @@ import Foundation
 // =============================================================================
 
 /// The library's released version, stamped into every report.
-public let audioIntelligenceLibraryVersion = "8.2.2"
+public let audioIntelligenceLibraryVersion = "8.2.3"
 
 extension AudioReport {
 
@@ -143,6 +143,10 @@ extension AudioReport {
                 Estimated($0.label, confidence: Double($0.confidence), method: $0.technicalBasis)
             }
 
+        // `a.musicology.context` (`HistoricalContext` -- suggested period/artistic movement) is
+        // DELIBERATELY not mapped here. Same "measured, not claimed" reasoning as the
+        // mood/genre/danceability exclusion (Yapilacaklar.md) -- see `HistoricalEngine`'s own doc
+        // comment. Do not add it without revisiting that decision.
         let musicology = MusicologyReport(
             fundamentalNote: a.reduction.fundamentalNote,
             meter: a.musicology.meter,

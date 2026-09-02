@@ -1,7 +1,45 @@
 ---
 
-## [8.3.0] - 2026-09-01
-### Changed
+## [8.2.3] - 2026-09-03
+_(Everything below shipped together as the next release after 8.2.2 — instrument calibration,
+Key rewiring, pitch statistics, and the chord fix were all still unreleased/pending in this
+CHANGELOG, so they're one version bump, not the 8.3.0→8.4.0 sequence briefly drafted here before
+being corrected.)_
+
+### Changed — BREAKING: `key.value` format changed
+- **`report.estimations.key.value` is now mode-qualified (`"G Major"`), not a bare tonic
+  (`"G"`).** The field's backing algorithm moved from `ReductionEngine.fundamentalNote` (a
+  per-segment loudest-chroma-bin majority vote that never determined major/minor) to
+  `ModulationEngine.detectKey` (Krumhansl-Schmuckler correlation, DEVLOG Phase 41 retraction →
+  Phase 43 fix). **A consumer that parses `key.value` expecting a bare note name, or that
+  concatenates/compares it against a bare-tonic string, will break** — the value now always
+  includes `" Major"`/`" Minor"`, or `"Unclassified"` when correlation is too weak to call.
+  `key.confidence` also changed source (`detectKeyWithConfidence`'s own raw correlation
+  strength, not `reduction.stabilityScore`) — it is NOT calibrated (unlike `instruments`'
+  confidence, see `MetricWrappers.swift`), so treat it as a within-algorithm relative score, not
+  a probability. Accuracy on real music (GiantSteps, 599 tracks): 48.8% exact / 61.4%
+  MIREX-weighted — this is now genuinely the exposed field's own accuracy, not a different
+  algorithm's (DEVLOG Phase 41 found the two had been measured/reported out of sync; Phase 43
+  verified the fix end-to-end, both on synthetic clips and 5 real GiantSteps files).
+
+### Changed — pitch statistics: values shift, `medianF0` is a new number
+- **`PitchMetrics.meanF0`/`.medianF0`/`.minF0`/`.maxF0`/`.stability` now come from the raw
+  per-frame voiced-pitch pool across the whole track, not from averaging/min/max-ing each
+  chunk's own summary statistic** (DEVLOG Phase 44). Previously `.medianF0` was literally a
+  second copy of `.meanF0` (`DNAReportBuilder` passed the same variable into both `PitchMetrics`
+  parameters) — it is now a real, independently-computed median, and will differ from
+  `.meanF0` on real (non-constant-pitch) audio. `.meanF0` itself also moved: it was a
+  second-order statistic (mean of each chunk's own mean, weighting a short and a long chunk
+  equally) and is now a true first-order mean across every voiced frame — measured shift on a
+  real multi-chunk file: mean 1.5%, min/max far more (min 21Hz lower, max 80Hz higher, since a
+  chunk's own mean can never reach that chunk's real extremes). **A consumer with a hardcoded
+  expectation for these specific numeric values (a snapshot test, a cached baseline) will see
+  new numbers** — the change is a correctness fix (both statistics are now computed the way
+  their names claim), not a tuning adjustment. `Examples/ReliabilityAudit`'s pYIN Raw Pitch
+  Accuracy figures (Phase 33) are unaffected — RPA is computed independently, per-frame, direct
+  against MDB-stem-synth ground truth, and never reads these fields.
+
+### Changed — `instruments` confidence is now calibrated
 - **`instruments` confidence is now per-class calibrated — a behavior change for consumers that
   threshold it, in the more-consistent direction.** Each `Estimated<String>` in
   `AudioReport.estimations.instruments` used to carry a raw score-component sum as `confidence`;
@@ -20,6 +58,17 @@
   labels are included at all is also untouched — the 0.3 inclusion cutoff is still evaluated
   against the raw score, deliberately not recalibrated (raising it would destroy information a
   confidence-reading consumer could otherwise recover; see DEVLOG Phase 37).
+
+### Fixed
+- **4-note jazz-extension chord identification (dom7/m7/m7b5/m6) was frequently wrong on real
+  (non-idealized) audio** — end-to-end synthetic-audio accuracy 58/108 → 87/108 canonical
+  chords (DEVLOG Phase 45). Root cause: a smaller chord shape's chroma score could numerically
+  outscore a larger shape that fully contains it (e.g. a 3-note "E diminished" beating the true
+  "C dominant 7" it's a subset of), because real per-tone chroma magnitudes are never perfectly
+  equal the way idealized/synthetic-exact inputs are. `TraditionalTheoryEngine.identifyTriad`
+  now penalizes candidates for chroma energy they leave unexplained. Remaining 21/108 mismatches
+  are a known augmented-triad symmetry (9) and m6/m7b5 pairs that share an identical pitch-class
+  set (12) — not resolvable by this fix, tracked separately (worklist).
 
 ## [8.2.1] - 2026-06-18
 ### Fixed

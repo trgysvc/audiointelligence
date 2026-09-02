@@ -145,7 +145,7 @@ We report **measured** accuracy, not claimed. Each row below is backed by a test
 | Instrument — real music | ✅ OpenMIC-2018 held-out test partition recall: Drums 79%, Bass 59%, Piano 52%, Strings/Synth 41%, Vocals 22%, Brass/Trumpet 5% (precision not yet re-measured post-fix); IRMAS (4 classes it can measure): 28.5% blended | IRMAS + OpenMIC-2018 |
 | Pitch/f0 — real music | ✅ Raw Pitch Accuracy (<50 cents), see `Examples/ReliabilityAudit` scorecard for the current run's % | MDB-stem-synth |
 | Structure — real music (15 tracks) | ✅ boundary F-measure @3.0s tolerance: 41.1% (@0.5s: 21.3%) | SALAMI |
-| Chord identification — synthesized audio, real signal chain | ✅ 57–58/108 canonical (root, quality) chords correct end-to-end (STFT→Chroma→CQT→TraditionalTheoryEngine); real-corpus measurement still blocked (no legally-obtainable paired chord/audio material) | self-synthesized, 100%-exact ground truth |
+| Chord identification — synthesized audio, real signal chain | ✅ 87/108 canonical (root, quality) chords correct end-to-end (STFT→Chroma→CQT→TraditionalTheoryEngine) — up from 58/108 (DEVLOG Phase 45: explained-energy penalty fixed a real scoring bug where a smaller chord shape could outscore a larger one it's a subset of; remaining 21 mismatches are 9 known augmented-symmetry ties plus 12 m6/m7b5 pairs sharing identical pitch-class sets, unresolvable without a working bass-note signal — see worklist); real-corpus measurement still blocked (no legally-obtainable paired chord/audio material) | self-synthesized, 100%-exact ground truth |
 
 ---
 
