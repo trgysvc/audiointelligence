@@ -116,6 +116,19 @@ We report **measured** accuracy, not claimed. Each row below is backed by a test
 > now have measured real-music numbers too; structure now has a first real-ground-truth
 > measurement (SALAMI); chord identification is measured end-to-end on synthesized (not yet real)
 > audio — real paired chord/audio material still doesn't exist for this project (see worklist).
+>
+> ✅ **Wiring fixed (2026-09-02, DEVLOG Phase 41 retraction → Phase 43 fix): the Key row below now
+> measures what's actually exposed.** Originally found wrong: the 48.8%/61.4% figures were always
+> `ModulationEngine.detectKey` (Krumhansl-Schmuckler)'s accuracy, but `report.estimations.key.value`
+> was computed by a different algorithm (`ReductionEngine.fundamentalNote`, a bare tonic, no
+> major/minor, never itself accuracy-measured). Rather than just re-label the mismatch, it was
+> resolved: both algorithms were measured side by side on real GiantSteps (tonic-only accuracy,
+> statistically indistinguishable, p=1.0 at N=43) plus `detectKey`'s major/minor signal was checked
+> and found real (86% mode accuracy, 95% when its own tonic call is right) where `ReductionEngine`
+> can never provide one at all; git history confirmed the original wiring was an oversight (from
+> when `ReductionEngine` was briefly the only key mechanism that existed), not a deliberate choice.
+> `key.value` is now wired to `detectKey` — the number below is once again the exposed field's own
+> accuracy, verified end-to-end (not just re-labeled) via a production-vs-isolated identity test.
 
 | Area | Status | Source of truth |
 | :-- | :-- | :-- |
@@ -128,7 +141,7 @@ We report **measured** accuracy, not claimed. Each row below is backed by a test
 | Foundational DSP (STFT, mel) | ✅ librosa-exact (STFT corr 1.00000, 0.0000% residual; mel corr 1.00000, 0.0003% residual) — reproducible via `scripts/parity_compare.py` | librosa 1.0.0 |
 | Synthetic ground truth (tempo/timebase/phase/structure coverage) | ✅ 8/8 | deterministic fixtures |
 | Tempo — real music (EDM, 43 tracks) | ✅ Acc1 69.8% / Acc2 81.4% (measurement correction, not a real improvement — the prior 53%/70% under-measured this same production algorithm at the wrong sample rate; see DEVLOG Phase 36) | GiantSteps (MIREX) |
-| Key — real music (599 tracks) | ✅ 48.8% exact / 61.4% MIREX-weighted (N=599, the full set — verified zero exclusions: every track loaded, parsed, and was long enough; measured at production's native sample rate, see DEVLOG Phase 36) | GiantSteps (MIREX) |
+| Key — real music (599 tracks) | ✅ 48.8% exact / 61.4% MIREX-weighted (N=599, native sample rate, DEVLOG Phase 36) — `report.estimations.key.value` is `ModulationEngine.detectKey`, wired and verified end-to-end (DEVLOG Phase 43) | GiantSteps (MIREX) |
 | Instrument — real music | ✅ OpenMIC-2018 held-out test partition recall: Drums 79%, Bass 59%, Piano 52%, Strings/Synth 41%, Vocals 22%, Brass/Trumpet 5% (precision not yet re-measured post-fix); IRMAS (4 classes it can measure): 28.5% blended | IRMAS + OpenMIC-2018 |
 | Pitch/f0 — real music | ✅ Raw Pitch Accuracy (<50 cents), see `Examples/ReliabilityAudit` scorecard for the current run's % | MDB-stem-synth |
 | Structure — real music (15 tracks) | ✅ boundary F-measure @3.0s tolerance: 41.1% (@0.5s: 21.3%) | SALAMI |

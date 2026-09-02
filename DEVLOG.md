@@ -3094,4 +3094,654 @@ for threshold recalibration; not built this phase.
 
 ---
 
+## Phase 38 (2026-09-01): Instrument multi-label confidence calibration — fit, a self-check catching a real bug on its first run, and robust closing evidence
+
+Direct follow-up to Phase 37's threshold-recalibration item. Design was fixed before any fitting
+code was written: method by train sample size (n<600 -> Platt, n>=600 -> isotonic, chosen for
+Strings/Synth's climb-then-plateau shape a sigmoid would misfit), fit on OpenMIC's official train
+partition only (bounded to an OOM-safe 5,000-clip evenly-thinned sample, same mitigation as the
+earlier full-corpus SIGKILL), validated on the full 5,085-clip held-out partition -- code-level
+separation, `split01_test.csv` never read inside the fitting code path.
+
+### Pre-check: is each class's raw score even calibration-amenable?
+
+Before fitting anything, checked whether each class's raw (unthresholded, `predictWithBreakdown`)
+score carries genuine monotonic signal, via AUC on the train partition (5,000-clip bounded sample,
+same OOM-safe limit). No class was flat: Vocals 0.839, Drums 0.784, Bass 0.691, Brass 0.629, Piano
+0.627, Strings/Synth 0.577 (weakest, but still real -- its own bin table climbs from 36.9% to a
+~55-59% plateau, not flat). Calibration is legitimate for all 6 classes; none needed routing to
+item 4/5 as a pure profile-quality problem instead.
+
+### A sign bug, caught by the exact self-check this whole approach exists to justify
+
+The first `fitPlatt` run had a real gradient sign error: `diff = pr - t` where the correct
+derivative (from `NLL = softplus(z) - (1-t)*z`, verified by hand) is `t - pr`. Isotonic regression
+can't have this bug -- pool-adjacent-violators enforces non-decreasing output by construction --
+but Newton's method on the flipped gradient climbed the loss instead of descending it. This was
+invisible in the isotonic classes' output and would have been easy to miss by eye in Platt's,
+too: the first run's held-out numbers (Bass AUC 0.712 raw -> 0.346 calibrated, Vocals 0.826 ->
+0.280 -- calibration making both classes *worse than chance*) were sitting in a wall of otherwise-
+plausible-looking numbers.
+
+**The AUC-invariance self-check caught it immediately and mechanically, no human inspection
+required**: calibration is a monotonic transform, so AUC must not move; 0.712 -> 0.346 is not a
+small drift, it's impossible for a correctly-implemented monotonic fit, and the self-check flagged
+it the moment the corrected code re-ran on the (cheap) train partition -- before the expensive
+held-out run even started. This is the concrete argument for open item 8 (test-production /
+invariant-testing infrastructure): this session caught five instances of "the measurement doesn't
+actually measure what it claims to" by hand (frame-0, sample-rate, onset-function, a missed Step A
+report, and now this sign bug) -- this is the first time the *tool itself* caught one, on its first
+run, without a human re-deriving the math from the output. That is what item 8 is worth building
+more of, not a one-off scare.
+
+Fix: L2-regularized, damped (backtracking line search) Newton's method, plus the sign correction.
+Verified on synthetic data shaped like Bass (n=440, moderately separable) before re-running the
+real ~30-minute pipeline -- cheap synthetic check first, expensive real run second, the same
+discipline as every other verify-before-trust step this session. Also added a permanent train-side
+AUC self-check (`RA_INSTRUMENT_CALIBRATION`'s own output) and a standalone synthetic regression
+probe (`RA_PLATT_SELFTEST=1`) so this exact bug class can't silently reappear.
+
+### Corrected results
+
+Train fit (5,000/14,915 clips, method chosen by size):
+
+| class | n | method | ECE raw->calibrated (train) | AUC raw/cal (train) |
+| :-- | --: | :-- | :-- | :-- |
+| Piano/Keyboard | 2043 | isotonic | 0.121 -> 0.000 | 0.627 / 0.635 |
+| Bass | 440 | Platt | 0.177 -> 0.020 | 0.691 / 0.691 |
+| Brass/Trumpet | 1907 | isotonic | 0.080 -> 0.000 | 0.629 / 0.638 |
+| Vocals/Chorus | 407 | Platt | 0.185 -> 0.061 | 0.839 / 0.839 |
+| Drums/Percussion | 1168 | isotonic | 0.129 -> 0.000 | 0.784 / 0.792 |
+| Strings/Synth | 3094 | isotonic | 0.121 -> 0.000 | 0.577 / 0.585 |
+
+**Closing evidence** (full held-out partition per class, 374-3171 samples -- not a single bin):
+
+| class | n (held-out) | ECE raw -> calibrated | AUC raw/cal |
+| :-- | --: | :-- | :-- |
+| Piano/Keyboard | 1980 | 0.109 -> 0.015 | 0.632 / 0.629 |
+| Bass | 463 | 0.160 -> 0.026 | 0.712 / 0.712 |
+| Brass/Trumpet | 2028 | 0.075 -> 0.019 | 0.619 / 0.613 |
+| Vocals/Chorus | 374 | 0.149 -> 0.043 | 0.826 / 0.826 |
+| Drums/Percussion | 1189 | 0.140 -> 0.046 | 0.754 / 0.751 |
+| Strings/Synth | 3171 | 0.139 -> 0.026 | 0.558 / 0.560 |
+
+**Cross-class ECE spread (max-min, held-out, full n): 0.085 -> 0.031.** AUC invariance holds
+(within isotonic's expected small tie-collapse) -- confirming the fit is a true monotonic
+recalibration, not a distortion. No train/held-out ECE gap exceeded the 0.05 overfit-watch
+threshold for any class, including Bass, the smallest and highest-risk one.
+
+An earlier version of this evidence used a single confidence≈0.6 point (before/after spread
+41.1pp -> 22.5pp). That table is kept in the tool's output but explicitly demoted to
+"illustration only" -- its per-class "after" n's (14-16-45-60) are too small to be closing
+evidence on their own, and calibration remaps which clips even fall in a fixed confidence window,
+so it isn't a clean same-population before/after the way the full-curve, same-partition ECE
+comparison above is. The ECE spread is the real evidence; the single-point table is illustrative
+of the same effect, not proof of it.
+
+**Strings/Synth stayed "honest but low-ceiling" as predicted**: its ECE improved as much as any
+other class (0.139->0.026), but its AUC (0.558-0.560) is unchanged and remains the lowest of the
+6 -- calibration made its confidence values truthful, it did not and could not raise its underlying
+separating power. Raising that ceiling is an `InstrumentEngine` profile-quality question (open item
+5), explicitly out of this item's scope.
+
+### Status and what's still open
+
+Item 3 (multi-label threshold recalibration) is **closed as a measurement/calibration-design
+deliverable**: the fit-validate-self-check loop is built, a real bug in it was caught and fixed
+using the loop's own invariant, and the closing evidence (cross-class ECE spread) is robust
+(full-n, same-partition, not a noisy single point).
+
+**Not done, and deliberately separated out**: wiring these calibration parameters into
+`InstrumentEngine`'s actual production output (`predict()` returning calibrated confidence instead
+of the raw component sum). Everything in this phase is measurement/audit layer
+(`Examples/ReliabilityAudit`) -- production code was not touched. Wiring is real, separate work
+with its own risk (it changes `InstrumentPrediction.confidence` for every consumer of the public
+API) and needs its own explicit decision, tracked as a new open item. One thing already verified,
+not left to check later: the calibration was fit on features from `predictInstrumentBreakdown`,
+which calls `AudioLoader.load(url:, targetSampleRate: 22050)` -- the same 22050Hz rate
+`DNAReportBuilder.swift`'s `analyticalChunk` branch feeds `InstrumentEngine` in production (Phase
+35's fix). Fit-rate and serve-rate are already consistent; this does not need to be re-checked when
+wiring happens, only re-confirmed if that analytical-feed architecture ever changes.
+
+Also unchanged, deliberately: the 0.3 inclusion threshold (Phase 37's finding that raising it would
+destroy recoverable-by-consumers-only information stands; calibration fixes what confidence means,
+not which labels get included at all).
+
+---
+
+## Phase 39 (2026-09-02): Wiring instrument calibration into production, and a same-input identity check that caught a real loading-path bug
+
+Direct follow-up to Phase 38's deliberately-deferred item: `InstrumentEngine.predict()` now returns
+calibrated confidence (`InstrumentCalibration.calibrate(label:rawScore:)`, new file) instead of the
+raw component-sum. `primaryLabel`/inclusion ordering is deliberately still decided on the RAW score
+(sorted before calibration is applied) -- calibration was fit and validated as a confidence-meaning
+correction, not a re-ranking signal, and changing what determines `primaryLabel` would silently
+invalidate all of that phase's ranking-dependent evidence (Phase 35 production-parity, item 4's
+recall numbers). Only the reported number changes; which label wins and which labels are included
+are both untouched, matching the doc comment on `InstrumentCalibration.swift`.
+
+### The wiring's own closing evidence: a same-input identity check, and what it caught
+
+The standard this session held itself to: wiring calibration into `predict()` is not "closed" just
+because the fit's own held-out ECE/AUC numbers looked good (Phase 38) -- that only proves the FIT
+is good, not that production actually *uses* it correctly. The closing evidence has to be
+`InstrumentEngine`'s actual production output, on the same clips, compared against the offline
+fit's own calibrated value. `RA_INSTRUMENT_CALIBRATION_WIRING_CHECK=1` does exactly that: re-fits
+the offline models (train partition), then for each held-out clip calls production's real
+`AudioIntelligence().analyzeRawAggregate()` and the offline `predictInstrumentBreakdownProductionMix`
+side by side, comparing calibrated confidence for the same (clip, class) pair.
+
+**First run of this check failed** (82 of ~138 pairs mismatched, max |offline-production| = 0.194)
+-- not a calibration-math bug, a loading-path bug: the offline comparison path was mixing stereo to
+mono via `AudioLoader.load()`'s internal `AVAudioConverter`, while production's `analyticalChunk`
+mixes explicitly (`(L+R)*0.5` via vDSP) after per-channel resampling. Those two mono-mixdowns are
+not numerically identical. Fixed by making the offline side call the same explicit mixdown
+production uses. This also invalidated Phase 38's original calibration fit (it was trained on the
+converter-mixdown's scores) -- refit on the corrected loading path; the new fit's closing evidence
+(cross-class ECE spread 0.075 -> 0.048, every class's own ECE dropped individually) is what's
+embedded in `InstrumentCalibration.swift` now, and is what Phase 38's table above predates.
+
+**Re-run after the mixdown fix**: 138 pairs evaluated, max residual dropped ~500x (0.194 -> 0.00038,
+16 mismatches), all of them confined to the two Platt classes (Bass, Vocals) and none to isotonic --
+informative rather than concerning, since Platt's smooth continuous curve reflects any nonzero
+raw-score gap proportionally while isotonic's flat blocks absorb one unless it crosses a block
+boundary. Root-caused the remaining gap to a second, smaller loading-path difference: the offline
+comparison's whole-file loader (`AudioLoader.loadStereo`) sized its buffer from `totalFrames`, while
+production's `loadNextChunkStereoManual` sizes it from the actual chunk's `frameLength` -- fixed by
+switching the offline comparison to call `loadNextChunkStereoManual` directly, matching production's
+exact low-level call.
+
+**Re-run after the loader fix**: max residual 0.00208 (55/138 pairs), smaller per-clip for Bass
+(~1e-5, down another order of magnitude from 0.00038) but newly present in Piano/Keyboard
+(isotonic) at a few clips. First checked whether this was actually a regression before accepting
+any explanation for it: `maxDiff` in the identity-check code (`Examples/ReliabilityAudit/main.swift`)
+is updated unconditionally for every evaluated pair, before the mismatch-recording branch -- so the
+printed max is a true max over all 138 evaluated pairs (all 55 mismatches, not just the 20 the tool
+prints detail for), not a sampled or best-case number. Both 0.00038 and 0.00208 are therefore
+complete-coverage bounds.
+
+The candidate explanation -- that the offline side re-fits its isotonic/Platt models fresh from
+that run's training scores every time this check runs, and that this codebase already has a
+documented, independent source of sub-percent run-to-run noise (the AUC self-check section above,
+and an earlier phase's finding that AVFoundation's decode/resample path is not guaranteed bit-exact
+across runs) -- was **verified, not accepted on plausibility alone**, precisely because this same
+turn had already found two real bugs that a "probably just noise" read would have missed
+(converter-mixdown, buffer-sizing). Checked directly: two of the mismatched Piano offline values
+(`y=0.6010928961748634` and `y=0.53125`) do not match any block `y` in the Piano isotonic model
+currently embedded in `InstrumentCalibration.swift` -- meaning this run's offline re-fit produced a
+measurably different isotonic curve, not merely a boundary-adjacent raw score evaluated against the
+*same* curve. That confirms real run-to-run non-reproducibility in the fit itself (contradicting the
+tool's own `=== Re-fitting (deterministic) ===` banner text, now scare-quoted to
+`(\"deterministic\")` with a comment pointing at this section, since the claim is demonstrably
+false),
+not just a hypothesis consistent with the numbers. Platt (Bass) has no comparable block-boundary
+sensitivity, which is why its residual shrank smoothly instead of shifting sideways like Piano's.
+
+**Closing standard, fixed before this last run, not after, and closure rests on it -- not on the
+noise explanation above**: `Estimated`/CLI confidence is exposed to consumers rounded to the
+nearest whole percent (`pct()`: `Int((x*100).rounded())%`), so any residual under 0.005 can never
+change what a consumer sees. Both the 0.00038 and 0.00208 complete-coverage maxima clear that bar
+with more than 2x margin. This is closed at consumer-visible precision, not at floating-point
+equality -- floating-point equality between two independently-refit models was never the right bar,
+confirmed above to be unreachable in practice for isotonic classes.
+
+**Consequence for future readers, recorded so it isn't rediscovered as a regression**: because the
+fit is measurably sensitive to decode noise, the parameters embedded in `InstrumentCalibration.swift`
+are a snapshot of one specific fit run, not a value guaranteed to be reproduced exactly by a future
+re-fit. Re-running `RA_INSTRUMENT_CALIBRATION` later and getting slightly different block values is
+expected, not a bug -- the thing that would actually need attention is the resulting residual
+against a re-run of the wiring identity check exceeding the 0.005 bound above, not the parameters
+themselves changing.
+
+### Status
+
+Item 3 (multi-label confidence calibration) is now **fully closed, fit through production wiring**:
+`InstrumentEngine.predict()` returns calibrated confidence; the wiring was verified against
+production's actual output, not assumed from the fit's own numbers; two real loading-path bugs were
+caught and fixed by that verification (converter-mixdown vs. explicit mixdown; whole-file buffer
+sizing vs. per-chunk); and the remaining residual is bounded, explained, and below the precision at
+which any consumer could observe it.
+
+**Filed separately, bigger than item 3**: this phase didn't just bound a residual, it turned a
+standing hypothesis into a measured fact. Phase 15 item 1 (`InstrumentEngine` non-determinism)
+hypothesized AVFoundation's decode/resample path is not bit-exact run-to-run, and worked around it
+with graded scoring so near-ties collapse below the visible threshold -- a mitigation, not a fix
+for the underlying noise. This phase directly measured that same noise moving calibration fit
+parameters between two nominally-identical re-fits (two Piano isotonic block values that don't
+exist in the other run's model). **Decode-noise is now a confirmed, load-bearing property of this
+codebase, not a plausible-sounding explanation reached for once**: anything downstream of MFCC/raw
+audio decode -- calibration fit included -- inherits it, and is only as stable as the margin
+between its own noise and whatever threshold or tie-breaking absorbs it (Phase 39's 0.005 for
+calibration; the graded-scoring near-tie collapse for classification). This is a reproducibility
+*bound*, not a fixed reproducibility guarantee, and is worth its own line wherever this codebase's
+open items are tracked outside DEVLOG, not just the note left on `InstrumentCalibration.swift` and
+in this section: *decode-noise is proven, not hypothesized (Phase 39); every MFCC-derived parameter
+in this codebase is bounded-not-guaranteed reproducible by it.*
+
+---
+
+## Phase 40 (2026-09-02): 4-note jazz-extension chord degradation — root cause found and measured, fix deferred
+
+Direct follow-up to the open item flagged when `ChordEndToEndSyntheticTests` first ran (Phase 30):
+real-audio end-to-end chord identification lands at 57-58/108 vs. idealized chroma's 77/108, and
+the gap is not evenly spread — 4-note jazz-extension chords (dom7/m7/m7b5/m6) are nearly all wrong
+while plain triads are almost untouched. Two candidates were on the table, neither measured: STFT
+spectral leakage from unwindowed pure tones, or `identifyTriad` being generically fragile to
+non-ideal chroma.
+
+**Method: a throwaway diagnostic, not a guess.** Added a temporary test
+(`Tests/ChordFourNoteDiagnosticTests.swift`, deleted after use) that runs the exact same
+synthesis -> STFT(8192) -> `ChromaEngine` pipeline `ChordEndToEndSyntheticTests` uses, but dumps
+the raw mid-clip chroma vector and `identifyTriad`'s winning (root, type, score) instead of just
+the final classification. This is the same "cheap, disposable measurement before conclusion"
+discipline as Phase 38's synthetic Platt self-test — build the smallest thing that can falsify a
+hypothesis, not the fix itself.
+
+**Finding: not leakage, not fragility — a real, structural scoring gap.** For a synthesized C
+dominant-7 (C-E-G-A#, pure sine tones, equal synthesis amplitude), the chroma at the true chord
+tones is `[0.4529, 0.4891, 0.5015, 0.4996]` (C, E, G, A# respectively) -- `identifyTriad`'s own
+0.4-per-tone-average threshold is comfortably cleared (avg 0.4858). The chroma vector is not
+corrupted or noisy in any qualitative sense. The failure is a scoring COMPETITION: dropping the
+chord's own root (C, the weakest of the four real tone values -- not by assumption, measured) and
+averaging only the remaining three (E, G, A#) yields 0.4967, higher than the true 4-note average,
+because those three already-strong bins are no longer diluted by the comparatively weaker root.
+`identifyTriad`'s pure `>` argmax has no mechanism to prefer a candidate that accounts for MORE of
+the chord's active energy — it picks whichever raw average is numerically larger, full stop. The
+winning wrong answer is `E diminished` (E-G-A#), a literal 3-of-4-note subset of the true chord.
+
+Verified this is the general mechanism, not a one-chord coincidence, by tracing all 12 roots: dom7
+fails 10/12, m7 10/12, m7b5 11/12, m6 10/12 -- every failure resolves to the same pattern, a
+subset/relative-chord candidate numerically outscoring the true chord. `maj7` is the one 4-note
+quality that passes 12/12 -- its own 3-note subsets (dropping the root yields a minor triad on the
+major third) never happen to outscore it in this synthesis, which is itself consistent with the
+mechanism (no subset always wins; it depends on which tone in a given chord shape happens to carry
+less real energy) rather than contradicting it.
+
+**This is not a new class of bug -- it's the SAME "relative-chord-superset" ambiguity
+`ChordScoringAmbiguityTests` already named and measured on idealized chroma (23 of that test's 31
+mismatches).** The only thing real audio changes is the margin: on idealized chroma (every chord
+tone exactly 1.0), a 4-note chord and its 3-note subset score an exact tie, and Phase 31's
+bass-note tie-break (`identifyTriad`'s `bassNote` parameter, `tieEpsilon = 0.001`) resolves it
+correctly. On real audio, chord-tone magnitudes are never bit-equal, so the subset doesn't tie the
+full chord — it wins outright, by a margin (0.0109 in the C7 example) that clears
+`tieEpsilon` by 10x, so the existing tie-break mechanism never fires. Same known ambiguity class,
+already-built partial mitigation, just not wide enough for real-world (non-ideal) margins.
+
+**Re-measured with the current codebase** (Phase 31's bass-note wiring already in place): 58/108
+(53.7%) end-to-end, 50 mismatches (9 augmented-symmetry, already-understood and unrelated; 41
+other, all attributable to this mechanism) -- a small drift from the 57/108 figure recorded when
+this item was first opened, plausibly downstream of Phase 31's own bass-note changes, not a new
+regression.
+
+### Status: root cause closed as a measurement, fix explicitly deferred by user decision
+
+Presented three candidate fixes, un-implemented, for a future turn:
+
+1. **Subset-preference rule** (most targeted, provisionally lowest-risk-LOOKING -- not yet
+   measured, see caveat below): when candidate B's chord-tone set is a literal subset of a
+   higher-scoring, threshold-clearing candidate A's set, prefer A. This is a NEW, separate
+   comparison (subset-containment between two already-fully-scored candidates), not a widening of
+   `identifyTriad`'s existing `tieEpsilon`/bass-note tie-break -- see the framing caveat below for
+   why that distinction is load-bearing, not cosmetic.
+2. **Explained-energy penalty** (more principled, more invasive): score candidates down for
+   strong, unmatched bins left over: rewards accounting for more of the observed chroma energy,
+   not just raw per-tone average. Needs new threshold/weight tuning, more surface area for
+   regression.
+3. **Bass note as primary signal, not tie-break**: `detectBassNote` is already computed before
+   `identifyTriad` runs; promote it from last-resort disambiguator to a search-order prior. Largest
+   behavior change, highest risk to already-locked chroma-only test numbers.
+
+**Explicitly not implemented this turn.** Any of these three changes `identifyTriad`'s scoring
+behavior, which `ChordScoringAmbiguityTests`' locked idealized-chroma numbers (31 mismatches) and
+this phase's own 58/108 real-audio baseline both depend on — changing it deserves its own turn,
+with its own before/after measurement on both suites, not a same-turn addendum to a root-cause
+investigation. The open item (Yapilacaklar madde 1) is updated to record the confirmed mechanism
+and these three options; it stays open pending a future decision on which (if any) to build.
+
+**Two framing constraints for whichever fix that future turn picks -- binding on the fix turn,
+fixed now so they can't be reached-for after seeing that turn's numbers:**
+
+1. **Closure evidence must be bidirectional, not one-sided.** "4-note accuracy went up" is not
+   sufficient proof on its own -- any of the three options above changes when a smaller candidate
+   is allowed to beat a larger one, which is exactly the mechanism that also protects genuine
+   3-note triads (major/minor/diminished) from being out-voted by a coincidentally-higher-scoring
+   *unrelated* 4-note candidate. The fix turn must re-run both `ChordEndToEndSyntheticTests` (all
+   108, not just the 4-note subset) AND `ChordScoringAmbiguityTests` (idealized-chroma, currently
+   31 locked mismatches) before/after, and report both directions -- gain on 4-note chords AND no
+   new loss on 3-note ones. This is the same shape of evidence Phase 15's graded-scoring fix used
+   (a fix in one direction proven not to break the other), not a new standard invented here.
+2. **The fix is a NEW comparison, not a wider tie-break -- do not implement it as raising
+   `tieEpsilon` or loosening the bass-note near-tie window.** The measured C7 case is not a tie:
+   E-diminished beats C7 by 0.0109, over 10x `tieEpsilon` (0.001). Widening the tolerance that
+   treats scores as "effectively equal" would also start treating GENUINELY DIFFERENT chords as
+   ties, corrupting real discrimination the current threshold correctly protects elsewhere (that
+   is precisely why `tieEpsilon` was set to a value tight enough to only catch float-precision
+   noise on idealized input, not real-world score gaps -- see this phase's own measurement that
+   0.0109 is a real, structural gap, not noise). Option 1 above must compare finished
+   candidate-vs-candidate results by subset-containment, a separate check from the score-distance
+   comparison `tieEpsilon` already does, not a parameter tweak to that existing comparison.
+
+---
+
+## Phase 41 (2026-09-02): permanent production-vs-isolated identity tests (item 8's light layer) — and a retraction they immediately earned their keep by finding
+
+Direct follow-up to Phase 39's closing observation: this session caught the same class of bug five
+separate times by hand (frame-0 snapshot, sample rate, onset function, mixdown, buffer sizing) --
+an isolated/validation pipeline silently diverging from what production's real code path does. Item
+8 (Yapilacaklar) proposed a permanent, automatic version of the comparison so this stops depending
+on someone remembering to check. Design, fixed before writing code: (1) depth = full output-identity
+per engine (Phase 39's wiring-check shape), not just sample-rate equality -- root-cause-agnostic, so
+it catches whichever of the five failure shapes recurs, not only the one item 8 was originally
+written against; (2) location = two layers, not one -- a heavy, real-audio `RA_*` diagnostic
+(release-time, not built this phase) and a light, synthetic-audio permanent XCTest (every `swift
+test`, built this phase); (3) CI wiring deliberately deferred to a separate turn, after both layers
+are proven to work locally -- connecting an unverified test to shared, every-push automation was
+explicitly rejected as the CI-shaped version of this session's core discipline (verify before
+trusting a result).
+
+### The light layer: `Tests/ProductionPipelineIdentityTests.swift`
+
+Three tests (Tempo, Key, Pitch), each a miniature of Phase 39's wiring check: synthesize a short
+clip (`SyntheticAudio`, no real audio files), run the REAL production entry point
+(`AudioIntelligence().analyze(url:)`) and an ISOLATED helper mirroring what
+`GoldenDatasetValidationTests` calls, on the literal same file, assert agreement. Per-metric
+tolerance derived from each field's own consumer-visible display precision (Tempo: 2 BPM, tighter
+than the 1-decimal display since production/isolated should be bit-identical; Key: exact string,
+categorical; Pitch: 1Hz, matching `MarkdownRenderer`'s display precision) -- not Phase 39's 0.005
+bound, which is specific to a percent-rounded 0..1 confidence and has no meaning here.
+
+**Verified all three tests actually catch something, not just pass by construction** (the standard
+this session held the AUC self-check to, Phase 38) -- and initially only did this for one of the
+three, which is itself worth recording. Injected Phase 36's real regression (isolated helper
+hardcoded to 22050Hz instead of native) into the Tempo test and confirmed it fails (120.19 vs.
+117.45 BPM, correctly over the 2.0 tolerance) before reverting to the clean, passing version. Key's
+version of this verification is stronger than an injected test: building it caught a REAL
+divergence on its first real run (below). Pitch, however, was first reported "passing" with NO
+catch-capability evidence at all -- a clean pass on a test that might just always pass regardless
+of input is not the same guarantee as Tempo's or Key's, and reporting all three as equally verified
+would have overclaimed. Caught on review (not by this session's own initiative) and closed the same
+way: injected the same 22050Hz-hardcode regression into Pitch's isolated helper, confirmed it fails
+(441.06Hz production vs. 440.0Hz isolated, over the 1.0Hz tolerance), reverted. All three tests now
+have the same standard of evidence behind them: each demonstrated catching a real, specific
+divergence, not merely "currently green."
+
+### The retraction: Key's isolated helper wasn't wrong — the method label was
+
+The first version of the Key test asserted production's key against `ModulationEngine.detectKey`
+(Krumhansl-Schmuckler), mirroring exactly what `GoldenDatasetValidationTests.
+testGiantStepsKeyTempoAccuracy`'s own comment claims ("this matches the real production key path").
+It failed: production "G", isolated "C Major", on an unambiguous synthetic C major clip. Traced
+before assuming either side was buggy (this session's standard, re-applied here rather than
+patching the test to pass): `AudioReportMapping.swift`'s `key = Estimated(a.tonality.key, ...,
+method: "Krumhansl-Schmuckler on high-res STFT chroma")` -- but `a.tonality.key` is
+`reduction.fundamentalNote` (`DNAReportBuilder.swift` ~819), NOT `detectKey`'s output.
+`ReductionEngine.reduce` (read in full, not inferred) computes something categorically different: a
+per-segment loudest-chroma-bin argmax ("segment tonic"), then a majority vote across segments
+(first/last segment weighted +1) -- no Krumhansl correlation anywhere in it, and no major/minor
+determination at all (`ChromaResult.noteNames[fundamentalBin]` is a bare note name). `detectKey` IS
+computed in `DNAReportBuilder` (`detectedGlobalKey`/`verticalKey`) but only feeds
+`TraditionalTheoryEngine.analyzeVertical`'s chord-function labeling -- confirmed by grep, exactly
+one `TonalMetrics(` construction site in the whole codebase, `key: reduction.fundamentalNote`, no
+other path to `Estimations.key`.
+
+**Why this is a bigger, categorically different finding than the other five** (per the user's
+framing, kept intact here): the other five were production running the CORRECT algorithm, measured
+at the wrong rate/via the wrong test function. This one is `report.estimations.key.value` --
+what a real caller actually receives -- coming from an algorithm that has NEVER been accuracy-
+validated against any ground truth, while the algorithm this project's own README/DEVLOG cites as
+"Key accuracy: 48.8% exact / 61.4% MIREX-weighted, N=599, GiantSteps" (Phase 17, Phase 36) measures
+a DIFFERENT algorithm that isn't wired to that field at all. Not a stale number — a live, currently-
+published accuracy claim attached to the wrong algorithm, discovered while building an unrelated
+permanent test.
+
+**Retracted immediately** (this session's established pattern -- correct the live false claim, not
+just log it for later):
+- `AudioReportMapping.swift`: `method` string corrected to accurately name `ReductionEngine`'s real
+  algorithm and explicitly state accuracy is unmeasured, with a comment explaining what was
+  previously claimed and why it was wrong.
+- `AudioReport.swift`: `key`'s doc comment previously showed `// e.g. "A minor"` -- a mode-qualified
+  example the actual value can never produce (the algorithm never determines mode). Corrected to a
+  bare-note example with an explanation.
+- `README.md`: added an explicit retraction note in the Validation Status preamble, and changed the
+  Key row from ✅ to ⚠️ with the same clarification -- the 48.8%/61.4% figures stay in the table
+  (they are real, reproducible numbers for `detectKey`) but are now correctly attributed, not
+  presented as the exposed field's accuracy.
+- Completed item 8's Key test against the REAL chain instead of `detectKey`: whole-track
+  STFT(8192)/`ChromaEngine` chroma + whole-track STFT(2048)/Mel/`MFCCEngine` MFCC ->
+  `StructureEngine.prepareFeatures`/`.boundaries` for segments -> `ReductionEngine.reduce`. Passes
+  (production and isolated agree exactly on the synthetic clip) -- item 8's Key sub-test is now
+  complete and tests what production actually exposes, not a plausible-sounding stand-in.
+
+### A second, smaller instance of the same pattern, found in passing
+
+Building the Pitch test surfaced `DNAReportBuilder.swift:829`:
+`PitchMetrics(meanF0: meanF0, medianF0: meanF0, ...)` -- the `medianF0` parameter is passed the
+track-wide MEAN variable, not a computed median (`PitchResult.medianF0`, a true median, exists at
+the per-chunk level but is never aggregated to the top level). `.medianF0` is currently a second
+copy of the mean. The Pitch test was written to match this actual current behavior (asserting
+against what `.medianF0` really holds), with a doc comment explaining why, rather than asserting
+against a true median and failing for an unrelated reason. Not fixed this phase -- scope kept to
+production-vs-isolated wiring parity; filed as its own item (below), same family as the Key finding
+but smaller (a field name promises something the value doesn't deliver, not a wrong-algorithm
+mismatch).
+
+### Two new open items, not this phase's to close
+
+1. **`ReductionEngine.fundamentalNote` accuracy has never been measured against any ground truth.**
+   Now that item 3's precedent (retract a live claim, then re-validate what's actually exposed) is
+   set, the natural next step is measuring this algorithm's real accuracy on GiantSteps -- but its
+   own design needs thought first (no major/minor output means the existing exact/MIREX-weighted
+   scoring can't apply as-is; likely bare-tonic-name agreement only). Deliberately not done this
+   phase -- keeps item 8 from expanding into an open-ended accuracy investigation.
+2. **`medianF0` mislabeling** (above) -- same "exposed field's real source doesn't match its name/
+   doc" family as the Key finding, smaller in scope. Worth checking whether
+   `AudioReportMapping`/`DNAReportBuilder`'s report-assembly layer has other instances of this
+   pattern, not just fixing this one field.
+
+### Status
+
+Item 8's light layer is built and now fully verified, all three tests to the same standard
+(demonstrated catching a real divergence, not just "currently passing"): injected-regression catch
+for Tempo and Pitch, a real catch for Key during construction. Per explicit decision, NOT yet wired
+into CI; that connection is a separate, later decision once confidence in the mechanism is fully
+established. The heavy, real-audio `RA_*` parity diagnostic (the other half of item 8's design) is
+not built this phase.
+
+**Pattern worth flagging for whenever item 8 is extended next**: this phase produced three
+instances of "an exposed field's real source doesn't match what its label/name/doc comment claims"
+(Key's `method` string, `medianF0`'s naming, and Phase 39's earlier "matches exactly" overclaim in
+`InstrumentCalibration.swift`). Three independent instances in the same report-assembly layer
+(`AudioReportMapping`/`DNAReportBuilder`) is enough to suspect a systematic gap, not a coincidence
+-- item 8's next extension is probably not just "does the test call what production calls" but also
+"does the exposed field's label match what actually computed it," as its own pass over that layer.
+Not scoped or started this phase.
+
+---
+
+## Phase 42 (2026-09-02): `ReductionEngine` vs `ModulationEngine.detectKey`, tonic-only, on real GiantSteps -- measured, and the plausible-sounding hypothesis didn't hold
+
+Direct follow-up to Phase 41's Key retraction: `report.estimations.key.value` (what production
+actually exposes) comes from `ReductionEngine.fundamentalNote`, never accuracy-validated; the
+algorithm this project's own numbers (Phase 17/36, 48.8%/61.4%) measure, `ModulationEngine.
+detectKey`, is computed but never reaches that field. Two questions, not one: how accurate is the
+exposed algorithm, and should the hidden one replace it?
+
+**Metric fixed before running, not after**: standard exact-match/MIREX-weighted key scoring is
+mode-sensitive, and `ReductionEngine` never determines major/minor (`fundamentalNote` is a bare
+pitch class) -- scoring it against mode-qualified ground truth with a mode-sensitive metric would
+fail on mode by construction and conflate "wrong tonic" with "no mode to be wrong about." Both
+algorithms scored TONIC-ONLY, mode ignored on both sides: exact pitch-class match, or a
+perfect-fifth-related tonic (the one MIREX partial-credit category that's itself mode-independent),
+else no credit. Not comparable to Phase 17/36's mode-inclusive numbers -- different question.
+
+**Measured each algorithm from the path Phase 41's own finding requires**: `ReductionEngine`'s side
+read from `AudioIntelligence().analyze(url:).estimations.key` -- production's REAL output, not an
+isolated call (an isolated `ReductionEngine` call was exactly the failure mode that produced the
+original false claim this phase follows up on). `detectKey` has no exposed path at all (confirmed
+in Phase 41), so it was necessarily computed via an isolated helper built to match
+`DNAReportBuilder`'s own internal computation exactly (same whole-track STFT(8192)/`ChromaEngine`
+chroma, native 44100Hz -- not the isolated-22050Hz mistake this project has made four separate
+times before). Cost measured directly before committing to a sample size: one full `analyze(url:)`
+call ≈ 50s (all 599 GiantSteps files would be hours) -- capped to 43 files (`GS_KEY_TONIC_LIMIT`),
+run ≈ 36 minutes.
+
+### Result: no meaningful difference, not the expected win for `detectKey`
+
+| algorithm | exact | fifth-weighted | exact count |
+| :-- | --: | --: | --: |
+| `ReductionEngine` (exposed) | 44.2% | 58.1% | 19/43 |
+| `ModulationEngine.detectKey` (hidden) | 46.5% | 60.5% | 20/43 |
+
+A 1-file difference in exact matches. Checked whether this is real before reporting a direction:
+paired (same 43 files, same ground truth) breakdown is 15 both-correct, 19 both-wrong, 4
+`ReductionEngine`-only-correct, 5 `detectKey`-only-correct -- 9 discordant pairs, an exact sign test
+on the discordant split gives p=1.0. **Not significant, not close.** The plausible-sounding
+hypothesis going in -- Krumhansl-Schmuckler correlation should be "richer" than a bare
+loudest-chroma-bin argmax and should therefore also pick the tonic better -- did not hold at this
+sample size. This is itself a real finding, not a null result to discard: a mechanistically
+reasonable expectation, tested, not confirmed. Whether it would separate at a larger N is unknown
+and not claimed either way -- 43 files is what the cost analysis above supports for this phase, not
+a claim of a definitively-tied population accuracy.
+
+**One asymmetry the tonic-only metric cannot see, and shouldn't be lost in the tie**: `detectKey`
+also determines mode; `ReductionEngine` categorically never can. Tonic accuracy being statistically
+indistinguishable does not mean the two algorithms are equally good choices for `key.value` --
+`detectKey` gives strictly more information (a consumer gets "C Major", not just "C") at no measured
+tonic-accuracy cost on this sample. That is a real argument for wiring `detectKey` into `key.value`
+instead, independent of the (tied) tonic race -- but it's a design/API-surface argument, not one
+this measurement itself proves quantitatively.
+
+### Status
+
+Item 9 is closed as a measurement: both candidate algorithms' tonic-only accuracy against real
+GiantSteps ground truth is now on record, using production's actual output path for the exposed
+one. **Not decided or implemented this phase**: whether to rewire `key.value` to `detectKey`. The
+tonic-accuracy case for doing so is weaker than expected (statistically tied, not a clear win); the
+mode-completeness case is real but separate from what was measured. That decision, and its
+downstream impact (report format, any consumer expecting a bare tonic), is left to a future,
+explicit turn -- consistent with treating an exposed-field/API change as its own decision, not a
+same-turn consequence of a measurement.
+
+---
+
+## Phase 43 (2026-09-02): `key.value` rewired to `detectKey` — item 11 implemented, not just measured
+
+Direct follow-up to Phase 42: tonic-only accuracy was statistically tied between the exposed
+algorithm (`ReductionEngine.fundamentalNote`) and the hidden one (`ModulationEngine.detectKey`),
+so item 11 (should `key.value` move to `detectKey`?) wasn't answerable from that measurement alone.
+Before implementing, four specific questions were closed, in order, each a real gate:
+
+1. **Is `detectKey`'s mode signal real or noise?** Computed from Phase 42's already-logged data
+   (no re-run needed): mode (major/minor) accuracy 86.0% (37/43) independent of tonic correctness,
+   and 95.0% (19/20) among clips where `detectKey`'s own tonic call was already right. Real,
+   substantial signal — the entire premise of wiring `detectKey` for its mode information holds.
+2. **Does `detectKey` see the same chroma production would wire it to in practice, or a different
+   one?** Read `DNAReportBuilder.swift` directly (not assumed): `detectKey`'s `meanChromaVec` and
+   `ReductionEngine.reduce`'s `chromagram:` argument are BOTH `fullChromagramBins` — same array,
+   three lines apart. Zero divergence risk from this rewiring — this session's six-times-repeated
+   trap (isolated helper silently sees different input than production) doesn't apply here because
+   there's no isolated helper on this side; `detectKey` was already running on production's real
+   chroma, just not surfaced. (Bonus behavioral cross-check: Phase 42's isolated `detectKey` full
+   exact-match on N=43 landed at 44.2%, close to Phase 36's independently-measured 48.8% on
+   N=599 — consistent with the isolated helper computing what production's internal call already
+   computes, not a coincidence.)
+3. **Would this break any real consumer?** Grepped every `.estimations.key`/`.key.value` site in
+   `Sources/`+`Examples/` (`AIBenchmark`, `CLIExample`, `SQAMAuditTool`): all three print or compare
+   the string as opaque data, none parse its structure (no length/space-count assumptions). No
+   breaking-change risk found.
+4. **Was the original wiring deliberate or an oversight?** `git log -S` on `DNAReportBuilder.swift`:
+   `key: reduction.fundamentalNote` was introduced 2026-04-20 (`8bb0f7e`), replacing a hardcoded
+   `"C Minor"` placeholder — `ReductionEngine` was the ONLY key mechanism in the codebase at that
+   moment. `ModulationEngine().detectKey` (as `detectedGlobalKey`) wasn't added until 2026-06-16
+   (`2432341`), ~2 months later, inside a broad, unrelated commit ("import Golden dataset with
+   manifest and update audio loading logic") — added specifically to fix `analyzeVertical`'s own
+   hardcoded `"C Major"` for chord-function labeling. The commit never touches `TonalMetrics`/
+   `Estimations`. Reads as an oversight (the public field was never revisited when a better
+   algorithm became available for an adjacent need), not a considered choice this change overrides.
+
+All four cleared. Implemented.
+
+### The change
+
+`ModulationEngine.swift`: `identifyKey` (private, string-only) became `identifyKeyWithConfidence`
+(private, returns `(key: String, confidence: Float)`) — `detectKey`'s existing public signature is
+unchanged (still just extracts `.key`, so every other call site, including
+`GoldenDatasetValidationTests` and this session's own parity tests, needed no changes) and a new
+public `detectKeyWithConfidence` exposes the winning candidate's own correlation strength. Chosen
+over leaving `keyConfidence` on `reduction.stabilityScore`: that would have re-created the exact
+bug class this whole arc started from — a value from one algorithm carrying a confidence that
+describes a different one.
+
+`DNAReportBuilder.swift`: `detectedGlobalKey` is now captured alongside its confidence
+(`detectKeyWithConfidence`, not `detectKey`), threaded through `assembleFinalDNA` as two new
+parameters, and `TonalMetrics(key:keyConfidence:...)` now reads from them instead of
+`reduction.fundamentalNote`/`reduction.stabilityScore`. Deliberately NOT touched:
+`strength`/`harmonicStability`/`tendency` stay on `reduction.stabilityScore` — those describe
+tonal-center CONSISTENCY across segments (`harmonicStability`'s own doc comment: "chroma variance
+score"), a genuinely different concept from confidence in the key label itself; only the field
+whose underlying algorithm changed needed its confidence source to move with it.
+
+`AudioReportMapping.swift` / `AudioReport.swift`: `method` string and the `key` doc comment's
+example flipped back to describing Krumhansl-Schmuckler / a mode-qualified example — both are true
+again now that the source moved back to `detectKey`. Comments on all three sites keep the full
+two-hop history (`ReductionEngine` originally → mislabeled as K-S → corrected label → now genuinely
+K-S again) rather than just the current state, since a future reader hitting this field cold
+deserves the why, not just a snapshot.
+
+### Closing evidence — verified the wiring, not just the chroma-input claim
+
+Gate #2 above showed the chroma INPUT is shared statically; that is not the same claim as "the
+public field's RUNTIME output now equals `detectKey`'s" — this session found real bugs exactly in
+that gap before (Phase 39's wiring check caught two). `Tests/ProductionPipelineIdentityTests.swift`'s
+Key test (item 8's parity test) was updated to assert against `detectKeyWithConfidence` instead of
+the old `ReductionEngine` chain (both the key string AND the confidence, since both were rewired) —
+this is the SAME test that failed the first time it asserted against `detectKey` (Phase 41, before
+the rewiring existed) and is now expected to pass because the wiring itself changed, not because
+the test was loosened. Ran clean: production and the isolated `ChromaEngine`+
+`ModulationEngine.detectKeyWithConfidence` pipeline agree exactly, key string and confidence, on
+the same synthetic clip.
+
+Also spot-checked on real audio (a different decode path than the synthetic-WAV parity test
+exercises): 5 real GiantSteps MP3s, comparing production's new `key.value` against the exact
+`detectKey` strings already logged in Phase 42's 43-file run for those same file IDs (not a
+re-measurement — a check that production's real output now equals what was already measured as
+"the hidden algorithm"). **5/5 matched exactly** (`F Minor`, `F Minor`, `D Major`, `F Minor`,
+`E Minor` — production's live output on each real file byte-for-byte equal to the isolated value
+logged hours earlier from the same chroma-computation logic). Throwaway test, deleted after use.
+
+### One more gate, caught on review: is `keyConfidence` calibrated?
+
+Newly exposing a confidence invites the exact question Phase 38 spent a whole item answering for
+`instruments` — is this number a probability-like, cross-comparable quantity, or a raw
+within-algorithm score? Checked directly, not assumed: `detectKeyWithConfidence`'s confidence is
+`max(0, min(1, maxCorr))` — the winning Krumhansl-Kessler correlation, clamped, with no
+Platt/isotonic fit against ground-truth accuracy anywhere in this change. **Raw, not calibrated.**
+`MetricWrappers.swift`'s `Estimated.confidence` doc comment already frames this correctly by
+default (only `instruments` is named as the calibrated exception; everything else, `key` included,
+is "not a probability guarantee, a relative score... not necessarily comparable across different
+metrics") — so no factual claim needed correcting here, unlike Phase 41's `method` label. But
+"technically already covered by the general default" isn't the same as "won't be misread" -- a
+future reader seeing a freshly-added confidence right after Phase 38's calibration work could
+reasonably assume the same treatment happened here. Made explicit rather than left implicit, in
+both places a reader would land on this value: `detectKeyWithConfidence`'s own doc comment
+(`ModulationEngine.swift`) and the `key` construction site (`AudioReportMapping.swift`) now both
+say directly "RAW, not calibrated like `instruments`" with the reasoning, not just a cross-
+reference to infer it from.
+
+### Status
+
+Item 11 is implemented, not just measured: `key.value`/`keyConfidence` now come from `detectKey`,
+verified end-to-end on both synthetic and real audio, with the four pre-implementation questions
+(mode-signal reality, chroma-path safety, consumer-breakage risk, deliberate-vs-oversight history)
+all closed with evidence rather than assumed -- plus a fifth question raised on review after
+implementation (is the newly-exposed confidence calibrated?), also closed with evidence (no, and
+now stated explicitly rather than left inferable). The arc from Phase 41's retraction to here:
+found a false claim → retracted it → measured both candidates properly → verified the fix was
+implementable safely → implemented it → verified the implementation itself, not just its
+precondition → verified the new field it added doesn't quietly imply something untrue either.
+README's Key row is ✅ again, and this time the number it shows is the accuracy of the algorithm
+actually wired to the field a caller reads.
+
+---
+
 > *"Measured, not claimed: AudioIntelligence reports what it can prove."*

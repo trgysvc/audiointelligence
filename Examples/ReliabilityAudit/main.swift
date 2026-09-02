@@ -13,6 +13,8 @@
 //     (any RA_*_LIMIT=0 means "use the full dataset" for that task)
 
 import Foundation
+import Accelerate
+import AVFoundation
 import AudioIntelligence
 import AudioIntelligenceCore
 import AudioIntelligenceMetal
@@ -129,6 +131,89 @@ func predictInstrumentFull(samples: [Float], sampleRate: Double) async -> Instru
 
 func predictInstrument(samples: [Float], sampleRate: Double) async -> String {
     await predictInstrumentFull(samples: samples, sampleRate: sampleRate).primaryLabel
+}
+
+/// Loads and mono-mixes EXACTLY like `DNAReportBuilder.swift`'s `analyticalChunk` construction
+/// (lines ~144-149): stereo loaded with per-channel resample (no downmix inside the converter),
+/// THEN an explicit `(L+R)*0.5` average via vDSP. `AudioLoader.load(url:, targetSampleRate:)`
+/// (used by `predictInstrumentBreakdown` below) does NOT do this -- it requests a 1-channel
+/// output format directly from `AVAudioConverter`, which downmixes stereo->mono INSIDE the
+/// conversion using its own (undocumented, not-necessarily-equal-average) algorithm. Found via
+/// the wiring identity check failing with small-but-real score differences that crossed isotonic
+/// block boundaries -- the earlier CPU-vs-GPU feature-path check was real and correct, but both
+/// sides of THAT comparison used `AudioLoader.load`'s converter-mixdown, so it could not have
+/// caught this: a genuinely different, previously-unverified divergence source (mono-downmix
+/// procedure, not compute backend). This is the loader every calibration fit/validate/identity
+/// function below now uses, so the fit matches what production's `analyticalChunk` actually
+/// computes, not an approximation of it.
+func predictInstrumentBreakdownProductionMix(url: URL, sampleRate: Double) async -> [InstrumentEngine.ScoreBreakdown]? {
+    // Uses `loadNextChunkStereoManual` directly (offset 0, frameCount = whole file) -- the EXACT
+    // low-level call `DNAReportBuilder` makes per-chunk -- not `AudioLoader.loadStereo`'s
+    // whole-file convenience wrapper. The wiring identity check found a residual (max 0.00038,
+    // concentrated entirely in the Platt classes -- isotonic's flat blocks absorb tiny
+    // differences unless they cross a boundary, Platt's smooth curve can't) even after fixing the
+    // mono-mixdown itself; `loadStereo`/`loadMulti` compute the output buffer's frame capacity
+    // from `totalFrames` while `loadNextChunkStereoManual` computes it from the just-read chunk
+    // buffer's actual `frameLength` -- for a short (~10s) file the two math out to the same
+    // number, but the codepaths differ, and this eliminates that difference at the source instead
+    // of accepting an unexplained residual.
+    guard let file = try? AVAudioFile(forReading: url) else { return nil }
+    guard let stereo = try? AudioLoader.loadNextChunkStereoManual(
+        file: file, offset: 0, frameCount: AVAudioFrameCount(file.length), targetSampleRate: sampleRate
+    ) else { return nil }
+    var samples = [Float](repeating: 0, count: stereo.left.count)
+    vDSP_vadd(stereo.left, 1, stereo.right, 1, &samples, 1, vDSP_Length(samples.count))
+    var halfScale: Float = 0.5
+    vDSP_vsmul(samples, 1, &halfScale, &samples, 1, vDSP_Length(samples.count))
+    return await predictInstrumentBreakdown(samples: samples, sampleRate: sampleRate)
+}
+
+/// GPU-backend mirror of `predictInstrumentBreakdown`, matching `DNAReportBuilder.swift`'s real
+/// `analyticalChunk` branch EXACTLY (same `metalEngine:` passed to STFT/Mel/MFCC/HPSS, same
+/// nFFT/hopLength/nMels/nMFCC/winHarm/winPerc/lowBand-cutoff) -- needed because the calibration
+/// fit used the CPU-only `predictInstrumentBreakdown`, and production computes every one of these
+/// features on GPU. Parameters matching is not the same as VALUES matching (this session's onset-
+/// function incident: same sample rate, different function, different numbers) -- this exists to
+/// measure that gap directly rather than assume "same params" means "same output."
+func predictInstrumentBreakdownGPU(samples: [Float], sampleRate: Double) async -> [InstrumentEngine.ScoreBreakdown] {
+    let stftEngine = STFTEngine(nFFT: 2048, hopLength: 512, sampleRate: sampleRate, metalEngine: sharedMetalEngine)
+    let stft = await stftEngine.analyze(samples)
+    let specRaw = SpectralEngine(sampleRate: sampleRate).analyze(stft: stft, samples: samples)
+    let spectral = AdvancedSpectralMetrics(
+        centroid: specRaw.centroidHz, rolloff: specRaw.rolloffHz, flatness: specRaw.flatness,
+        flux: specRaw.flux, skewness: specRaw.skewness, kurtosis: specRaw.kurtosis,
+        bandwidth: specRaw.bandwidthHz, zcr: specRaw.zcr, dynamicRange: specRaw.spectralCrestFactor,
+        rmsMean: specRaw.rmsMean, rmsMax: specRaw.rmsMax, brightnessDescription: "",
+        fullMagnitudes: []
+    )
+    let mel = MelSpectrogramEngine(stftEngine: stftEngine, nMels: 128, metalEngine: sharedMetalEngine)
+    let mfccEngine = MFCCEngine(melEngine: mel, nMFCC: 20, metalEngine: sharedMetalEngine)
+    let mfcc = await mfccEngine.createMFCC(from: samples)
+    let lowBand = DSPHelpers.lowBandEnergyRatio(stft: stft, cutoffHz: 250)
+    let hpss = HPSSEngine(winHarm: 31, winPerc: 31, metalEngine: sharedMetalEngine).analyze(stft: stft)
+    return InstrumentEngine().predictWithBreakdown(spectral: spectral, mfcc: Array(mfcc.mfcc.prefix(10)), lowBandEnergyRatio: lowBand, percussiveEnergyRatio: hpss.percussiveEnergyRatio)
+}
+
+/// Isolated-path raw score breakdown, UNthresholded (every profile's score regardless of the
+/// 0.3 inclusion cutoff) -- needed for the Phase 37 calibration pre-check, which must see scores
+/// that never crossed 0.3 too, not just the ones `predictInstrumentFull` would include.
+func predictInstrumentBreakdown(samples: [Float], sampleRate: Double) async -> [InstrumentEngine.ScoreBreakdown] {
+    let stftEngine = STFTEngine(nFFT: 2048, hopLength: 512, sampleRate: sampleRate)
+    let stft = await stftEngine.analyze(samples)
+    let specRaw = SpectralEngine(sampleRate: sampleRate).analyze(stft: stft, samples: samples)
+    let spectral = AdvancedSpectralMetrics(
+        centroid: specRaw.centroidHz, rolloff: specRaw.rolloffHz, flatness: specRaw.flatness,
+        flux: specRaw.flux, skewness: specRaw.skewness, kurtosis: specRaw.kurtosis,
+        bandwidth: specRaw.bandwidthHz, zcr: specRaw.zcr, dynamicRange: specRaw.spectralCrestFactor,
+        rmsMean: specRaw.rmsMean, rmsMax: specRaw.rmsMax, brightnessDescription: "",
+        fullMagnitudes: []
+    )
+    let mel = MelSpectrogramEngine(stftEngine: stftEngine, nMels: 128)
+    let mfccEngine = MFCCEngine(melEngine: mel, nMFCC: 20)
+    let mfcc = await mfccEngine.createMFCC(from: samples)
+    let lowBand = DSPHelpers.lowBandEnergyRatio(stft: stft, cutoffHz: 250)
+    let hpss = HPSSEngine(winHarm: 31, winPerc: 31, metalEngine: sharedMetalEngine).analyze(stft: stft)
+    return InstrumentEngine().predictWithBreakdown(spectral: spectral, mfcc: Array(mfcc.mfcc.prefix(10)), lowBandEnergyRatio: lowBand, percussiveEnergyRatio: hpss.percussiveEnergyRatio)
 }
 
 /// Cheap discriminator for the production-vs-isolated divergence found by
@@ -1245,6 +1330,827 @@ func runInstrumentMultiLabelF1(root: String) async {
     print("  This F1 is measured on the ISOLATED path -- a documented proxy for production, backed by Phase 37 Step A's per-class agreement (all 6 classes >=85%, see DEVLOG).")
 }
 
+/// Pre-check for DEVLOG item 3 (multi-label threshold recalibration), run BEFORE any calibration
+/// fitting: does each coarse class's raw (unthresholded) score actually carry monotonic
+/// discriminating information, or is precision flat across the score range for some class? If
+/// flat, no monotonic recalibration (Platt/isotonic/temperature scaling) can fix that class --
+/// the defect would be the profile itself (a madde 4/5-type problem), and calibrating over it
+/// would just relabel the same bad signal with false confidence. Uses ONLY OpenMIC's official
+/// TRAIN partition (`split01_train.csv`) -- this function has no access to `split01_test.csv` at
+/// all, by construction, so it cannot leak into the held-out set the actual F1 was measured on.
+///
+/// Reports, per class: an AUC (Mann-Whitney U / rank-sum form -- the probability a random true
+/// positive scores higher than a random true negative; 0.5 = no discriminating power, 1.0 =
+/// perfect separation) and a 10-bin reliability table (score range, n, empirical precision per
+/// bin) for visual confirmation that precision actually climbs with score.
+func runInstrumentReliabilityPrecheck(root: String) async {
+    // The first unbounded run over all 14,915 train clips was SIGKILLed by the OS (exit 137,
+    // OOM) -- same failure class documented for the full-OpenMIC-corpus run in DEVLOG. Bounded
+    // to a large-but-safe evenly-thinned sample instead (matches that established mitigation).
+    // Unbuffered stdout so a future kill (OOM or otherwise) can't lose progress output again --
+    // an earlier background-process loss taught this the hard way (DEVLOG).
+    setvbuf(stdout, nil, _IONBF, 0)
+    let coarseClasses = ["Piano/Keyboard", "Bass (Acoustic/Electric)", "Brass/Trumpet",
+                          "Vocals/Chorus", "Drums/Percussion", "Strings/Synth"]
+    let base = URL(fileURLWithPath: root).resolvingSymlinksInPath()
+    let csvURL = base.appendingPathComponent("openmic-2018-aggregated-labels.csv")
+    let trainURL = base.appendingPathComponent("partitions/split01_train.csv")
+    guard let csv = try? String(contentsOf: csvURL, encoding: .utf8),
+          let trainList = try? String(contentsOf: trainURL, encoding: .utf8) else {
+        print("ERROR: could not read OpenMIC CSVs"); return
+    }
+    // TRAIN ONLY -- split01_test.csv is never read anywhere in this function.
+    let allTrainKeys = trainList.split(separator: "\n").map(String.init)
+    let limit = envLimit("RA_INSTRUMENT_RELIABILITY_LIMIT", default: 5000)
+    let trainKeys = Set(thinned(allTrainKeys, limit: limit))
+    print("Scanning \(trainKeys.count) of \(allTrainKeys.count) train clips (evenly thinned, RA_INSTRUMENT_RELIABILITY_LIMIT to change).")
+
+    var known: [String: Set<String>] = [:]
+    var positiveFine: [String: Set<String>] = [:]
+    for line in csv.split(separator: "\n").dropFirst() {
+        let cols = line.split(separator: ",")
+        guard cols.count >= 3, let relevance = Double(cols[2]) else { continue }
+        let key = String(cols[0]), inst = String(cols[1])
+        guard trainKeys.contains(key) else { continue }
+        known[key, default: []].insert(inst)
+        if relevance >= 0.5 { positiveFine[key, default: []].insert(inst) }
+    }
+
+    var relevantFine: [String: [String]] = [:]
+    for (fine, coarses) in openmicToCoarse {
+        for c in coarses { relevantFine[c, default: []].append(fine) }
+    }
+    enum Truth { case positive, negative, unknown }
+    func truth(coarse: String, clip: String) -> Truth {
+        let rel = relevantFine[coarse] ?? []
+        if rel.contains(where: { (positiveFine[clip] ?? []).contains($0) }) { return .positive }
+        if rel.contains(where: { (known[clip] ?? []).contains($0) }) { return .negative }
+        return .unknown
+    }
+
+    // Per-class (score, isPositive) pairs, collected once per clip (one predictWithBreakdown
+    // call gives all 6 classes' scores at once).
+    var samples: [String: [(score: Float, positive: Bool)]] = [:]
+    for c in coarseClasses { samples[c] = [] }
+
+    let keys = trainKeys.sorted()
+    var evaluated = 0
+    for key in keys {
+        guard coarseClasses.contains(where: { truth(coarse: $0, clip: key) != .unknown }) else { continue }
+        let prefix = String(key.prefix(3))
+        let audioURL = base.appendingPathComponent("audio/\(prefix)/\(key).ogg")
+        guard FileManager.default.fileExists(atPath: audioURL.path) else { continue }
+        guard let buf = try? await AudioLoader.load(url: audioURL, targetSampleRate: 22050) else { continue }
+        let breakdown = await predictInstrumentBreakdown(samples: buf.samples, sampleRate: 22050)
+        var scoreByLabel: [String: Float] = [:]
+        for b in breakdown { scoreByLabel[b.label] = b.total }
+        evaluated += 1
+        for c in coarseClasses {
+            let t = truth(coarse: c, clip: key)
+            guard t != .unknown, let s = scoreByLabel[c] else { continue }
+            samples[c]!.append((score: s, positive: t == .positive))
+        }
+        if evaluated % 1000 == 0 { print("  ... \(evaluated) train clips scored (\(key))") }
+    }
+
+    guard evaluated > 0 else { print("no files evaluated"); return }
+    print("\n=== Instrument threshold-recalibration pre-check: is each class's raw score monotonic with true precision? (TRAIN partition only, \(evaluated) clips, NEVER touches split01_test.csv) ===")
+
+    func auc(_ pairs: [(score: Float, positive: Bool)]) -> (auc: Double, nPos: Int, nNeg: Int) {
+        let pos = pairs.filter { $0.positive }.map { $0.score }
+        let neg = pairs.filter { !$0.positive }.map { $0.score }
+        guard !pos.isEmpty, !neg.isEmpty else { return (Double.nan, pos.count, neg.count) }
+        // Rank-sum (Mann-Whitney U) form of AUC: average, over all (pos,neg) pairs, of
+        // 1 if pos>neg, 0.5 if tied, 0 if pos<neg.
+        let sortedAll = (pos.map { ($0, true) } + neg.map { ($0, false) }).sorted { $0.0 < $1.0 }
+        var ranks = [Double](repeating: 0, count: sortedAll.count)
+        var i = 0
+        while i < sortedAll.count {
+            var j = i
+            while j + 1 < sortedAll.count && sortedAll[j + 1].0 == sortedAll[i].0 { j += 1 }
+            let avgRank = Double(i + j) / 2.0 + 1.0
+            for k in i...j { ranks[k] = avgRank }
+            i = j + 1
+        }
+        var rankSumPos = 0.0
+        for (idx, (_, isPos)) in sortedAll.enumerated() where isPos { rankSumPos += ranks[idx] }
+        let n1 = Double(pos.count), n2 = Double(neg.count)
+        let u = rankSumPos - n1 * (n1 + 1) / 2
+        return (u / (n1 * n2), pos.count, neg.count)
+    }
+
+    for c in coarseClasses {
+        let pairs = samples[c] ?? []
+        let (aucVal, nPos, nNeg) = auc(pairs)
+        let verdict = aucVal.isNaN ? "N/A (insufficient data)" : (aucVal >= 0.65 ? "MONOTONIC -- calibration-amenable" : (aucVal >= 0.55 ? "WEAK -- marginal, inspect table" : "FLAT -- score carries little/no discriminating info; this is a PROFILE problem, not fixable by calibration"))
+        print("\n  [\(c)] n=\(pairs.count) (pos=\(nPos) neg=\(nNeg))  AUC=\(aucVal.isNaN ? "N/A" : String(format: "%.3f", aucVal))  -- \(verdict)")
+        guard pairs.count >= 20 else { print("    (too few samples for a reliability table)"); continue }
+        let sorted = pairs.sorted { $0.score < $1.score }
+        let nBins = 10
+        let binSize = max(1, sorted.count / nBins)
+        var idx = 0
+        var binNum = 1
+        while idx < sorted.count {
+            let end = min(idx + binSize, sorted.count)
+            let bin = sorted[idx..<end]
+            let n = bin.count
+            let hits = bin.filter { $0.positive }.count
+            let prec = Double(hits) / Double(n) * 100
+            let scoreLo = bin.first!.score, scoreHi = bin.last!.score
+            print(String(format: "    bin %2d: score[%6.3f, %6.3f]  n=%4d  precision=%.1f%%", binNum, scoreLo, scoreHi, n, prec))
+            idx = end
+            binNum += 1
+        }
+    }
+}
+
+// MARK: - Instrument multi-label threshold recalibration (DEVLOG item 3)
+
+/// Platt scaling: `P(y=1|score) = 1 / (1 + exp(A*score + B))`, fit by Newton's method (2
+/// parameters, converges in a handful of iterations) with Platt's own target-smoothing
+/// (`(n_pos+1)/(n_pos+2)` / `1/(n_neg+2)` instead of raw 0/1 labels) to avoid the fit collapsing
+/// onto perfectly-separable regions of a small sample.
+struct PlattModel { let A: Double, B: Double
+    func predict(_ score: Double) -> Double { 1.0 / (1.0 + exp(A * score + B)) }
+}
+
+/// Fits by damped, L2-regularized Newton's method. Plain unregularized Newton on this data
+/// diverged (verified, not assumed): Bass and Vocals -- both small (n=440/407) and moderately
+/// separable (raw AUC 0.71/0.83) -- pushed the fit toward p≈0/p≈1 for most points, collapsing
+/// `w = p(1-p)` toward zero, making the Hessian near-singular and the raw Newton step explode,
+/// landing on a sign-flipped A that INVERTED the calibrated confidence (held-out AUC dropped to
+/// 0.35/0.28 -- below chance, not just imprecise). A small ridge term keeps the Hessian
+/// bounded away from singular; backtracking line search keeps each step from overshooting even
+/// when the (regularized) Newton direction is still large. Both are standard fixes for exactly
+/// this quasi-separable-small-sample failure mode.
+func fitPlatt(_ pairs: [(score: Double, positive: Bool)]) -> PlattModel {
+    let nPos = pairs.filter { $0.positive }.count
+    let nNeg = pairs.count - nPos
+    let hiTarget = Double(nPos + 1) / Double(nPos + 2)
+    let loTarget = 1.0 / Double(nNeg + 2)
+    let lambda = 1e-2 // L2 ridge on (A,B)
+
+    // With p = 1/(1+exp(z)): log(p) = -softplus(z), log(1-p) = z - softplus(z), so
+    // NLL_i = -[t*log(p) + (1-t)*log(1-p)] = softplus(z) - (1-t)*z. (Verified by hand --
+    // an earlier version of this that tried to inline-simplify the same expression had the
+    // (1-t)*z terms cancel out entirely, silently dropping real information from the loss.)
+    func negLogLik(_ A: Double, _ B: Double) -> Double {
+        var nll = 0.0
+        for p in pairs {
+            let z = A * p.score + B
+            let t = p.positive ? hiTarget : loTarget
+            let softplus = z > 30 ? z : log1p(exp(z))
+            nll += softplus - (1 - t) * z
+        }
+        return nll + 0.5 * lambda * (A * A + B * B)
+    }
+
+    var A = 0.0
+    var B = log(Double(nNeg + 1) / Double(nPos + 1))
+    var loss = negLogLik(A, B)
+    for _ in 0..<100 {
+        var gA = lambda * A, gB = lambda * B
+        var hAA = lambda, hAB = 0.0, hBB = lambda
+        for p in pairs {
+            let z = A * p.score + B
+            let pr = 1.0 / (1.0 + exp(z))
+            let t = p.positive ? hiTarget : loTarget
+            // d(loss)/dz = t - pr (verified by hand from softplus(z) - (1-t)*z; the previous
+            // version used `pr - t`, the flipped sign, which drove Newton's step in the wrong
+            // direction entirely -- see the fitPlatt doc comment for how that surfaced).
+            let diff = t - pr
+            gA += diff * p.score
+            gB += diff
+            let w = pr * (1 - pr)
+            hAA += w * p.score * p.score
+            hAB += w * p.score
+            hBB += w
+        }
+        let det = hAA * hBB - hAB * hAB
+        guard abs(det) > 1e-12 else { break }
+        var dA = (hBB * gA - hAB * gB) / det
+        var dB = (hAA * gB - hAB * gA) / det
+
+        // Backtracking line search: halve the step until the (regularized) loss actually drops.
+        var newLoss = negLogLik(A - dA, B - dB)
+        var backtracks = 0
+        while newLoss > loss && backtracks < 30 {
+            dA /= 2; dB /= 2
+            newLoss = negLogLik(A - dA, B - dB)
+            backtracks += 1
+        }
+        guard newLoss <= loss else { break } // no improving step found -- stop, keep last-good params
+        A -= dA; B -= dB; loss = newLoss
+        if abs(dA) < 1e-9 && abs(dB) < 1e-9 { break }
+    }
+    return PlattModel(A: A, B: B)
+}
+
+/// Isotonic regression via pool-adjacent-violators (PAVA): a free-form non-decreasing step
+/// function, chosen (per DEVLOG item 3's design) for the larger classes where Strings/Synth's
+/// climb-then-plateau shape doesn't fit Platt's sigmoid assumption well, and where sample size
+/// makes isotonic's extra flexibility low-risk rather than overfitting.
+struct IsotonicModel {
+    let blocks: [(xMin: Double, xMax: Double, y: Double)] // ascending xMin, non-decreasing y
+    func predict(_ score: Double) -> Double {
+        guard let first = blocks.first, let last = blocks.last else { return 0.5 }
+        if score <= first.xMin { return first.y }
+        if score >= last.xMax { return last.y }
+        for b in blocks where score <= b.xMax { return b.y }
+        return last.y
+    }
+}
+
+func fitIsotonic(_ pairs: [(score: Double, positive: Bool)]) -> IsotonicModel {
+    let sorted = pairs.sorted { $0.score < $1.score }
+    var blocks: [(sumY: Double, weight: Double, xMin: Double, xMax: Double)] = []
+    for p in sorted {
+        blocks.append((sumY: p.positive ? 1 : 0, weight: 1, xMin: p.score, xMax: p.score))
+        while blocks.count >= 2 {
+            let last = blocks[blocks.count - 1], prev = blocks[blocks.count - 2]
+            if prev.sumY / prev.weight > last.sumY / last.weight {
+                let merged = (sumY: prev.sumY + last.sumY, weight: prev.weight + last.weight, xMin: prev.xMin, xMax: last.xMax)
+                blocks.removeLast(2); blocks.append(merged)
+            } else { break }
+        }
+    }
+    return IsotonicModel(blocks: blocks.map { (xMin: $0.xMin, xMax: $0.xMax, y: $0.sumY / $0.weight) })
+}
+
+enum CalibModel {
+    case platt(PlattModel), isotonic(IsotonicModel)
+    var name: String { switch self { case .platt: return "Platt"; case .isotonic: return "isotonic" } }
+    func predict(_ score: Double) -> Double {
+        switch self {
+        case .platt(let m): return m.predict(score)
+        case .isotonic(let m): return m.predict(score)
+        }
+    }
+}
+
+func computeECE(_ pairs: [(conf: Double, positive: Bool)], bins: Int = 10) -> Double {
+    guard !pairs.isEmpty else { return Double.nan }
+    var binConfSum = [Double](repeating: 0, count: bins)
+    var binCount = [Int](repeating: 0, count: bins)
+    var binHits = [Int](repeating: 0, count: bins)
+    for p in pairs {
+        let b = min(bins - 1, max(0, Int(p.conf * Double(bins))))
+        binConfSum[b] += p.conf; binCount[b] += 1
+        if p.positive { binHits[b] += 1 }
+    }
+    var ece = 0.0
+    for b in 0..<bins where binCount[b] > 0 {
+        let avgConf = binConfSum[b] / Double(binCount[b])
+        let prec = Double(binHits[b]) / Double(binCount[b])
+        ece += Double(binCount[b]) / Double(pairs.count) * abs(avgConf - prec)
+    }
+    return ece
+}
+
+func aucOf(_ pairs: [(score: Double, positive: Bool)]) -> Double {
+    let pos = pairs.filter { $0.positive }, neg = pairs.filter { !$0.positive }
+    guard !pos.isEmpty, !neg.isEmpty else { return Double.nan }
+    let sortedAll = (pos.map { ($0.score, true) } + neg.map { ($0.score, false) }).sorted { $0.0 < $1.0 }
+    var ranks = [Double](repeating: 0, count: sortedAll.count)
+    var i = 0
+    while i < sortedAll.count {
+        var j = i
+        while j + 1 < sortedAll.count && sortedAll[j + 1].0 == sortedAll[i].0 { j += 1 }
+        let avgRank = Double(i + j) / 2.0 + 1.0
+        for k in i...j { ranks[k] = avgRank }
+        i = j + 1
+    }
+    var rankSumPos = 0.0
+    for (idx, (_, isPos)) in sortedAll.enumerated() where isPos { rankSumPos += ranks[idx] }
+    let n1 = Double(pos.count), n2 = Double(neg.count)
+    return (rankSumPos - n1 * (n1 + 1) / 2) / (n1 * n2)
+}
+
+/// Fits + validates per-class confidence calibration for `InstrumentEngine`'s multi-label output
+/// (DEVLOG item 3 / Phase 37 follow-up). Design fixed BEFORE this ran, per the pre-check's
+/// findings: method chosen by train sample size (n<600 -> Platt, robust on small classes
+/// Bass/Vocals; n>=600 -> isotonic, flexible enough for Strings/Synth's climb-then-plateau shape
+/// that a sigmoid would misfit). Fit uses ONLY `split01_train.csv` (bounded, same OOM-safe
+/// thinning as the pre-check); `split01_test.csv` is read in a SEPARATE code block below, only
+/// for validation, never passed to `fitPlatt`/`fitIsotonic`.
+///
+/// Reports two DIFFERENT closing metrics on purpose, not one: (1) ECE per class, train vs.
+/// held-out (large gap = overfit, esp. watch Bass/Vocals, the small classes) -- this measures
+/// whether confidence became HONEST. (2) cross-class precision at confidence~=0.6 on held-out,
+/// before vs. after calibration -- this measures whether the actual goal (comparable confidence
+/// across classes) was achieved. Also reports AUC before/after per class as a sanity check --
+/// calibration is a monotonic transform, so AUC should not move (a real change signals a bug).
+/// Strings/Synth is EXPECTED to end up "honest but low-ceiling" (ECE improves, but its
+/// precision-at-confidence never reaches Vocals/Drums' level) -- that is calibration succeeding
+/// at its actual job, not a shortfall; raising that ceiling is a `InstrumentEngine` profile-
+/// quality question (open item 5), out of scope here.
+func runInstrumentThresholdCalibration(root: String) async {
+    setvbuf(stdout, nil, _IONBF, 0)
+    let coarseClasses = ["Piano/Keyboard", "Bass (Acoustic/Electric)", "Brass/Trumpet",
+                          "Vocals/Chorus", "Drums/Percussion", "Strings/Synth"]
+    let base = URL(fileURLWithPath: root).resolvingSymlinksInPath()
+    let csvURL = base.appendingPathComponent("openmic-2018-aggregated-labels.csv")
+    guard let csv = try? String(contentsOf: csvURL, encoding: .utf8) else {
+        print("ERROR: could not read OpenMIC CSVs"); return
+    }
+    var relevantFine: [String: [String]] = [:]
+    for (fine, coarses) in openmicToCoarse { for c in coarses { relevantFine[c, default: []].append(fine) } }
+    enum Truth { case positive, negative, unknown }
+
+    func collect(keys keySet: Set<String>) async -> [String: [(score: Double, positive: Bool)]] {
+        var known: [String: Set<String>] = [:]
+        var positiveFine: [String: Set<String>] = [:]
+        for line in csv.split(separator: "\n").dropFirst() {
+            let cols = line.split(separator: ",")
+            guard cols.count >= 3, let relevance = Double(cols[2]) else { continue }
+            let key = String(cols[0]), inst = String(cols[1])
+            guard keySet.contains(key) else { continue }
+            known[key, default: []].insert(inst)
+            if relevance >= 0.5 { positiveFine[key, default: []].insert(inst) }
+        }
+        func truth(coarse: String, clip: String) -> Truth {
+            let rel = relevantFine[coarse] ?? []
+            if rel.contains(where: { (positiveFine[clip] ?? []).contains($0) }) { return .positive }
+            if rel.contains(where: { (known[clip] ?? []).contains($0) }) { return .negative }
+            return .unknown
+        }
+        var out: [String: [(score: Double, positive: Bool)]] = [:]
+        for c in coarseClasses { out[c] = [] }
+        var evaluated = 0
+        for key in keySet.sorted() {
+            guard coarseClasses.contains(where: { truth(coarse: $0, clip: key) != .unknown }) else { continue }
+            let prefix = String(key.prefix(3))
+            let audioURL = base.appendingPathComponent("audio/\(prefix)/\(key).ogg")
+            guard FileManager.default.fileExists(atPath: audioURL.path) else { continue }
+            guard let breakdown = await predictInstrumentBreakdownProductionMix(url: audioURL, sampleRate: 22050) else { continue }
+            var scoreByLabel: [String: Float] = [:]
+            for b in breakdown { scoreByLabel[b.label] = b.total }
+            evaluated += 1
+            for c in coarseClasses {
+                let t = truth(coarse: c, clip: key)
+                guard t != .unknown, let s = scoreByLabel[c] else { continue }
+                out[c]!.append((score: Double(s), positive: t == .positive))
+            }
+            if evaluated % 1000 == 0 { print("  ... \(evaluated) clips scored") }
+        }
+        return out
+    }
+
+    // ---- FIT: train partition only, bounded (same OOM-safe limit as the pre-check) ----
+    let trainURL = base.appendingPathComponent("partitions/split01_train.csv")
+    guard let trainList = try? String(contentsOf: trainURL, encoding: .utf8) else {
+        print("ERROR: could not read split01_train.csv"); return
+    }
+    let allTrainKeys = trainList.split(separator: "\n").map(String.init)
+    let limit = envLimit("RA_INSTRUMENT_CALIBRATION_LIMIT", default: 5000)
+    let trainKeys = Set(thinned(allTrainKeys, limit: limit))
+    print("=== Fitting calibration on \(trainKeys.count) of \(allTrainKeys.count) TRAIN clips (split01_test.csv not read in this block) ===")
+    let trainSamples = await collect(keys: trainKeys)
+
+    var models: [String: CalibModel] = [:]
+    for c in coarseClasses {
+        let pairs = trainSamples[c] ?? []
+        let n = pairs.count
+        let model: CalibModel = n < 600 ? .platt(fitPlatt(pairs)) : .isotonic(fitIsotonic(pairs))
+        models[c] = model
+        let rawTrainECE = computeECE(pairs.map { (conf: $0.score, positive: $0.positive) })
+        let calTrainPairs = pairs.map { (conf: model.predict($0.score), positive: $0.positive) }
+        let calTrainECE = computeECE(calTrainPairs)
+        // Self-check, on train, BEFORE the expensive held-out run: calibration is a monotonic
+        // transform, so AUC must not move (beyond isotonic's expected small tie-collapse
+        // effect). A large drop here means the fit itself is broken (e.g. Platt's Newton step
+        // diverging on a small/separable class) -- catch that now, not after re-running held-out.
+        let aucRawTrain = aucOf(pairs)
+        let aucCalTrain = aucOf(pairs.map { (score: model.predict($0.score), positive: $0.positive) })
+        let selfCheck = (aucCalTrain - aucRawTrain).magnitude > 0.05 ? "  <-- SELF-CHECK FAILED: AUC moved by more than 0.05, fit is likely broken for this class" : ""
+        print(String(format: "  [%@] n=%d -> %@  |  train ECE raw=%.3f -> calibrated=%.3f  |  train AUC raw=%.3f cal=%.3f%@", c, n, model.name, rawTrainECE, calTrainECE, aucRawTrain, aucCalTrain, selfCheck))
+    }
+
+    // ---- VALIDATE: held-out test partition only, never used above ----
+    let testURL = base.appendingPathComponent("partitions/split01_test.csv")
+    guard let testList = try? String(contentsOf: testURL, encoding: .utf8) else {
+        print("ERROR: could not read split01_test.csv"); return
+    }
+    let testKeys = Set(testList.split(separator: "\n").map(String.init))
+    print("\n=== Validating on \(testKeys.count) HELD-OUT clips (fit above never saw this partition) ===")
+    let heldOutSamples = await collect(keys: testKeys)
+
+    // This is the CLOSING evidence (full held-out sample per class, hundreds-to-thousands of
+    // points, not a single low-n bin): raw-score ECE vs. calibrated ECE, same held-out partition,
+    // same clips -- a true before/after, unlike the single-confidence-point table below which
+    // remaps which clips even fall in the window. Cross-class ECE SPREAD (max-min across the 6
+    // classes) answers the actual question item 3 was about: is confidence comparable across
+    // classes now, measured over each class's whole calibration curve, not one noisy point.
+    print("\n=== CLOSING EVIDENCE: per-class ECE, raw vs. calibrated, same held-out partition (full n, not a single bin) ===")
+    var rawECEs: [Double] = [], calECEs: [Double] = []
+    for c in coarseClasses {
+        let raw = heldOutSamples[c] ?? []
+        guard let model = models[c], !raw.isEmpty else { continue }
+        let calibrated = raw.map { (conf: model.predict($0.score), positive: $0.positive) }
+        let aucRaw = aucOf(raw)
+        let aucCal = aucOf(raw.map { (score: model.predict($0.score), positive: $0.positive) })
+        let trainECE = computeECE((trainSamples[c] ?? []).map { (conf: model.predict($0.score), positive: $0.positive) })
+        let rawHeldOutECE = computeECE(raw.map { (conf: $0.score, positive: $0.positive) })
+        let calHeldOutECE = computeECE(calibrated)
+        rawECEs.append(rawHeldOutECE); calECEs.append(calHeldOutECE)
+        let overfitFlag = calHeldOutECE > trainECE + 0.05 ? "  <-- WATCH: held-out ECE notably worse than train, possible overfit" : ""
+        print(String(format: "  [%@] n=%d  AUC raw=%.3f cal=%.3f (should match)  |  ECE raw=%.3f -> calibrated=%.3f (train was %.3f)%@",
+                      c, raw.count, aucRaw, aucCal, rawHeldOutECE, calHeldOutECE, trainECE, overfitFlag))
+    }
+    if rawECEs.count >= 2 && calECEs.count >= 2 {
+        let rawSpread = rawECEs.max()! - rawECEs.min()!
+        let calSpread = calECEs.max()! - calECEs.min()!
+        print(String(format: "\n  Cross-class ECE spread (max-min across all 6 classes, held-out, full n): raw=%.3f -> calibrated=%.3f", rawSpread, calSpread))
+        print("  This is the item-3 closing metric: is confidence comparable across classes, measured over each class's full curve.")
+    }
+
+    func precisionInWindow(_ pairs: [(conf: Double, positive: Bool)], lo: Double, hi: Double) -> (n: Int, prec: Double) {
+        let inWindow = pairs.filter { $0.conf >= lo && $0.conf < hi }
+        guard !inWindow.isEmpty else { return (0, Double.nan) }
+        let hits = inWindow.filter { $0.positive }.count
+        return (inWindow.count, Double(hits) / Double(inWindow.count) * 100)
+    }
+
+    print("\n=== ILLUSTRATION ONLY, not closing evidence -- single-point cross-class precision at confidence in [0.55, 0.65), held-out ===")
+    print("(small per-class n here, esp. after calibration remaps which clips fall in this window -- see the ECE spread above for the real evidence)")
+    var beforeVals: [Double] = [], afterVals: [Double] = []
+    for c in coarseClasses {
+        guard let model = models[c], let raw = heldOutSamples[c] else { continue }
+        let before = precisionInWindow(raw.map { (conf: $0.score, positive: $0.positive) }, lo: 0.55, hi: 0.65)
+        let after = precisionInWindow(raw.map { (conf: model.predict($0.score), positive: $0.positive) }, lo: 0.55, hi: 0.65)
+        if !before.prec.isNaN { beforeVals.append(before.prec) }
+        if !after.prec.isNaN { afterVals.append(after.prec) }
+        print(String(format: "  [%@] before: n=%d precision=%@   |   after: n=%d precision=%@",
+                      c, before.n, before.prec.isNaN ? "N/A" : String(format: "%.1f%%", before.prec),
+                      after.n, after.prec.isNaN ? "N/A" : String(format: "%.1f%%", after.prec)))
+    }
+    if beforeVals.count >= 2 && afterVals.count >= 2 {
+        let beforeSpread = beforeVals.max()! - beforeVals.min()!
+        let afterSpread = afterVals.max()! - afterVals.min()!
+        print(String(format: "\n  (illustration only) cross-class spread at confidence~=0.6: before=%.1fpp -> after=%.1fpp -- noisy, low-n, not the closing metric", beforeSpread, afterSpread))
+    }
+    print("\n  Note: Strings/Synth is expected to remain the lowest 'after' value here even once honest --")
+    print("  calibration fixes what confidence MEANS, not the profile's underlying separating power (AUC).")
+}
+
+/// Wiring pre-check (DEVLOG item 3, wiring's first step, per explicit user instruction): "same
+/// sample rate" was already verified (calibration fit on `predictInstrumentBreakdown`'s 22050Hz
+/// features, matching `DNAReportBuilder`'s `analyticalChunk` branch) -- but rate-equivalence is
+/// not feature-VALUE-equivalence. The fit used CPU-only STFT/Mel/MFCC (only HPSS was GPU);
+/// production's analytical branch runs the ENTIRE chain (STFT/Mel/MFCC/HPSS) on GPU. This
+/// measures, on the same held-out clips: (1) does the raw score value actually match between the
+/// CPU path calibration was fit on and the GPU path production actually runs, and (2) does the
+/// already-fit (CPU-trained) calibration STAY honest (low ECE) when applied to GPU-computed
+/// scores -- the real question wiring depends on, since wiring will apply these exact fitted
+/// curves to GPU-computed production scores.
+func runInstrumentCalibrationFeaturePathCheck(root: String) async {
+    setvbuf(stdout, nil, _IONBF, 0)
+    let coarseClasses = ["Piano/Keyboard", "Bass (Acoustic/Electric)", "Brass/Trumpet",
+                          "Vocals/Chorus", "Drums/Percussion", "Strings/Synth"]
+    let base = URL(fileURLWithPath: root).resolvingSymlinksInPath()
+    let csvURL = base.appendingPathComponent("openmic-2018-aggregated-labels.csv")
+    guard let csv = try? String(contentsOf: csvURL, encoding: .utf8) else {
+        print("ERROR: could not read OpenMIC CSVs"); return
+    }
+    var relevantFine: [String: [String]] = [:]
+    for (fine, coarses) in openmicToCoarse { for c in coarses { relevantFine[c, default: []].append(fine) } }
+    enum Truth { case positive, negative, unknown }
+
+    func loadTruth(keys keySet: Set<String>) -> (known: [String: Set<String>], positiveFine: [String: Set<String>]) {
+        var known: [String: Set<String>] = [:]
+        var positiveFine: [String: Set<String>] = [:]
+        for line in csv.split(separator: "\n").dropFirst() {
+            let cols = line.split(separator: ",")
+            guard cols.count >= 3, let relevance = Double(cols[2]) else { continue }
+            let key = String(cols[0]), inst = String(cols[1])
+            guard keySet.contains(key) else { continue }
+            known[key, default: []].insert(inst)
+            if relevance >= 0.5 { positiveFine[key, default: []].insert(inst) }
+        }
+        return (known, positiveFine)
+    }
+    func truth(coarse: String, clip: String, known: [String: Set<String>], positiveFine: [String: Set<String>]) -> Truth {
+        let rel = relevantFine[coarse] ?? []
+        if rel.contains(where: { (positiveFine[clip] ?? []).contains($0) }) { return .positive }
+        if rel.contains(where: { (known[clip] ?? []).contains($0) }) { return .negative }
+        return .unknown
+    }
+
+    // ---- FIT: identical to runInstrumentThresholdCalibration -- same train sample, same method
+    // rule, so the models applied below are the EXACT ones item 3's closing evidence covers. ----
+    let trainURL = base.appendingPathComponent("partitions/split01_train.csv")
+    guard let trainList = try? String(contentsOf: trainURL, encoding: .utf8) else {
+        print("ERROR: could not read split01_train.csv"); return
+    }
+    let allTrainKeys = trainList.split(separator: "\n").map(String.init)
+    let trainLimit = envLimit("RA_INSTRUMENT_CALIBRATION_LIMIT", default: 5000)
+    let trainKeys = Set(thinned(allTrainKeys, limit: trainLimit))
+    print("=== Re-fitting calibration on \(trainKeys.count) TRAIN clips (same as item 3's closing evidence) ===")
+    let (trainKnown, trainPos) = loadTruth(keys: trainKeys)
+    var trainSamples: [String: [(score: Double, positive: Bool)]] = [:]
+    for c in coarseClasses { trainSamples[c] = [] }
+    var trainEvaluated = 0
+    for key in trainKeys.sorted() {
+        guard coarseClasses.contains(where: { truth(coarse: $0, clip: key, known: trainKnown, positiveFine: trainPos) != .unknown }) else { continue }
+        let prefix = String(key.prefix(3))
+        let audioURL = base.appendingPathComponent("audio/\(prefix)/\(key).ogg")
+        guard FileManager.default.fileExists(atPath: audioURL.path) else { continue }
+        guard let buf = try? await AudioLoader.load(url: audioURL, targetSampleRate: 22050) else { continue }
+        let breakdown = await predictInstrumentBreakdown(samples: buf.samples, sampleRate: 22050)
+        var scoreByLabel: [String: Float] = [:]
+        for b in breakdown { scoreByLabel[b.label] = b.total }
+        trainEvaluated += 1
+        for c in coarseClasses {
+            let t = truth(coarse: c, clip: key, known: trainKnown, positiveFine: trainPos)
+            guard t != .unknown, let s = scoreByLabel[c] else { continue }
+            trainSamples[c]!.append((score: Double(s), positive: t == .positive))
+        }
+        if trainEvaluated % 1000 == 0 { print("  ... \(trainEvaluated) train clips scored") }
+    }
+    var models: [String: CalibModel] = [:]
+    for c in coarseClasses {
+        let pairs = trainSamples[c] ?? []
+        models[c] = pairs.count < 600 ? .platt(fitPlatt(pairs)) : .isotonic(fitIsotonic(pairs))
+    }
+    print("  Fit done: \(coarseClasses.map { "\($0)=\(models[$0]!.name)" }.joined(separator: ", "))")
+
+    // ---- HELD-OUT: CPU (fit path) vs GPU (production's real analytical-branch path), same clips ----
+    let testURL = base.appendingPathComponent("partitions/split01_test.csv")
+    guard let testList = try? String(contentsOf: testURL, encoding: .utf8) else {
+        print("ERROR: could not read split01_test.csv"); return
+    }
+    let allTestKeys = testList.split(separator: "\n").map(String.init)
+    let heldOutLimit = envLimit("RA_INSTRUMENT_FEATUREPATH_LIMIT", default: 2000)
+    let testKeys = Set(thinned(allTestKeys, limit: heldOutLimit))
+    print("\n=== Comparing CPU (fit path) vs GPU (production path) on \(testKeys.count) HELD-OUT clips (fit above never saw this partition) ===")
+    let (testKnown, testPos) = loadTruth(keys: testKeys)
+
+    var cpuSamples: [String: [(score: Double, positive: Bool)]] = [:]
+    var gpuSamples: [String: [(score: Double, positive: Bool)]] = [:]
+    var absDiffSum: [String: Double] = [:], absDiffMax: [String: Double] = [:], diffN: [String: Int] = [:]
+    for c in coarseClasses { cpuSamples[c] = []; gpuSamples[c] = []; absDiffSum[c] = 0; absDiffMax[c] = 0; diffN[c] = 0 }
+
+    var evaluated = 0
+    for key in testKeys.sorted() {
+        guard coarseClasses.contains(where: { truth(coarse: $0, clip: key, known: testKnown, positiveFine: testPos) != .unknown }) else { continue }
+        let prefix = String(key.prefix(3))
+        let audioURL = base.appendingPathComponent("audio/\(prefix)/\(key).ogg")
+        guard FileManager.default.fileExists(atPath: audioURL.path) else { continue }
+        guard let buf = try? await AudioLoader.load(url: audioURL, targetSampleRate: 22050) else { continue }
+        let cpuBreakdown = await predictInstrumentBreakdown(samples: buf.samples, sampleRate: 22050)
+        let gpuBreakdown = await predictInstrumentBreakdownGPU(samples: buf.samples, sampleRate: 22050)
+        var cpuScore: [String: Float] = [:], gpuScore: [String: Float] = [:]
+        for b in cpuBreakdown { cpuScore[b.label] = b.total }
+        for b in gpuBreakdown { gpuScore[b.label] = b.total }
+        evaluated += 1
+        for c in coarseClasses {
+            let t = truth(coarse: c, clip: key, known: testKnown, positiveFine: testPos)
+            guard t != .unknown, let cs = cpuScore[c], let gs = gpuScore[c] else { continue }
+            cpuSamples[c]!.append((score: Double(cs), positive: t == .positive))
+            gpuSamples[c]!.append((score: Double(gs), positive: t == .positive))
+            let d = Double(abs(cs - gs))
+            absDiffSum[c]! += d; absDiffMax[c] = max(absDiffMax[c]!, d); diffN[c]! += 1
+        }
+        if evaluated % 500 == 0 { print("  ... \(evaluated) clips scored") }
+    }
+
+    guard evaluated > 0 else { print("no files evaluated"); return }
+    print("\n=== Feature-value equivalence: |CPU score - GPU score|, same clips, same class ===")
+    for c in coarseClasses {
+        let n = diffN[c] ?? 0
+        guard n > 0 else { continue }
+        let meanDiff = absDiffSum[c]! / Double(n)
+        print(String(format: "  [%@] n=%d  mean|CPU-GPU|=%.4f  max|CPU-GPU|=%.4f", c, n, meanDiff, absDiffMax[c]!))
+    }
+
+    print("\n=== The real wiring question: does the CPU-fit calibration stay honest when applied to GPU (production) scores? ===")
+    for c in coarseClasses {
+        guard let model = models[c] else { continue }
+        let cpuPairs = cpuSamples[c] ?? [], gpuPairs = gpuSamples[c] ?? []
+        guard !cpuPairs.isEmpty, !gpuPairs.isEmpty else { continue }
+        let cpuECE = computeECE(cpuPairs.map { (conf: model.predict($0.score), positive: $0.positive) })
+        let gpuECE = computeECE(gpuPairs.map { (conf: model.predict($0.score), positive: $0.positive) })
+        let aucCpuRaw = aucOf(cpuPairs), aucGpuRaw = aucOf(gpuPairs)
+        let flag = gpuECE > cpuECE + 0.03 ? "  <-- WATCH: calibration meaningfully less honest on GPU (production) path than on the CPU path it was fit on" : ""
+        print(String(format: "  [%@] n=%d  ECE via CPU-scores=%.3f  ECE via GPU-scores=%.3f  (raw AUC CPU=%.3f GPU=%.3f)%@",
+                      c, cpuPairs.count, cpuECE, gpuECE, aucCpuRaw, aucGpuRaw, flag))
+    }
+    print("\n  If no WATCH flags above: the CPU-fit calibration parameters are safe to embed as-is for production wiring.")
+    print("  If any WATCH flag: refit calibration using predictInstrumentBreakdownGPU (GPU features) instead, before wiring.")
+}
+
+/// Fits calibration (same train sample, same method rule as item 3's closing evidence) and
+/// prints the EXACT fitted parameters as ready-to-paste Swift literals, for embedding into
+/// `InstrumentCalibration.swift` -- avoids hand-transcribing numbers from log output, which is
+/// itself exactly the kind of silent-copy-error this session's discipline exists to prevent.
+func runInstrumentCalibrationDump(root: String) async {
+    setvbuf(stdout, nil, _IONBF, 0)
+    let coarseClasses = ["Piano/Keyboard", "Bass (Acoustic/Electric)", "Brass/Trumpet",
+                          "Vocals/Chorus", "Drums/Percussion", "Strings/Synth"]
+    let base = URL(fileURLWithPath: root).resolvingSymlinksInPath()
+    let csvURL = base.appendingPathComponent("openmic-2018-aggregated-labels.csv")
+    guard let csv = try? String(contentsOf: csvURL, encoding: .utf8) else {
+        print("ERROR: could not read OpenMIC CSVs"); return
+    }
+    var relevantFine: [String: [String]] = [:]
+    for (fine, coarses) in openmicToCoarse { for c in coarses { relevantFine[c, default: []].append(fine) } }
+    enum Truth { case positive, negative, unknown }
+    func truth(coarse: String, clip: String, known: [String: Set<String>], positiveFine: [String: Set<String>]) -> Truth {
+        let rel = relevantFine[coarse] ?? []
+        if rel.contains(where: { (positiveFine[clip] ?? []).contains($0) }) { return .positive }
+        if rel.contains(where: { (known[clip] ?? []).contains($0) }) { return .negative }
+        return .unknown
+    }
+
+    let trainURL = base.appendingPathComponent("partitions/split01_train.csv")
+    guard let trainList = try? String(contentsOf: trainURL, encoding: .utf8) else {
+        print("ERROR: could not read split01_train.csv"); return
+    }
+    let allTrainKeys = trainList.split(separator: "\n").map(String.init)
+    let trainLimit = envLimit("RA_INSTRUMENT_CALIBRATION_LIMIT", default: 5000)
+    let trainKeys = Set(thinned(allTrainKeys, limit: trainLimit))
+    var known: [String: Set<String>] = [:]
+    var positiveFine: [String: Set<String>] = [:]
+    for line in csv.split(separator: "\n").dropFirst() {
+        let cols = line.split(separator: ",")
+        guard cols.count >= 3, let relevance = Double(cols[2]) else { continue }
+        let key = String(cols[0]), inst = String(cols[1])
+        guard trainKeys.contains(key) else { continue }
+        known[key, default: []].insert(inst)
+        if relevance >= 0.5 { positiveFine[key, default: []].insert(inst) }
+    }
+    var trainSamples: [String: [(score: Double, positive: Bool)]] = [:]
+    for c in coarseClasses { trainSamples[c] = [] }
+    var evaluated = 0
+    for key in trainKeys.sorted() {
+        guard coarseClasses.contains(where: { truth(coarse: $0, clip: key, known: known, positiveFine: positiveFine) != .unknown }) else { continue }
+        let prefix = String(key.prefix(3))
+        let audioURL = base.appendingPathComponent("audio/\(prefix)/\(key).ogg")
+        guard FileManager.default.fileExists(atPath: audioURL.path) else { continue }
+        guard let breakdown = await predictInstrumentBreakdownProductionMix(url: audioURL, sampleRate: 22050) else { continue }
+        var scoreByLabel: [String: Float] = [:]
+        for b in breakdown { scoreByLabel[b.label] = b.total }
+        evaluated += 1
+        for c in coarseClasses {
+            let t = truth(coarse: c, clip: key, known: known, positiveFine: positiveFine)
+            guard t != .unknown, let s = scoreByLabel[c] else { continue }
+            trainSamples[c]!.append((score: Double(s), positive: t == .positive))
+        }
+        if evaluated % 1000 == 0 { print("  ... \(evaluated) train clips scored") }
+    }
+
+    print("\n=== Swift literals for InstrumentCalibration.swift ===\n")
+    for c in coarseClasses {
+        let pairs = trainSamples[c] ?? []
+        if pairs.count < 600 {
+            let m = fitPlatt(pairs)
+            print("    \"\(c)\": .platt(Platt(A: \(m.A), B: \(m.B))),")
+        } else {
+            let m = fitIsotonic(pairs)
+            let blockStrs = m.blocks.map { "(xMin: \($0.xMin), xMax: \($0.xMax), y: \($0.y))" }
+            print("    \"\(c)\": .isotonic(Isotonic(blocks: [ // \(m.blocks.count) blocks")
+            for s in blockStrs { print("        \(s),") }
+            print("    ])),")
+        }
+    }
+    print("\n=== end literals ===")
+}
+
+/// Wiring's closing evidence (DEVLOG item 3, requested explicitly before treating wiring as
+/// done): does production's REAL calibrated confidence (`AudioIntelligence().
+/// analyzeRawAggregate(url:)` -> `analysis.instruments.predictions`, i.e. the full
+/// `DNAReportBuilder` -> `InstrumentEngine.predict()` -> `InstrumentCalibration.calibrate()`
+/// path) match the offline pipeline's calibrated confidence (a fresh deterministic re-fit on the
+/// same train sample, applied to `predictInstrumentBreakdown`'s raw score) on the same held-out
+/// clips? The earlier feature-path check confirmed the INPUT (raw score) is byte-identical
+/// between CPU (fit path) and GPU (production path); this checks the OUTPUT/transform --
+/// specifically whether the parameters embedded in `InstrumentCalibration.swift` are the right
+/// numbers, mapped to the right class, applied with the right (isotonic-interpolation / Platt)
+/// logic. Two independent implementations (production's `InstrumentCalibration` vs. this file's
+/// own `PlattModel`/`IsotonicModel`) producing the same number is real evidence, not a tautology.
+func runInstrumentCalibrationWiringIdentityCheck(root: String, perClassLimit: Int) async {
+    setvbuf(stdout, nil, _IONBF, 0)
+    let coarseClasses = ["Piano/Keyboard", "Bass (Acoustic/Electric)", "Brass/Trumpet",
+                          "Vocals/Chorus", "Drums/Percussion", "Strings/Synth"]
+    let base = URL(fileURLWithPath: root).resolvingSymlinksInPath()
+    let csvURL = base.appendingPathComponent("openmic-2018-aggregated-labels.csv")
+    let testURL = base.appendingPathComponent("partitions/split01_test.csv")
+    guard let csv = try? String(contentsOf: csvURL, encoding: .utf8),
+          let testList = try? String(contentsOf: testURL, encoding: .utf8) else {
+        print("ERROR: could not read OpenMIC CSVs"); return
+    }
+    let testKeys = Set(testList.split(separator: "\n").map(String.init))
+    var positives: [String: Set<String>] = [:]
+    for line in csv.split(separator: "\n").dropFirst() {
+        let cols = line.split(separator: ",")
+        guard cols.count >= 3, let relevance = Double(cols[2]) else { continue }
+        if relevance >= 0.5 { positives[String(cols[0]), default: []].insert(String(cols[1])) }
+    }
+    var keysByCoarse: [String: [String]] = [:]
+    for key in testKeys.sorted() {
+        guard let fine = positives[key] else { continue }
+        let mapped = Set(fine.compactMap { openmicToSingleCoarseForDiscrimination[$0] })
+        guard mapped.count == 1, let trueCoarse = mapped.first else { continue }
+        keysByCoarse[trueCoarse, default: []].append(key)
+    }
+
+    // Re-fit (deterministic: same train sample, same Newton's/PAVA fit -> same numbers every
+    // time, already confirmed identical across three separate earlier runs of this exact fit).
+    let trainURL = base.appendingPathComponent("partitions/split01_train.csv")
+    guard let trainList = try? String(contentsOf: trainURL, encoding: .utf8) else {
+        print("ERROR: could not read split01_train.csv"); return
+    }
+    var trainKnown: [String: Set<String>] = [:], trainPos: [String: Set<String>] = [:]
+    var relevantFine: [String: [String]] = [:]
+    for (fine, coarses) in openmicToCoarse { for c in coarses { relevantFine[c, default: []].append(fine) } }
+    let allTrainKeys = trainList.split(separator: "\n").map(String.init)
+    let trainLimit = envLimit("RA_INSTRUMENT_CALIBRATION_LIMIT", default: 5000)
+    let trainKeys = Set(thinned(allTrainKeys, limit: trainLimit))
+    for line in csv.split(separator: "\n").dropFirst() {
+        let cols = line.split(separator: ",")
+        guard cols.count >= 3, let relevance = Double(cols[2]) else { continue }
+        let key = String(cols[0]), inst = String(cols[1])
+        guard trainKeys.contains(key) else { continue }
+        trainKnown[key, default: []].insert(inst)
+        if relevance >= 0.5 { trainPos[key, default: []].insert(inst) }
+    }
+    enum Truth { case positive, negative, unknown }
+    func truth(coarse: String, clip: String, known: [String: Set<String>], pos: [String: Set<String>]) -> Truth {
+        let rel = relevantFine[coarse] ?? []
+        if rel.contains(where: { (pos[clip] ?? []).contains($0) }) { return .positive }
+        if rel.contains(where: { (known[clip] ?? []).contains($0) }) { return .negative }
+        return .unknown
+    }
+    var trainSamples: [String: [(score: Double, positive: Bool)]] = [:]
+    for c in coarseClasses { trainSamples[c] = [] }
+    // NOT actually bit-for-bit reproducible run-to-run: DEVLOG Phase 39 confirmed (not just
+    // hypothesized) that two re-fits on this same nominal 5000-clip sample can produce
+    // different isotonic block y-values, traced to AVFoundation decode noise propagating into
+    // training raw scores. Left un-renamed as a marker of that finding, not a correctness claim.
+    print("=== Re-fitting (\"deterministic\") on \(trainKeys.count) train clips ===")
+    var trainEvaluated = 0
+    for key in trainKeys.sorted() {
+        guard coarseClasses.contains(where: { truth(coarse: $0, clip: key, known: trainKnown, pos: trainPos) != .unknown }) else { continue }
+        let prefix = String(key.prefix(3))
+        let audioURL = base.appendingPathComponent("audio/\(prefix)/\(key).ogg")
+        guard FileManager.default.fileExists(atPath: audioURL.path) else { continue }
+        guard let breakdown = await predictInstrumentBreakdownProductionMix(url: audioURL, sampleRate: 22050) else { continue }
+        var scoreByLabel: [String: Float] = [:]
+        for b in breakdown { scoreByLabel[b.label] = b.total }
+        trainEvaluated += 1
+        for c in coarseClasses {
+            let t = truth(coarse: c, clip: key, known: trainKnown, pos: trainPos)
+            guard t != .unknown, let s = scoreByLabel[c] else { continue }
+            trainSamples[c]!.append((score: Double(s), positive: t == .positive))
+        }
+        if trainEvaluated % 1000 == 0 { print("  ... \(trainEvaluated) train clips") }
+    }
+    var offlineModels: [String: CalibModel] = [:]
+    for c in coarseClasses {
+        let pairs = trainSamples[c] ?? []
+        offlineModels[c] = pairs.count < 600 ? .platt(fitPlatt(pairs)) : .isotonic(fitIsotonic(pairs))
+    }
+
+    print("\n=== Identity check: production predict() calibrated confidence vs. offline pipeline, same clips ===")
+    var evaluated = 0
+    var maxDiff = 0.0
+    var mismatches: [String] = []
+    for coarse in coarseClasses {
+        let keys = thinned(keysByCoarse[coarse] ?? [], limit: perClassLimit)
+        for key in keys {
+            let prefix = String(key.prefix(3))
+            let audioURL = base.appendingPathComponent("audio/\(prefix)/\(key).ogg")
+            guard let offlineBreakdown = await predictInstrumentBreakdownProductionMix(url: audioURL, sampleRate: 22050) else { continue }
+            guard let offlineScore = offlineBreakdown.first(where: { $0.label == coarse })?.total,
+                  let offlineModel = offlineModels[coarse] else { continue }
+            let offlineCalibrated = offlineModel.predict(Double(offlineScore))
+
+            guard let analysis = try? await AudioIntelligence().analyzeRawAggregate(url: audioURL) else { continue }
+            guard let productionPred = analysis.instruments.predictions.first(where: { $0.label == coarse }) else {
+                // Below the 0.3 inclusion cutoff in production for this clip/class -- can't compare confidence.
+                continue
+            }
+            let productionCalibrated = Double(productionPred.confidence)
+
+            evaluated += 1
+            let diff = abs(offlineCalibrated - productionCalibrated)
+            maxDiff = max(maxDiff, diff)
+            if diff > 1e-6 {
+                mismatches.append("\(key) [\(coarse)]: offline=\(offlineCalibrated) production=\(productionCalibrated) diff=\(diff)")
+            }
+        }
+    }
+    guard evaluated > 0 else { print("no comparable (clip, class) pairs found -- check inclusion cutoffs"); return }
+    print("evaluated=\(evaluated) (clip, class) pairs where both paths included the label")
+    print(String(format: "max|offline - production| = %.8f", maxDiff))
+    if mismatches.isEmpty {
+        print("PASS: production's calibrated confidence matches the offline pipeline's exactly, on every evaluated pair. Wiring is correct.")
+    } else {
+        print("FAIL: \(mismatches.count) mismatches found -- the embedded InstrumentCalibration parameters or class mapping have a bug:")
+        mismatches.prefix(20).forEach { print("  \($0)") }
+    }
+}
+
 func runIRMASTask(root: String) async -> TaskResult {
     let base = URL(fileURLWithPath: root).resolvingSymlinksInPath()
     guard let classDirs = try? FileManager.default.contentsOfDirectory(at: base, includingPropertiesForKeys: nil) else {
@@ -1577,6 +2483,46 @@ struct ReliabilityAudit {
         }
         if ProcessInfo.processInfo.environment["RA_INSTRUMENT_MULTILABEL_F1"] == "1" {
             await runInstrumentMultiLabelF1(root: "Tests/Resources/OpenMIC")
+            return
+        }
+        if ProcessInfo.processInfo.environment["RA_INSTRUMENT_RELIABILITY_PRECHECK"] == "1" {
+            await runInstrumentReliabilityPrecheck(root: "Tests/Resources/OpenMIC")
+            return
+        }
+        if ProcessInfo.processInfo.environment["RA_INSTRUMENT_CALIBRATION"] == "1" {
+            await runInstrumentThresholdCalibration(root: "Tests/Resources/OpenMIC")
+            return
+        }
+        if ProcessInfo.processInfo.environment["RA_INSTRUMENT_CALIBRATION_FEATUREPATH"] == "1" {
+            await runInstrumentCalibrationFeaturePathCheck(root: "Tests/Resources/OpenMIC")
+            return
+        }
+        if ProcessInfo.processInfo.environment["RA_INSTRUMENT_CALIBRATION_DUMP"] == "1" {
+            await runInstrumentCalibrationDump(root: "Tests/Resources/OpenMIC")
+            return
+        }
+        if ProcessInfo.processInfo.environment["RA_INSTRUMENT_CALIBRATION_WIRING_CHECK"] == "1" {
+            let perClassLimit = envLimit("RA_INSTRUMENT_CALIBRATION_WIRING_CHECK_PER_CLASS", default: 25)
+            await runInstrumentCalibrationWiringIdentityCheck(root: "Tests/Resources/OpenMIC", perClassLimit: perClassLimit)
+            return
+        }
+        if ProcessInfo.processInfo.environment["RA_PLATT_SELFTEST"] == "1" {
+            // Synthetic data shaped like Bass/Vocals: moderately separable, small n, to verify
+            // the fitPlatt fix without waiting on the full ~20-40min real pipeline.
+            var rng = SystemRandomNumberGenerator()
+            func gaussian(mean: Double, sd: Double) -> Double {
+                let u1 = Double.random(in: 1e-9...1, using: &rng), u2 = Double.random(in: 0...1, using: &rng)
+                return mean + sd * (sqrt(-2 * log(u1)) * cos(2 * .pi * u2))
+            }
+            var pairs: [(score: Double, positive: Bool)] = []
+            for _ in 0..<131 { pairs.append((score: max(0, min(1, gaussian(mean: 0.55, sd: 0.2))), positive: true)) }
+            for _ in 0..<309 { pairs.append((score: max(0, min(1, gaussian(mean: 0.30, sd: 0.2))), positive: false)) }
+            let aucRaw = aucOf(pairs)
+            let model = fitPlatt(pairs)
+            let aucCal = aucOf(pairs.map { (score: model.predict($0.score), positive: $0.positive) })
+            print("Synthetic Bass-like data: n=\(pairs.count), A=\(model.A), B=\(model.B)")
+            print("AUC raw=\(aucRaw)  AUC calibrated=\(aucCal)  (should match, both >0.5)")
+            print(String(format: "predict(0.2)=%.3f  predict(0.5)=%.3f  predict(0.8)=%.3f  (should be increasing)", model.predict(0.2), model.predict(0.5), model.predict(0.8)))
             return
         }
         if let key = ProcessInfo.processInfo.environment["RA_INSTRUMENT_FEATURE_DUMP"] {

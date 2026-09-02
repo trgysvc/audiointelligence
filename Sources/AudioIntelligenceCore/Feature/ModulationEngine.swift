@@ -36,7 +36,7 @@ public final class ModulationEngine: Sendable {
                 return 0
             }
             
-            let detectedKey = identifyKey(windowChroma)
+            let detectedKey = identifyKeyWithConfidence(windowChroma).key
             if detectedKey != currentKey && detectedKey != "Unclassified" {
                 let technique = determineTechnique(from: currentKey, to: detectedKey, chroma: windowChroma)
                 
@@ -57,7 +57,25 @@ public final class ModulationEngine: Sendable {
     
     /// Public key estimate for a single averaged chroma vector (root + mode).
     public func detectKey(_ chroma: [Float]) -> String {
-        identifyKey(chroma)
+        identifyKeyWithConfidence(chroma).key
+    }
+
+    /// Same estimate as `detectKey`, plus the winning candidate's own correlation strength as a
+    /// confidence in `0...1` (DEVLOG Phase 43 / Yapilacaklar madde 11 — added so a caller wiring
+    /// this into a report can attach a confidence that actually describes THIS algorithm, not a
+    /// different one's). `chroma`/the K-K profiles are both non-negative, so cosine correlation
+    /// is realistically in `0...1` already; clamped defensively, not rescaled, since a rescale
+    /// would misrepresent what the number means.
+    ///
+    /// **RAW, not calibrated** — unlike `InstrumentCalibration` (DEVLOG Phase 38-39), this
+    /// correlation strength was never fit/validated against ground-truth accuracy (no
+    /// Platt/isotonic mapping, no ECE check). It falls under `Estimated.confidence`'s DEFAULT
+    /// meaning (`MetricWrappers.swift`: "not a probability guarantee, a relative score... not
+    /// necessarily comparable across different metrics") -- `instruments` is that doc comment's
+    /// one explicitly-named calibrated exception, and this is deliberately not a second one.
+    /// Do not read 0.8 here as "80% likely correct" the way a calibrated confidence would support.
+    public func detectKeyWithConfidence(_ chroma: [Float]) -> (key: String, confidence: Float) {
+        identifyKeyWithConfidence(chroma)
     }
 
     /// Per-root key-correlation profile: for each of the 12 pitch classes, the strongest
@@ -80,7 +98,7 @@ public final class ModulationEngine: Sendable {
     private static let asMajor: [Float] = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88]
     private static let asMinor: [Float] = [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17]
 
-    private func identifyKey(_ chroma: [Float]) -> String {
+    private func identifyKeyWithConfidence(_ chroma: [Float]) -> (key: String, confidence: Float) {
         // Cosine correlation against rotated Krumhansl-Kessler profiles. (Empirically this
         // beat mean-centered Pearson and the Albrecht-Shanahan profiles on the GiantSteps
         // golden set — the remaining errors are chroma-quality limited, not profile/metric.)
@@ -94,7 +112,8 @@ public final class ModulationEngine: Sendable {
         }
         // Classify whenever there is any tonal correlation; "Unclassified" only for
         // essentially atonal/empty chroma. (A high threshold previously discarded valid keys.)
-        return maxCorr > 0.05 ? bestMatch : "Unclassified"
+        let confidence = max(0, min(1, maxCorr))
+        return maxCorr > 0.05 ? (bestMatch, confidence) : ("Unclassified", confidence)
     }
     
     private func determineTechnique(from: String, to: String, chroma: [Float]) -> String {

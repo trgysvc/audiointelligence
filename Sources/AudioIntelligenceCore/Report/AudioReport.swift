@@ -210,7 +210,12 @@ public struct SeparationMeasurements: Codable, Sendable {
 
 public struct Estimations: Codable, Sendable {
     public let tempo: Estimated<Double>          // BPM
-    public let key: Estimated<String>            // e.g. "A minor"
+    // e.g. "A Minor" -- mode-qualified (root + Major/Minor), from `ModulationEngine.detectKey`
+    // (Krumhansl-Schmuckler correlation, see `.method` on this value), or "Unclassified" when
+    // correlation is too weak to call. Was briefly a bare tonic only ("A", never mode-qualified,
+    // `ReductionEngine.fundamentalNote`) -- DEVLOG Phase 41 found and corrected that wiring
+    // (Phase 43 / Yapilacaklar madde 11), this comment updated to match.
+    public let key: Estimated<String>
     public let timeSignature: Estimated<String>  // e.g. "4/4"
     public let pitch: PitchMetrics               // f0 statistics
     public let structure: [MusicSegment]

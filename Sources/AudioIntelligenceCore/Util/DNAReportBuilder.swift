@@ -506,7 +506,19 @@ public actor DNAReportBuilder {
             let bin = fullChromagramBins[c]
             return bin.isEmpty ? 0 : bin.reduce(0, +) / Float(bin.count)
         }
-        let detectedGlobalKey = ModulationEngine().detectKey(meanChromaVec)
+        // Krumhansl-Schmuckler key estimate -- as of DEVLOG Phase 43 / Yapilacaklar madde 11, this
+        // is also what `Estimations.key` (the PUBLIC field) reports, not just this chord-labeling
+        // use. Wiring history: `TonalMetrics.key` was wired to `ReductionEngine.fundamentalNote`
+        // in April 2026 when that was the only key mechanism that existed (replacing a hardcoded
+        // placeholder); `detectKey` was added ~2 months later for this chord-labeling need
+        // specifically and the public field was never revisited -- confirmed via git history to
+        // be an oversight, not a deliberate choice, before rewiring it here. Measured before
+        // rewiring (Phase 42, 43 real GiantSteps files, tonic-only accuracy): the two algorithms
+        // are statistically indistinguishable on tonic (p=1.0, sign test) -- NOT why this changed.
+        // The reason is `detectKey`'s free (measured, not assumed) major/minor mode signal, which
+        // `ReductionEngine.fundamentalNote` can never provide (86% mode accuracy overall, 95% when
+        // its own tonic call is correct) -- see DEVLOG Phase 43.
+        let (detectedGlobalKey, detectedGlobalKeyConfidence) = ModulationEngine().detectKeyWithConfidence(meanChromaVec)
         let verticalKey = detectedGlobalKey == "Unclassified" ? "\(reductionRes.fundamentalNote) Major" : detectedGlobalKey
         let verticalRes = theoryEng.analyzeVertical(chromagram: fullChromagramBins, cqtMatrix: fullCQTBins, key: verticalKey)
         Swift.print("✅ [TRACE] Step 2: Vertical Theory Analysis Complete (\(verticalRes.count) chords).")
@@ -598,7 +610,9 @@ public actor DNAReportBuilder {
             waveformEnvelope: waveformEnvelope,
             reduction: reductionRes,
             musicology: musicology,
-            historicalEng: historicalEng
+            historicalEng: historicalEng,
+            detectedKey: detectedGlobalKey,
+            detectedKeyConfidence: detectedGlobalKeyConfidence
         )
         
         // The library produces *data*, not files. Lift the internal engine
@@ -639,7 +653,9 @@ public actor DNAReportBuilder {
                                   waveformEnvelope: [Float],
                                   reduction: ReductionMetrics,
                                   musicology: MusicologyMetrics,
-                                  historicalEng: HistoricalEngine) -> MusicDNAAnalysis {
+                                  historicalEng: HistoricalEngine,
+                                  detectedKey: String,
+                                  detectedKeyConfidence: Float) -> MusicDNAAnalysis {
         
         let powers = allLoudness.map { powf(10.0, ($0.integratedLUFS + 0.691) / 10.0) }
         let finalLufs = 10.0 * log10f(powers.reduce(0, +) / Float(max(1, powers.count))) - 0.691
@@ -816,10 +832,16 @@ public actor DNAReportBuilder {
         let finalAnalysis = MusicDNAAnalysis(
             fileName: filename,
             rhythm: RhythmMetrics(bpm: meanBPM, bpmConfidence: meanConfidence, beatConsistency: Float(globalBeatConsistency), onsetMean: allOnsets.map{$0.mean}.reduce(0,+)/Float(max(1,allOnsets.count)), onsetPeak: allOnsets.map{$0.peak}.max() ?? 0, characterize: globalBeatConsistency < 0.05 ? "Locked/Stable" : "Organic/Varied"),
+            // `key`/`keyConfidence` come from `detectKey` (DEVLOG Phase 43 / madde 11), not
+            // `reduction` -- `strength`/`harmonicStability`/`tendency` stay on `reduction.
+            // stabilityScore` deliberately: that's a genuinely different concept (tonal-center
+            // CONSISTENCY across segments, `harmonicStability`'s own doc comment says "chroma
+            // variance score"), not confidence in the key label itself -- only the latter needed
+            // to move when the key's source did.
             tonality: TonalMetrics(
-                key: reduction.fundamentalNote, 
-                keyConfidence: reduction.stabilityScore, 
-                strength: reduction.stabilityScore, 
+                key: detectedKey,
+                keyConfidence: detectedKeyConfidence,
+                strength: reduction.stabilityScore,
                 harmonicStability: reduction.stabilityScore,
                 keySignature: keySignatureProfile,
                 tendency: reduction.stabilityScore > 0.8 ? "Stable" : "Evolving",

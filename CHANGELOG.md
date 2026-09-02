@@ -1,5 +1,26 @@
 ---
 
+## [8.3.0] - 2026-09-01
+### Changed
+- **`instruments` confidence is now per-class calibrated — a behavior change for consumers that
+  threshold it, in the more-consistent direction.** Each `Estimated<String>` in
+  `AudioReport.estimations.instruments` used to carry a raw score-component sum as `confidence`;
+  it now carries a value calibrated per instrument class (`InstrumentCalibration`, fit on
+  OpenMIC-2018's official train partition, validated on held-out — cross-class ECE spread
+  0.075→0.048, DEVLOG Phase 38/39). Wiring into production was itself verified by a same-input
+  identity check against `InstrumentEngine.predict()`'s real output, not assumed from the fit's
+  own numbers — see DEVLOG Phase 39 for the two loading-path bugs that check caught. **This is not
+  a bug fix and not silent**: a consumer that reads
+  `instruments` by RANK (which label scores highest on this clip) sees no change — ordering and
+  `primaryLabel` are still determined by the raw, uncalibrated score, untouched by this release.
+  A consumer that reads it by a FIXED CONFIDENCE THRESHOLD (e.g. "show labels with confidence
+  ≥0.6") will see a different population of predictions at that threshold than before, because the
+  raw score was not comparable across the 6 instrument classes (a raw 0.31 meant ~36% true
+  reliability for Bass and ~74% for Vocals, measured) and the calibrated value now is. Which
+  labels are included at all is also untouched — the 0.3 inclusion cutoff is still evaluated
+  against the raw score, deliberately not recalibrated (raising it would destroy information a
+  confidence-reading consumer could otherwise recover; see DEVLOG Phase 37).
+
 ## [8.2.1] - 2026-06-18
 ### Fixed
 - **Time-signature confidence overflowed to 383%.** The mapping piped `rhythm.beatConsistency`

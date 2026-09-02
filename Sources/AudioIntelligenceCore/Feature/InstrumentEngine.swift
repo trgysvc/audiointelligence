@@ -134,7 +134,7 @@ public final class InstrumentEngine: Sendable {
     ///   - percussiveEnergyRatio: `HPSSEngine`'s percussive/total energy ratio for the same
     ///     signal (Drums/Percussion-discriminating).
     public func predict(spectral: AdvancedSpectralMetrics, mfcc: [Float], lowBandEnergyRatio: Float, percussiveEnergyRatio: Float) -> InstrumentMetrics {
-        var predictions = [InstrumentPrediction]()
+        var scored = [(label: String, basis: String, rawConfidence: Float)]()
         let inputPattern = mfcc.prefix(10).map { Float($0) }
 
         for profile in profiles {
@@ -143,17 +143,30 @@ public final class InstrumentEngine: Sendable {
             let totalConfidence = s.centroid + s.flatness + s.lowBand + s.percussive + s.timbre
 
             if totalConfidence > 0.3 {
-                predictions.append(InstrumentPrediction(
-                    label: profile.label,
-                    confidence: min(1.0, totalConfidence),
-                    technicalBasis: profile.basis
-                ))
+                scored.append((label: profile.label, basis: profile.basis, rawConfidence: totalConfidence))
             }
         }
 
-        // Sort and classify
-        predictions.sort { $0.confidence > $1.confidence }
-        let primary = predictions.first?.label ?? "Ambient/Unclassified"
+        // Sort/primaryLabel by RAW confidence -- deliberately unaffected by calibration below.
+        // Cross-class calibration corrects what the confidence NUMBER means; it was not designed
+        // or validated as a re-ranking signal, and primaryLabel's extensive existing validation
+        // (Phase 35 production-parity agreement, item 4's Brass/Trumpet recall numbers, etc.) was
+        // all measured against raw-score ordering -- changing what determines primaryLabel would
+        // silently invalidate that evidence. Only the REPORTED confidence is calibrated (Phase
+        // 38); which label wins and which labels are included are both untouched.
+        scored.sort { $0.rawConfidence > $1.rawConfidence }
+        let primary = scored.first?.label ?? "Ambient/Unclassified"
+
+        // Confidence calibration (DEVLOG item 3 / Phase 38): the UNCLAMPED raw score is what the
+        // offline fit used (`ScoreBreakdown.total`, no `min(1.0, ...)`) -- passing anything else
+        // here would evaluate the fitted curve outside the domain it was measured on.
+        let predictions = scored.map { s in
+            InstrumentPrediction(
+                label: s.label,
+                confidence: Float(InstrumentCalibration.calibrate(label: s.label, rawScore: Double(s.rawConfidence))),
+                technicalBasis: s.basis
+            )
+        }
 
         return InstrumentMetrics(
             predictions: predictions,

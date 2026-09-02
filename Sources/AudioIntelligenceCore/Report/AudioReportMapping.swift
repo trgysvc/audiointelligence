@@ -105,9 +105,30 @@ extension AudioReport {
                               confidence: Double(a.rhythm.bpmConfidence),
                               method: "autocorrelation + log-normal tempo prior")
 
+        // History (DEVLOG Phase 41 & 43 / Yapilacaklar madde 8/9/11), kept because this field's
+        // source has genuinely moved twice and a future reader deserves the why, not just the
+        // current state: `a.tonality.key` used to be `ReductionEngine.fundamentalNote` (a
+        // per-segment loudest-chroma-bin majority vote, no mode) -- found wrong-labeled here as
+        // "Krumhansl-Schmuckler" while building item 8's production-vs-isolated parity test
+        // (Phase 41), and retracted (label corrected, README ⚠️'d). Measuring both candidates
+        // side by side on real GiantSteps (Phase 42) found tonic accuracy statistically tied
+        // (p=1.0, N=43) but `detectKey`'s free major/minor signal real (86% mode accuracy, 95%
+        // when its own tonic call is right) where `ReductionEngine` can never provide one, and
+        // git history showed the original wiring was an oversight (`ReductionEngine` was the
+        // only mechanism that existed when it was wired; `detectKey` was added ~2 months later
+        // for an unrelated need and this field was never revisited) -- not a deliberate choice
+        // this change overrides. `a.tonality.key` is now `ModulationEngine.detectKey`'s output
+        // (DNAReportBuilder.swift ~509-511, Phase 43), so this `method` string is accurate again.
+        // `confidence` moved WITH it (`detectKeyWithConfidence`'s own correlation strength, not
+        // `reduction.stabilityScore` -- a value from one algorithm must not carry a confidence
+        // describing a different one, the exact bug class this whole arc started from). It is
+        // RAW, not calibrated like `instruments` (see `detectKeyWithConfidence`'s doc comment,
+        // and `Estimated.confidence`'s default-vs-`instruments`-exception framing in
+        // `MetricWrappers.swift`) -- not fit against ground-truth accuracy, so treat it as a
+        // within-algorithm relative score, not "confidence == likelihood of being correct."
         let key = Estimated(a.tonality.key,
                             confidence: Double(a.tonality.keyConfidence),
-                            method: "Krumhansl-Schmuckler on high-res STFT chroma")
+                            method: "Krumhansl-Schmuckler correlation on high-res STFT chroma")
 
         // beatConsistency is a beat-interval deviation in [0, ∞] where *lower* means more
         // regular. Invert and clamp into a 0…1 confidence (it was passed through raw, yielding

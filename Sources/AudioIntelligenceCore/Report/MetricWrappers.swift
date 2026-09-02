@@ -90,7 +90,24 @@ public struct Measured<Value: Codable & Sendable>: Codable, Sendable {
 /// being handed a fabricated "verified" badge.
 public struct Estimated<Value: Codable & Sendable>: Codable, Sendable {
     public let value: Value
-    /// Confidence in `0...1`. Not a probability guarantee — a relative score.
+    /// Confidence in `0...1`. Default meaning: not a probability guarantee, a relative score
+    /// from that metric's own algorithm — comparable within its own outputs (e.g. across tempo
+    /// estimates) but not necessarily across different metrics or, for a multi-label metric,
+    /// across its own different labels.
+    ///
+    /// `instruments` is the one exception, and reads differently: each label's confidence is
+    /// per-class CALIBRATED (`InstrumentCalibration`, DEVLOG item 3/Phase 38-39, fit on
+    /// OpenMIC-2018 train, validated on held-out — cross-class ECE spread 0.075→0.048, wired into
+    /// production and verified by a same-input identity check in Phase 39) specifically so it IS
+    /// comparable across the 6 instrument classes (a fixed threshold like 0.6 now means
+    /// approximately the same true reliability whether the label is Bass or Vocals — it did not
+    /// before). A consumer thresholding `instruments` at a fixed confidence will see this as a
+    /// behavior change from before Phase 38: the raw score has been replaced by a calibrated one,
+    /// so a given cutoff now selects a different, more consistent population of predictions (see
+    /// CHANGELOG). Which labels appear at all is untouched (still the raw-score 0.3 inclusion
+    /// cutoff, deliberately not recalibrated — see `InstrumentEngine.predict()`), and each label's
+    /// RANK relative to other labels on the same clip is untouched too (calibration is monotonic
+    /// per class and was never applied to reordering).
     public let confidence: Double
     /// Human-readable description of the algorithm (e.g.
     /// `"Krumhansl-Schmuckler"`, `"autocorrelation + log-normal prior"`).
