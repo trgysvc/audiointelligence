@@ -113,13 +113,40 @@ public final class TraditionalTheoryEngine: @unchecked Sendable {
                 // as the original raw threshold (1.5) did pre-fix — real-world detection
                 // sensitivity preserved, while the normalization still fixes which root/type wins.
                 let score = rawScore / Float(profile.offsets.count)
-                guard score > 0.4 else { continue } // Threshold for triad presence
+                guard score > 0.4 else { continue } // Threshold for triad presence -- unmodified,
+                // raw score only, so real-world detection sensitivity (frame classified at all)
+                // stays exactly as empirically calibrated above; only WHICH candidate wins among
+                // already-qualifying ones is affected by the penalty below.
 
-                if score > bestScore + tieEpsilon {
-                    bestScore = score
+                // Explained-energy penalty (madde 1 / DEVLOG Phase 45, option B): a smaller
+                // profile's note set can numerically outscore a larger profile that fully
+                // contains it on real (non-idealized) audio, because real per-tone chroma
+                // magnitudes are never perfectly equal (DEVLOG Phase 40) -- e.g. a 3-note "E
+                // diminished" beating the true "C dominant 7" it's a subset of. Rather than
+                // detect that specific subset relationship, penalize any candidate for chroma
+                // energy it leaves unexplained: `chroma` is L2-normalized per frame (sum of
+                // squares over all 12 bins = 1), so `matchedEnergy` is the fraction of that unit
+                // budget the candidate's own notes account for, and `1 - matchedEnergy` is what's
+                // left over in bins the candidate says nothing about. A candidate that explains
+                // more of the real energy is rewarded; one that ignores a still-strong bin (like
+                // "E diminished" ignoring C's own real energy) is penalized for it.
+                var matchedEnergy: Float = 0
+                for offset in profile.offsets {
+                    let c = chroma[(root + offset) % 12]
+                    matchedEnergy += c * c
+                }
+                let unmatchedEnergy = max(0, 1 - matchedEnergy)
+                // λ=0.15: smallest round value with margin over the minimum (~0.053) that flips
+                // the measured C7-vs-E-diminished case (DEVLOG Phase 40's own numbers) -- chosen
+                // before re-running the closing-evidence tests, not fit to their outcome.
+                let energyPenaltyWeight: Float = 0.15
+                let adjustedScore = score - energyPenaltyWeight * unmatchedEnergy
+
+                if adjustedScore > bestScore + tieEpsilon {
+                    bestScore = adjustedScore
                     bestRoot = root
                     bestType = profile.type
-                } else if let bass = bassNote, abs(score - bestScore) <= tieEpsilon, root == bass, bestRoot != bass {
+                } else if let bass = bassNote, abs(adjustedScore - bestScore) <= tieEpsilon, root == bass, bestRoot != bass {
                     // Effectively tied with the current best, but THIS candidate's root matches
                     // the real bass note and the current best's doesn't -- prefer it. Doesn't
                     // touch `bestScore` (stays the same, since these ARE the same score) so a

@@ -3844,4 +3844,114 @@ scope. No published number needs retraction: Phase 33's RPA figures stand untouc
 
 ---
 
+## Phase 45 (2026-09-02): madde 1 closed — 4-note chord identification, explained-energy penalty, and a genuine equal-set ambiguity found along the way
+
+Direct follow-up to Phase 40's root-cause finding (a smaller profile's note set can numerically
+outscore a larger profile that fully contains it, on real audio) and its two binding constraints
+set before any fix was written: closing evidence must be bidirectional (4-note gain AND no 3-note
+regression, both measured), and the fix must be a new subset-containment check, not a widening of
+`identifyTriad`'s `tieEpsilon`/bass-note tie window.
+
+### Baseline, locked before touching anything
+
+`ChordEndToEndSyntheticTests` (real audio, 108 canonical chords): 58/108 correct (50 mismatches: 9
+augmented-symmetry, 41 other). `ChordScoringAmbiguityTests` (idealized chroma, 108): 77/108 correct
+(31 mismatches), and its own bass-note-tie-break sub-check: 0/31 remain mismatched once the
+(idealized, exact-tie) bass hint is applied. Broken down by quality (from the printed mismatch
+list, not inferred): major/minor/diminished triads 36/36 correct, augmented 3/12 (known, separate
+symmetry issue), maj7 12/12, and the real gap concentrated entirely in dom7/m7/m7b5/m6 (7/48).
+
+### Option C tried first, found to be measuring the wrong thing, reverted
+
+Implemented option 1 (subset-preference, generalizing the existing bass-note tie logic to net-win
+cases where a challenger's note set is a strict subset of the current best's). Two-directional
+result: 58→59/108 (+1), idealized unchanged (77/108, 0/31) -- technically no regression, but far
+too small a gain to call anything. Investigated why before concluding the mechanism was weak:
+`detectBassNote` (`TraditionalTheoryEngine.swift`) scans CQT bins 0..<24 only -- a HARDCODED
+absolute window (`fMin=32.7Hz`, `binsPerOctave=12` -> bins 0-23 span C1 to B2, ~32.7-130.8Hz).
+`ChordEndToEndSyntheticTests`' chords are synthesized at `rootMidi: 60+root` (C4 and up, 261.6Hz+)
+-- mathematically, at CQT bin 36 (`12·log2(261.6/32.7)`) and above, entirely outside the window
+`detectBassNote` examines. Confirmed, not assumed: the bass-note signal this test could ever supply
+to option C is structurally absent -- C's near-zero measured gain reflects that absence, not the
+merit of subset-preference-via-bass-note as an idea. Reverted the code (clean baseline restored)
+rather than keep a change whose own closing measurement was invalid.
+
+**Filed separately, not fixed here**: `detectBassNote`'s fixed low-frequency window is a real
+production bug independent of this item -- any chord voiced above ~130Hz's own register (this
+test's synthetic chords, but also plausibly real high-register music with no literal bass
+instrument) gets a bass-note guess that's uncorrelated noise, not silently degraded accuracy but a
+silently WRONG signal with no error raised. It also feeds `analyzeVertical`'s real inversion
+labeling (`TraditionalTheoryEngine.swift` line ~31), so production inversion labels for
+high-register chords are suspect too. Deserves its own root-cause pass (a register-relative window,
+not a fixed absolute one) and its own closing evidence -- out of scope here by design, per this
+session's repeated lesson against folding a second real bug into whichever item happened to surface
+it.
+
+### Option B implemented -- weight fixed from one documented case, before re-running the test suite
+
+Explained-energy penalty: `chroma` is L2-normalized per frame (sum of squares over 12 bins = 1), so
+`matchedEnergy = Σ chroma[(root+offset)%12]²` over a candidate's own notes is the fraction of that
+unit budget it accounts for; `unmatchedEnergy = 1 - matchedEnergy` is what's left unexplained.
+Selection uses `adjustedScore = score - λ·unmatchedEnergy` (λ=0.15); the existing 0.4 presence
+threshold stays on the RAW, unmodified score, so real-world detection sensitivity (whether a chord
+is judged present at all) is untouched -- only which candidate wins among already-qualifying ones
+is affected.
+
+**λ was not tuned against the test suite.** Phase 40's own C7-vs-E-diminished numbers
+(0.4858 vs 0.4967, an 0.0109 margin) give the exact minimum λ that flips that one documented case:
+solving `0.4967 - λ·0.2597 < 0.4858 - λ·0.0547` gives λ > ~0.053. 0.15 was chosen as a round value
+with real margin over that minimum, fixed BEFORE `ChordEndToEndSyntheticTests`/
+`ChordScoringAmbiguityTests` were re-run for this change -- deliberately avoiding a weight sweep
+against the same 108/31-chord set used as closing evidence, which would fit the weight to this
+specific test population rather than to the documented mechanism, and risk a value that rescues
+these particular chords while failing on real music.
+
+### Two-directional result, quality breakdown verified separately (not just the aggregate)
+
+`ChordEndToEndSyntheticTests`: **58→87/108** (mismatches 50→21: 9 augmented-symmetry unchanged, 12
+other, down from 41). `ChordScoringAmbiguityTests`: unchanged, 77/108, 0/31 remaining with bass
+hint -- zero regression on idealized chroma. Checked the aggregate could not be hiding a 3-note
+loss inside a 4-note gain (the exact risk flagged before running B): all 12 remaining real-audio
+mismatches are m6 or m7b5 -- **zero** major/minor/diminished mismatches, confirming the 36/36
+three-note group is fully intact, not merely net-positive. By quality: dom7 12→0 mismatches (fully
+fixed), m7 12→0 (fully fixed), m7b5 12→3, m6 10→9.
+
+### m6/m7b5's resistance investigated before closing, not assumed to be "B's limitation"
+
+dom7/m7 fully fixed but m6 barely moved (10→9) -- an asymmetry large enough to be a signal, not
+noise, and closing without checking it would risk declaring victory over a population B does not
+actually cover. Chroma-dumped D m6 the same way Phase 40 dumped C7. Single mid-clip frame, no bass:
+`identifyTriad` correctly picks D m6 (root=2, adjustedScore=0.478) over the 3-note "B diminished"
+subset (root=11, adjustedScore=0.436, correctly penalized and beaten -- option B working exactly as
+designed here). But `identifyTriad(c, bassNote: 11)` flips the result to root=11 -- and this is NOT
+the 3-note B-diminished subset winning (that stays well below threshold, 0.042 short of the
+tie window): it's **B m7b5**, whose note set `{11,2,5,9}` is EXACTLY EQUAL to D m6's `{2,5,9,11}`
+(both map to `TriadType.diminished`/`.minor` display quirks aside -- `formatSymbol` renders both
+the 3-note diminished and 4-note m7b5 as `"b°"`, which is why the mismatch printout couldn't
+distinguish them). An equal-set collision scores IDENTICALLY under any function of matched/
+unmatched energy, by construction (same notes -> same energy split) -- option B cannot break this
+kind of tie, structurally, no value of λ could. It can only be broken by the bass note, and
+`detectBassNote` is exactly the noise source found and filed above: it returned 11 for 3 of 4
+sampled frames of this clip, incorrectly winning the ALREADY-EXISTING (untouched by this phase)
+bass-note tie-break. Verified this is not D-m6-specific but a structural property of the whole
+quality pair: an m6 chord's notes, re-rooted at its own 6th (9 semitones up), are exactly an m7b5
+shape (`{0,3,7,9}` from root R equals `{0,3,6,10}` from root R+9) -- every m6/m7b5 pair is an
+equal-set twin, which is why both qualities show correlated, partial residual mismatches rather
+than either fully clearing.
+
+### Status
+
+Item 1 (madde 1) is **closed with option B**: 4-note real-audio accuracy 58→87/108, three-note
+triads fully preserved (36/36, verified by breakdown not just aggregate), idealized-chroma baseline
+unchanged (77/108, 0/31). The remaining 12 mismatches (m6/m7b5) are not a shortfall of option B --
+confirmed, not assumed, to be a genuine equal-set ambiguity outside what any energy-based scoring
+could resolve, currently unresolvable because `detectBassNote`'s register bug (filed above, its own
+open item) makes the one signal that COULD resolve it unreliable for this register. Once that
+register bug is fixed, these 12 are the natural next measurement -- bass-note-directed resolution
+(closer to the original option C, but now with a working bass signal) should be able to close most
+or all of them, since the tie-break mechanism to do so already exists and only needs a trustworthy
+input.
+
+---
+
 > *"Measured, not claimed: AudioIntelligence reports what it can prove."*
