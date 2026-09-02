@@ -718,21 +718,33 @@ public actor DNAReportBuilder {
             globalBeatConsistency = sqrtf(variance)
         }
 
-        // Global Pitch Refinement (v7.1 Forensic upgrade)
+        // Global Pitch Refinement (v7.1 Forensic upgrade). Was computed from PER-CHUNK summary
+        // statistics (each chunk's own meanF0, then averaged/min/max'd across chunks) -- a
+        // second-order statistic that silently weights every chunk equally regardless of how many
+        // voiced frames it actually contains, and additionally smooths away real extremes (a
+        // chunk's own mean can never reach that chunk's true min/max frame). Fixed (madde 10 /
+        // DEVLOG Phase 44) to pool every chunk's raw per-frame f0 series first, then compute every
+        // statistic from that single pool -- one voiced-frame filter, one pool, four first-order
+        // statistics, all internally consistent with each other and with `PitchResult`'s own
+        // per-chunk definitions (`YINEngine.swift`: `!isNaN` for voiced, `sorted()[count/2]` for
+        // median, matched here deliberately so top-level and per-chunk medians use the same rule).
         let validYIN = allYIN.map { $0 }
-        let allF0s = validYIN.map { $0.meanF0 }.filter { !$0.isNaN && $0 > 0 }
-        let meanF0 = allF0s.reduce(0, +) / Float(max(1, allF0s.count))
-        let minF0 = allF0s.min() ?? 0
-        let maxF0 = allF0s.max() ?? 0
-        
+        let voicedF0Pool = allYIN.flatMap { $0.f0Series }.filter { !$0.isNaN && $0 > 0 }
+        let meanF0 = voicedF0Pool.isEmpty ? 0 : voicedF0Pool.reduce(0, +) / Float(voicedF0Pool.count)
+        let medianF0 = voicedF0Pool.isEmpty ? 0 : voicedF0Pool.sorted()[voicedF0Pool.count / 2]
+        let minF0 = voicedF0Pool.min() ?? 0
+        let maxF0 = voicedF0Pool.max() ?? 0
+
         let totalVoiced = validYIN.map { Float($0.voicedFrames.count) }.reduce(0, +)
         let totalFrames = validYIN.map { Float($0.f0Series.count) }.reduce(0, +)
         let voicedRatio = totalVoiced / Float(max(1, totalFrames))
-        // Pitch stability from the dispersion of voiced F0 (coefficient of variation).
-        // Tight pitch → low CV → stability near 1.0; erratic pitch → lower.
+        // Pitch stability from the dispersion of voiced F0 (coefficient of variation) -- now
+        // computed from the same raw pool, so this reflects true within-track pitch dispersion
+        // (a single wildly-fluctuating chunk now lowers stability); previously it only measured
+        // dispersion BETWEEN chunk means, blind to fluctuation within any one chunk.
         let stability: Float = {
-            guard allF0s.count > 1, meanF0 > 1e-6 else { return allF0s.isEmpty ? 0 : 1 }
-            let variance = allF0s.map { ($0 - meanF0) * ($0 - meanF0) }.reduce(0, +) / Float(allF0s.count)
+            guard voicedF0Pool.count > 1, meanF0 > 1e-6 else { return voicedF0Pool.isEmpty ? 0 : 1 }
+            let variance = voicedF0Pool.map { ($0 - meanF0) * ($0 - meanF0) }.reduce(0, +) / Float(voicedF0Pool.count)
             let cv = sqrtf(variance) / meanF0
             return Swift.max(0, Swift.min(1, 1 - cv))
         }()
@@ -848,7 +860,7 @@ public actor DNAReportBuilder {
                 scaleType: "Diatonic/Reduced",
                 tuningSystem: "Equal Temperament"
             ),
-            pitch: PitchMetrics(meanF0: meanF0, medianF0: meanF0, minF0: minF0, maxF0: maxF0, voicedRatio: voicedRatio, stability: stability),
+            pitch: PitchMetrics(meanF0: meanF0, medianF0: medianF0, minF0: minF0, maxF0: maxF0, voicedRatio: voicedRatio, stability: stability),
             spectral: finalSpectral,
             hpss: HPSSMetrics(
                 harmonicRatio: hHarmRatio,

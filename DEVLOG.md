@@ -2735,7 +2735,9 @@ identical 150-file, class-balanced, held-out sample, through the real production
   production's real `analysis.pitch.meanF0`, 10 MDB-stem-synth files -- mean relative delta 1.6%,
   confirming (not assuming) Pitch was already correctly aligned (`runPitchTask` and
   `DNAReportBuilder.swift` both already use pYIN at native rate, no forced-22050 resample on either
-  side, unlike Instrument's case).
+  side, unlike Instrument's case). **Superseded (Phase 44): this 1.6% was itself the signature of
+  a separate bug (production's `meanF0` was a second-order, chunk-mean-based statistic; the
+  isolated side here was already first-order) -- fixed, delta is now 0.0% on the same check.**
 
 ### Scope note: Tempo, Key, and Structure share the exact same root cause, not yet fixed
 
@@ -3741,6 +3743,104 @@ implementable safely → implemented it → verified the implementation itself, 
 precondition → verified the new field it added doesn't quietly imply something untrue either.
 README's Key row is ✅ again, and this time the number it shows is the accuracy of the algorithm
 actually wired to the field a caller reads.
+
+---
+
+## Phase 44 (2026-09-02): top-level pitch statistics recomputed from the raw frame pool — a mislabeled field turned out to be a structural bug, fixed at its root
+
+Direct follow-up to item 8/Phase 41's discovery, filed separately at the time: `DNAReportBuilder.
+swift`'s `PitchMetrics(meanF0: meanF0, medianF0: meanF0, ...)` passed the mean variable into both
+parameters — `.medianF0` was a second copy of the mean, not a real median. Before touching it,
+established the fix could not be scoped to `medianF0` alone: `meanF0`/`minF0`/`maxF0` were
+themselves computed from PER-CHUNK summary statistics (`validYIN.map { $0.meanF0 }`, each chunk's
+own mean, then averaged/min/max'd across chunks) — a second-order statistic that weights every
+chunk equally regardless of how many voiced frames it holds, and additionally can never reach a
+chunk's own true min/max (a chunk's mean is always more central than its extremes). Fixing only
+`medianF0` would have closed the visible symptom and left the structural cause -- the same
+mean/min/max would still be quietly biased -- exactly the kind of narrow fix this session has
+repeatedly found insufficient.
+
+### Verified the data foundation before planning anything
+
+`fullF0Series` (module scope, already built from `allYIN.compactMap{$0}.flatMap{$0.f0Series}` to
+feed `ViterbiEngine`) was confirmed — not assumed — to be the complete raw pool: every chunk's
+per-frame f0 (NaN = unvoiced), unfiltered, already proven usable in that raw form since Viterbi
+already consumes it directly. `assembleFinalDNA`'s own `allYIN: [PitchResult]` parameter is the
+identical source (same `compactMap{$0}` applied to the same outer array at the call site), so the
+pool could be rebuilt locally inside `assembleFinalDNA` without threading a new parameter through.
+
+### The fix
+
+`DNAReportBuilder.swift`, `assembleFinalDNA`: `voicedF0Pool = allYIN.flatMap { $0.f0Series }.filter
+{ !$0.isNaN && $0 > 0 }` — one pool, one voiced-frame filter, applied at frame level (not chunk-
+summary level, which matters: filtering NaN/unvoiced AFTER pooling but BEFORE computing statistics
+is the only order that keeps the median correct — NaNs corrupt sort order, unvoiced zeros would
+drag a median down). `meanF0`/`minF0`/`maxF0` now come from this pool; `medianF0` uses
+`sorted()[count/2]` — deliberately the same convention `PitchResult`'s own per-chunk median already
+uses (`YINEngine.swift`), not a textbook even/odd-averaged median, so top-level and per-chunk
+medians agree on what "median" means. `stability`'s coefficient-of-variation now uses the same pool
+too — it previously measured dispersion of chunk-means around their own mean (blind to real
+fluctuation inside any single chunk), now measures true within-track pitch dispersion.
+`voicedRatio`/`totalVoiced`/`totalFrames` were untouched — already correctly summed from raw
+per-chunk counts, never had this bug.
+
+### Downstream impact — checked by reading code, not assumed, before implementing
+
+- **RPA** (`runPitchTask`, Phase 33's 61.6%/85.3% pYIN numbers): reads MDB-stem-synth ground truth
+  and compares per-frame against `analyzePYINCandidates`+`PYINDecoder` output directly — never
+  touches `PitchMetrics`. Confirmed unaffected by reading the function, not assuming from its name.
+- **`runPitchProductionParityCheck`** (Phase 35, the "1.6% mean delta" figure on record): DOES read
+  `analysis.pitch.meanF0` directly — re-run post-fix (`RA_PITCH_PARITY=1`, 10 MDB-stem-synth files):
+  **delta dropped from 1.6% to 0.0%.** This is not incidental — the isolated side of that check
+  already computed a true whole-file first-order mean (single pass, no chunking); the old 1.6% was
+  the bug's own signature (two sides computing genuinely different statistics), and the new 0.0% is
+  the fix's signature (both sides now compute the same thing). Independent confirmation that the
+  mean moved in the correct direction, not just "moved."
+- **`Examples/ParityAudit`**: reads `.pitch.meanF0` but compares against a user-supplied external
+  reference file with no checked-in reference data and no number cited in README/DEVLOG — out of
+  scope, no live claim depends on it.
+- **`Tests/YINEngineTests.swift`**: tests `PitchResult.medianF0` at the engine level (a different
+  struct, per-chunk, always correct) — unaffected.
+- **This session's own `Tests/ProductionPipelineIdentityTests.swift`**: needed updating (see below).
+
+### Closing evidence — three parts, plus the edge case explicitly checked for regression
+
+**(a) Median is now a genuine median, verified against a hand-computed pool, not just "looks
+different."** On a real MDB-stem-synth file: production mean=86.06Hz, median=87.81Hz (genuinely
+different, 1.75Hz apart) — and a hand-built pool (chunked YINEngine+PYINDecoder calls, pooled and
+filtered exactly like the fix does) matched production's mean AND median to five significant
+figures (86.06376/87.81283 both sides). On the synthetic sustained-440Hz clip (item 8's parity
+test, single unwavering pitch), mean≈median≈440 as expected — no artificial divergence introduced
+where none should exist.
+
+**(b) Mean/min/max shift measured, not just mean — and min/max moved far more than mean, exactly as
+anticipated before measuring.** Same real file, 4 chunks: OLD (chunk-mean-based) mean=87.37
+min=75.96 max=99.93 (range 23.97Hz); NEW (raw-pool-based) mean=86.06 min=55.00 max=179.73 (range
+124.73Hz) — mean shifted only 1.49%, but min dropped 20.96Hz and max rose 79.80Hz, a >5x range
+increase. Direction makes sense and was predicted before running: a chunk's own mean can never
+equal that chunk's true extreme frame, so chunk-mean-based min/max was structurally smoothed
+relative to the real range — "lowest/highest pitch" now means the real lowest/highest frame, not
+the lowest/highest chunk-average.
+
+**(c) Edge case explicitly checked for regression, not assumed safe.** A fully unvoiced (pure
+silence) synthetic clip: mean/median/min/max all report 0 under the new code, matching what the old
+code already did for this case (both filters produce an empty set, both guards return 0) — verified
+directly rather than inferring "the guards look equivalent."
+
+`Tests/ProductionPipelineIdentityTests.swift`'s Pitch test updated to assert both `meanF0` AND
+`medianF0` independently against their own correctly-computed isolated equivalents (previously only
+asserted mean, since that's what `.medianF0` actually held) — passes, on a wiring genuinely fixed,
+not loosened to match a bug a second time (same pattern as the Key test's history this session).
+
+### Status
+
+Item 10 closed as a root-cause fix, not a symptom patch: `meanF0`, `medianF0`, `minF0`, `maxF0`,
+and `stability` all now derive from one consistent, correctly-filtered raw frame pool, matching
+`PitchResult`'s own per-chunk conventions. Downstream impact was enumerated by reading every real
+consumer, not assumed — one (RPA) confirmed unaffected, one (the production-parity check) confirmed
+affected and re-measured (1.6%→0.0%, the fix's own independent signature), one (ParityAudit) out of
+scope. No published number needs retraction: Phase 33's RPA figures stand untouched, and Phase 35's
+1.6% figure is superseded by a stronger 0.0% match, not contradicted.
 
 ---
 

@@ -112,14 +112,13 @@ final class ProductionPipelineIdentityTests: XCTestCase {
     /// sustained pure tone gives pYIN an unambiguous target; 1Hz accuracy is far tighter than
     /// display precision, so any gap here is a real divergence, not rounding.
     ///
-    /// Compares against `.medianF0`, but this asserts against production's actual current
-    /// behavior, not what the field name implies: `DNAReportBuilder.swift:829` passes the
-    /// track-wide `meanF0` variable into BOTH the `meanF0:` and `medianF0:` parameters of the
-    /// final `PitchMetrics` — `.medianF0` is presently a second copy of the mean, not a true
-    /// median (`PitchResult.medianF0`, the real per-chunk median, is computed but never
-    /// aggregated to the top level). Found as a side effect of building this test, not this
-    /// item's bug to fix — flagged separately (Yapilacaklar/DEVLOG), scope kept to production-vs-
-    /// isolated wiring parity here.
+    /// History (DEVLOG Phase 44 / Yapilacaklar madde 10): `.medianF0` used to be a second copy of
+    /// `.meanF0` (`DNAReportBuilder.swift` passed the same variable into both `PitchMetrics`
+    /// parameters) -- this test originally asserted against that actual-but-wrong behavior, doc
+    /// comment explaining why. Fixed to compute both statistics from the real raw voiced-frame
+    /// pool; this test now asserts BOTH fields independently, each against its own correctly-
+    /// computed isolated equivalent -- passing now means the fix is wired end-to-end, not that
+    /// the test was loosened to match a bug a second time.
     func testPitch_productionMatchesIsolatedHelper_onSameSyntheticClip() async throws {
         let freq = 440.0
         let samples = SyntheticAudio.sine(freqHz: freq, durationSec: 5.0, sampleRate: Self.sr)
@@ -127,19 +126,25 @@ final class ProductionPipelineIdentityTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: url) }
 
         let report = try await AudioIntelligence().analyze(url: url)
-        let productionReportedF0 = Double(report.estimations.pitch.medianF0)
+        let productionMean = Double(report.estimations.pitch.meanF0)
+        let productionMedian = Double(report.estimations.pitch.medianF0)
 
         // Isolated helper: the exact functions `DNAReportBuilder` calls for pitch
-        // (`YINEngine.analyzePYINCandidates` -> `PYINDecoder.decode` -> `PitchResult.from`'s
-        // `meanF0` -- matching what `.medianF0` currently actually holds, see doc comment above),
-        // at the file's NATIVE rate.
+        // (`YINEngine.analyzePYINCandidates` -> `PYINDecoder.decode` -> `PitchResult.from`),
+        // at the file's NATIVE rate. This clip is short enough to stay in one production chunk,
+        // so `PitchResult.from`'s own per-chunk mean/median already equal the whole-track pool's
+        // (no cross-chunk pooling needed to reproduce them here).
         let buf = try await AudioLoader.load(url: url, targetSampleRate: Double(Self.sr))
         let candidates = YINEngine(sampleRate: Double(Self.sr)).analyzePYINCandidates(samples: buf.samples)
         let f0Series = PYINDecoder().decode(candidatesPerFrame: candidates)
         let isolated = PitchResult.from(f0Series: f0Series)
-        let isolatedF0 = Double(isolated.meanF0)
+        let isolatedMean = Double(isolated.meanF0)
+        let isolatedMedian = Double(isolated.medianF0)
 
-        XCTAssertEqual(productionReportedF0, isolatedF0, accuracy: 1.0,
-                        "production pitch (\(productionReportedF0)Hz) diverged from the isolated YINEngine+PYINDecoder pipeline (\(isolatedF0)Hz) on the same synthetic 440Hz tone -- one of them is not calling what the other calls")
+        XCTAssertEqual(productionMean, isolatedMean, accuracy: 1.0,
+                        "production mean f0 (\(productionMean)Hz) diverged from the isolated pipeline (\(isolatedMean)Hz)")
+
+        XCTAssertEqual(productionMedian, isolatedMedian, accuracy: 1.0,
+                        "production median f0 (\(productionMedian)Hz) diverged from the isolated pipeline (\(isolatedMedian)Hz)")
     }
 }
