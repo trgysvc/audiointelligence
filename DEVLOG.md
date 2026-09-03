@@ -4130,4 +4130,517 @@ investment than Brass's already-measurable target.
 
 ---
 
+## Phase 48: Item 5's own pre-committed verification step -- Brass fine-class MFCC separation
+measured directly, hypothesis REFUTED (2026-09-03)
+
+### Context
+
+Item 4 found Brass/Trumpet's `mfccPattern` fits real Brass audio badly (only 2-4/80 clips score
+closest to their own profile on the timbre term alone), with the leading unconfirmed explanation
+being that OpenMIC's "Brass/Trumpet" coarse class merges 3 tinbrally distinct fine classes
+(saxophone, trombone, trumpet) into one shared MFCC profile. Item 5 pre-committed the verification
+rule before running it: measure the 3 fine classes' real train-partition MFCC distributions
+separately; "gerçekten birbirinden uzaklarsa hipotez doğrulanır, yakınlarsa başka bir neden
+aranmalı (körlemesine 3'e bölme uygulanmayacak)."
+
+### Method
+
+Throwaway diagnostic (write, use, `git checkout --` revert -- not a permanent file): temporarily
+repointed `Examples/PrototypeTrainer/main.swift`'s `openmicToSingleCoarse` map so
+saxophone/trombone/trumpet each accumulate as their OWN pseudo-coarse class instead of merging
+into "Brass/Trumpet", reusing the trainer's existing real-audio STFT/MFCC pipeline unchanged (same
+train partition, same single-label-only filtering). Added a per-MFCC-dimension moment accumulator
+(mean+SD per dim, not just the existing scalar sum) so a real within-class spread could be
+compared against between-class mean distance on the same Euclidean scale -- both are L2 norms over
+the same 10-dim MFCC space, so `distance / avg-within-class-SD-norm` is a directly interpretable
+separation ratio (>1 = classes separated relative to their own spread; <1 = within-class variation
+dominates, classes overlap too much for a mean-profile split to reliably distinguish them). Ran via
+`swift run -c release PrototypeTrainer` against the full real OpenMIC-2018 train partition (7618
+processed clips, same run that also reproduced the existing 6-coarse-class prototypes unchanged --
+sanity check that the diagnostic's other mechanics weren't altered).
+
+### Finding
+
+Saxophone n=448, Trombone n=101, Trumpet n=188 (real single-label train clips). Pairwise mean-MFCC
+Euclidean distances vs. average within-class MFCC SD norm:
+- dist(Saxophone, Trombone) = 91.94, avg within-class SD = 120.63, **ratio = 0.76**
+- dist(Saxophone, Trumpet) = 50.94, avg within-class SD = 120.12, **ratio = 0.42**
+- dist(Trombone, Trumpet) = 59.20, avg within-class SD = 139.88, **ratio = 0.42**
+
+All three ratios are below 1 -- every pair's own within-class MFCC spread is larger than the
+between-class mean distance separating them. This is the "yakınlarsa" branch of item 5's own
+pre-committed rule, measured directly rather than assumed: the 3 fine classes are NOT far apart
+enough in MFCC space to justify a sub-profile-per-fine-class split. A typical individual Trumpet
+clip's own MFCC vector is, on average, about as likely to sit closer to Saxophone's mean profile as
+to Trumpet's own -- so splitting into 3 mean-based sub-profiles would not reliably separate them;
+the timbre-term poor-fit problem item 4 measured is not (primarily) a merged-profile artifact.
+
+Also visible in the same run's ordinary per-class output (scalar features, not MFCC): the 3 fine
+classes DO differ noticeably on centroid/lowBand (e.g. lowBand mean Saxophone=0.4405 vs.
+Trumpet=0.2341) -- so the merge isn't uniformly harmless, just not the dominant explanation for the
+specific MFCC/timbre-term failure item 4 isolated. Also note Saxophone's n (448) is ~2.4x
+Trombone+Trumpet combined (289) in this partition, so the existing merged "Brass/Trumpet"
+`mfccPattern` (an unweighted mean over all matching clips) is already implicitly Saxophone-leaning
+-- a real, separate, smaller effect worth keeping in mind, but not sufficient on its own to explain
+an 80-clip near-total-miss.
+
+### Verification
+
+Per-dimension MFCC moment tracking was checked against the trainer's own pre-existing scalar
+moment accumulator for internal consistency (same `MomentAccumulator.sd` formula, applied
+per-dimension); the run's ordinary 6-coarse-class output (Piano/Bass/Vocals/Drums/Strings
+prototypes, unrelated to this diagnostic's changes) reproduced the same values already baked into
+`InstrumentEngine`'s `profiles` array, confirming the diagnostic's edits didn't silently perturb
+the rest of the pipeline.
+
+### Status
+
+Item 5's verification step: DONE, hypothesis REFUTED by direct measurement. Per item 5's own
+pre-committed rule, the blind 3-way sub-profile split is NOT applied. Item 4's real root cause
+(why Brass/Trumpet's timbre term fits real audio so poorly) remains open -- "başka bir neden
+aranmalı," not yet found. Diagnostic file changes reverted (`git checkout --
+Examples/PrototypeTrainer/main.swift`, confirmed clean via `git status`); no production code
+touched this phase. Yapilacaklar's item 5 updated to record this closed verification step and the
+still-open root cause.
+
+---
+
+## Phase 49: Item 4 follow-up -- per-dimension Cohen's d check REFUTES "profile poor-fit"
+(retracted), weighted-MFCC-distance hypothesis then tested and ALSO REFUTED (2026-09-03)
+
+### Context
+
+After Phase 48 refuted item 5's sub-profile hypothesis, the working inference was that Brass/
+Trumpet's `mfccPattern` is a genuine architecture-level poor fit (single mean vector can't
+represent real Brass audio at all) and item 4 should close as "understood, not a fixable bug."
+That inference was flagged as unmeasured and checked before being acted on.
+
+### Method (verification 1: per-dimension Cohen's d)
+
+Same throwaway-diagnostic pattern as Phase 48 (`PrototypeTrainer`, edited, run, `git checkout --`
+after use): added per-MFCC-dimension moment tracking to all 6 coarse-class accumulators (not just
+the 3 Brass fine classes this time), computed Cohen's d per dimension between Brass/Trumpet and
+each of the other 5 classes on the real train partition. Pre-committed rule (written before
+running): max-across-10-dims of the average Cohen's d below 0.5 (medium-effect threshold) would
+confirm "no dimension carries real signal, profile poor-fit." Result: dim 0 and dim 1 both
+averaged d=0.67 -- ABOVE the 0.5 threshold. **The "architecture-limit" inference was wrong,
+retracted immediately.** Dims 0/1 do carry real, medium-to-large discriminative signal for Brass;
+the remaining 8 dims are weaker (d=0.34-0.46). `InstrumentEngine.scoreComponents`'s MFCC distance
+(lines ~232-238) sums all 10 dims with equal (unweighted) contribution -- a concrete, code-visible
+mechanism by which that real dim0/1 signal could be getting diluted among 8 weaker dims, not a
+speculative 4th hypothesis but a direct implication of this measurement.
+
+### Method (pre-check: is dim0/1's power Brass-specific?)
+
+Before committing to global-vs-per-class weighting, extended the same diagnostic to compute each
+of the 6 classes' own avg-vs-other-5 Cohen's d per dimension (6x10 matrix, all from train
+partition). Finding: dims 0/1 are the strongest or near-strongest dimension for 5 of 6 classes
+(Piano dim1=1.18, Vocals dim0=1.22, Drums dim1=1.25, Strings dim0/1=0.71, Brass dim0/1=0.67); the
+6th (Bass) isn't weak there either (0.84/0.88), just even stronger elsewhere. No class showed
+dim0/1 as uniquely low -- global (not per-class) weighting judged low-risk, chosen as the simpler
+first attempt per the pre-registered plan.
+
+### Method (verification 2: weighted-distance hypothesis, held-out, two-directional)
+
+Made `dimensionWeights` a PERMANENT `PrototypeTrainer` output (not throwaway, since it's now a
+real piece of profile data like `mfccPattern` itself) -- per-dimension Cohen's d averaged across
+all 6 classes, normalized to mean 1.0: `[1.4006, 1.5062, 0.8768, 0.9464, 0.8265, 0.9566, 0.9349,
+0.8795, 0.7911, 0.8815]` (train partition only). Wired into `InstrumentEngine.scoreComponents`'s
+mfccDistance as `weight * diff * diff` per dimension. Measured OpenMIC held-out recall (`
+RA_OPENMIC_TEST_ONLY=1 RA_OPENMIC_VERBOSE=1 RA_OPENMIC_LIMIT=0`, all 6 classes, full held-out
+partition, never touched by either the profiles or these weights) BEFORE and AFTER, same binary,
+same partition:
+
+| Class | Before | After | Δ |
+|---|---|---|---|
+| Bass | 71/120 (59%) | 70/120 (58%) | -1 |
+| Brass/Trumpet | 27/465 (5%) | 26/465 (5%) | -1 (no gain) |
+| Drums/Percussion | 364/457 (79%) | 362/457 (79%) | -2 |
+| Piano/Keyboard | 240/456 (52%) | 239/456 (52%) | -1 |
+| Strings/Synth | 444/1075 (41%) | 441/1075 (41%) | -3 |
+| Vocals/Chorus | 46/207 (22%) | 42/207 (20%) | -4 (real regression) |
+
+Brass showed no gain at all (26 vs 27, within noise, arguably down), and every other class was
+flat-to-worse, Vocals a real -2pp drop. Two-directional standard fails outright -- not a tradeoff
+worth taking (no class improved to weigh against Vocals' loss). **Weighted-distance hypothesis
+REFUTED.** Reverted both `InstrumentEngine.swift` and `PrototypeTrainer/main.swift` via
+`git checkout --`.
+
+### Why the weighting didn't help despite real per-dimension signal existing
+
+Not yet root-caused, but the likely reason: Cohen's d "Brass vs. the average of the other 5"
+doesn't measure separation from Brass's actual nearest competing class in real classification --
+if Brass's real confusion is concentrated against one or two specific classes whose own dim0/1
+values happen to sit close to Brass's, up-weighting dims that discriminate well ON AVERAGE doesn't
+help against that specific near neighbor, and (since the same weights apply to every profile's
+distance calculation, not just Brass's) can simultaneously erode a different class's own
+narrower-margin separation elsewhere (plausibly what happened to Vocals). A per-competitor
+(confusion-matrix-driven) analysis, not an average-Cohen's-d one, is the more direct next
+diagnostic if this line of investigation continues.
+
+### Status
+
+Four hypotheses now measured and refuted for item 4: (1) formula/threshold bug, (2) 3-vs-4-term
+scale unfairness, (3) sax/trombone/trumpet sub-profile merge (item 5), (4) equal-weight MFCC-
+dimension dilution. No production code changed this phase (both attempted fixes reverted after
+failing their own pre-committed closing evidence). Item 4 itself is NOT closed -- neither as
+"fixed" (nothing fixed it) nor as "architecture-limit, done" (that inference was retracted, real
+per-dimension signal exists). The honest status: root cause still unknown, four specific,
+measured-not-guessed explanations ruled out. Given the pattern of four measured misses, next step
+paused here for direct user input rather than picking a fifth hypothesis unprompted.
+
+---
+
+## Phase 50: Item 4 -- two pre-diagnoses (not a 5th mechanism hypothesis) before continuing: is
+this InstrumentEngine's fault at all? (2026-09-03)
+
+### Context
+
+After Phase 49's fourth refutation, the pattern itself became the finding: four consecutive
+"InstrumentEngine has a mechanism bug" hypotheses all failed. Rather than test a fifth mechanism
+hypothesis (which shares the same unverified assumption the first four did), two prior questions
+were checked instead: (1) does Brass's prediction go to one dominant wrong class (a mechanism
+clue) or scatter (an input/representation problem)? (2) is OpenMIC's Brass ground truth itself
+reliable?
+
+### Ground-truth confidence check
+
+Parsed `openmic-2018-aggregated-labels.csv` directly (Python, no audio, no Swift build) for the
+relevance/agreement distribution of positive (>=0.5) labels. Brass fine classes: saxophone
+avg_relevance=0.9494 (69.6% "strong" >=0.9 consensus), trombone=0.9218 (54.1%), trumpet=0.9275
+(56.6%), zero borderline (<0.6) labels in any of the three. Compared against Bass (avg_relevance=
+0.9087, the LOWEST of the comparison group) which still achieves 59% recall, and Cello (0.9274,
+part of Strings, 41% recall) -- Brass's labels are AS reliable or MORE reliable than classes the
+engine handles well. **This disconfirms ground-truth noise as the primary driver** -- lower-
+consensus labels elsewhere don't prevent good recall, so Brass's higher-consensus labels are
+unlikely to be why it fails.
+
+### Confusion-matrix diagnosis (not hypothesis 5 -- a diagnostic to route the next step)
+
+Added a permanent (not throwaway) extension to `ReliabilityAudit`'s existing `RA_OPENMIC_VERBOSE`
+block in `runOpenMICTask` (`Examples/ReliabilityAudit/main.swift`): alongside per-class recall,
+now also tracks and prints `classConfusion[trueClass][predictedLabel]` -- the same held-out loop,
+same `predictInstrument` call already being made, no extra audio passes. Ran against the full
+OpenMIC held-out partition (`RA_OPENMIC_TEST_ONLY=1 RA_OPENMIC_VERBOSE=1 RA_OPENMIC_LIMIT=0`):
+
+| True class | own-class % | largest wrong % | # buckets >=10% |
+|---|---|---|---|
+| Drums/Percussion | 79% (dominant) | Bass 5% | 0 |
+| Bass | 59% (dominant) | Drums/Piano 15% | 2 |
+| Piano/Keyboard | 52% (dominant) | Strings 26% | 2 |
+| Strings/Synth | 41% (dominant) | Piano 22% | 3 |
+| Vocals/Chorus | 22% (2nd largest) | Drums 38% | 2 |
+| **Brass/Trumpet** | **5% (SMALLEST bucket)** | Strings 33% | **4 (Strings 33, Drums 21, Vocals 20, Piano 10)** |
+
+Every other class's own profile is either the largest bucket or a clear second place. Brass is
+qualitatively different: its own profile is the single SMALLEST bucket (tied with the near-zero
+"Ambient/Unclassified" outlier), and its wrong predictions spread across four substantial buckets
+rather than concentrating on one competing profile. Per the pre-registered read of this
+diagnostic: a single dominant wrong class would point at a specific profile pair to examine; a
+scattered spread instead indicates Brass's real MFCC signal doesn't consistently land near ANY
+single profile, Brass's own included.
+
+### Status
+
+Both pre-diagnoses point the same direction: ground truth checks out (as reliable as classes that
+work), and the failure mode is "no consistent home," not "consistently confused with one specific
+class." Combined with Phase 49's finding that individual MFCC dimensions DO carry real average
+separating power (Cohen's d 0.34-0.67), the picture forming is: the FULL 10-dimensional joint
+distribution of real Brass audio (saxophone+trombone+trumpet combined, item 5 already showed these
+3 don't cluster distinctly from each other, but that's separate from whether the merged distribution
+is well-represented by one mean) is too broad or multi-modal for a single Gaussian-style mean
+vector to serve as a prototype that reliably wins pairwise nearest-profile contests -- a
+representation/model-capacity limit, not a specific fixable bug, but now supported by two direct
+diagnoses rather than an unmeasured inference (unlike Phase 48's retracted claim). Confusion-matrix
+addition to `ReliabilityAudit` kept permanently (real reusable diagnostic, not reverted). No
+production code changed. Paused for direct user input on whether this evidence is sufficient to
+close item 4 this way, or whether one more specific diagnostic is warranted before deciding.
+
+---
+
+## Phase 51: Item 4 -- unimodal vs. multimodal check settles the closing statement's exact form
+(2026-09-03)
+
+### Context
+
+Phase 50's two pre-diagnoses established "representation problem, not mechanism" but left the
+closing statement's exact form ambiguous between two distinct sub-cases that call for different
+fixes: (Olasilik 1) Brass's real MFCC distribution is wide but unimodal -- the mean is the right
+center, but variance is too high for a fixed-radius distance to work, fix = variance-aware
+(Mahalanobis-style) distance, still one prototype. (Olasilik 2) the distribution is genuinely
+multimodal -- distinct clusters exist and the single mean sits in the gap between them, fix =
+multiple prototypes per class. Item 5 already ruled out the sax/trombone/trumpet fine-label axis
+as the source of multimodality (separation ratio <1, DEVLOG Phase 48) -- but that only eliminates
+ONE possible axis, not multimodality along some other axis (register, dynamics, mix character).
+
+### Method
+
+Same throwaway-diagnostic pattern (`PrototypeTrainer`, edited, run, `git checkout --` after use).
+Collected raw per-clip 10-dim MFCC vectors for all 1292 real Brass/Trumpet train clips (not just
+moments this time). Implemented k-means (Lloyd's algorithm, 10 restarts, 30 iterations) directly
+in the diagnostic. Pre-committed decision rule (written before running): `varianceExplained = 1 -
+WCSS(k=2)/WCSS(k=1)`; `centerSeparationRatio = ||center1-center2|| / avg(within-cluster MFCC SD
+norm)` (same normalized methodology as Phase 48/49's Cohen's-d-style checks). MULTIMODAL if
+varianceExplained > 0.25 AND centerSeparationRatio > 1.0; else UNIMODAL/high-variance.
+
+### Finding
+
+- k=2: cluster sizes 441/851, **varianceExplained = 0.4502** (threshold 0.25), **centerSeparation
+Ratio = 1.8178** (threshold 1.0) -- both cleared comfortably, not a marginal call.
+- k=3 cross-check: sizes 519/565/208, varianceExplained rises further to 0.5752 -- consistent with
+genuine multi-cluster structure (a third real cluster, not noise splitting a random half).
+
+**MULTIMODAL (Olasilik 2) confirmed.** Brass's real MFCC distribution forms distinct clusters
+along an axis OTHER than instrument identity (item 5 already excluded sax/trombone/trumpet as the
+axis) -- most likely register, dynamics, or mix/production character, not identified further here.
+The single mean-vector prototype sits in a real gap between at least two (likely three) genuine
+clusters, which is why it rarely wins a nearest-profile contest (Phase 50's 5% recall) and why
+wrong predictions scatter across multiple competing classes rather than concentrating on one
+(different Brass clips, from different real clusters, land near different other classes' means).
+
+### Status
+
+Item 4 CLOSED with this exact form, per the user's own pre-agreed branching: "temsil sınırı:
+Brass çok-kipli (sax/trombone/trumpet'e göre değil -- madde 5 onu eledi -- başka bir eksene göre);
+tek prototip kipler-arası boşluğa düşüyor; çözüm çok-prototipli temsil, veri-türevli." This is a
+closing statement earned by five total measurements this investigation (4 refuted mechanism
+hypotheses + this multimodality check), not the single retracted inference Phase 48 tried first.
+The actual multi-prototype implementation is explicitly NOT started here -- it belongs to
+InstrumentEngine's broader data-derived-profile architecture item, opened as its own item so the
+"which axis, how many prototypes, how to route predict()'s classification across them" design
+questions get their own investigation rather than being folded into item 4's closure. Diagnostic
+file reverted (`git checkout --`, confirmed clean). No production code changed this phase.
+
+---
+
+## Phase 52: Item 8 (heavy layer) investigation surfaces a real Phase 39 regression -- item 2/3's
+"TAMAMEN KAPANDI" closure was wrong (2026-09-03)
+
+### Context
+
+Started investigating item 8's heavy (real-audio) production-parity layer, scoped to the two
+engines with a named, active need (InstrumentEngine for item 13's prerequisite; TraditionalTheory-
+Engine/bass-note for item 12a). Before building anything, checked what already exists.
+
+### Finding 1: InstrumentEngine heavy-parity infrastructure already exists, and is live
+
+`Examples/ReliabilityAudit/main.swift`'s `runInstrumentProductionParityCheck` (`RA_INSTRUMENT_
+PARITY=1`) already runs real production (`AudioIntelligence().analyzeRawAggregate`) against
+isolated CPU/GPU helpers on real OpenMIC held-out audio -- this is exactly item 8's heavy layer,
+already built (Phase 19-era), not something to construct from scratch. Ran it (90 files,
+`RA_INSTRUMENT_PARITY_PER_CLASS=15`): isolated-CPU vs isolated-GPU 100% (no compute-backend
+divergence), but isolated vs production only 55.6% -- and production accuracy (37.8%) WORSE than
+isolated's own (42.2%).
+
+### Finding 2: bass-note heavy-parity is structurally blocked -- confirmed, not assumed
+
+Checked the 6 locally-available real SQAM WAV files' actual spectral content in the bass register
+(32.7-130.8Hz, `detectBassNote`'s original scan window) via direct FFT (Python/numpy, no Swift
+build needed): every file's bass-band energy fraction is near-zero (0.00%-2.16%), none of their
+overall spectral peaks fall in that band. None of the 6 files carry meaningful bass-register
+content -- building a bass-note parity check on this data would repeat exactly the Phase 47
+synthetic-test trap (measuring noise-floor, not signal). Chord/TraditionalTheoryEngine ground
+truth is independently blocked too (`chordGapResult()` already documents Isophonics/McGill
+Billboard distribute annotations only, no audio, for copyright reasons). Both branches of item
+8's bass-note-adjacent work are genuinely blocked on missing real audio, not unbuilt.
+
+### Finding 3: A/B diagnosis -- is the 55.6% new, or a regression? Confirmed: REGRESSION
+
+Before investigating the divergence's mechanism, checked whether it contradicted Phase 35's own
+88.7% closing evidence for item 2 (same-sounding check, same function name). Re-ran the IDENTICAL
+setup Phase 35 used (`RA_INSTRUMENT_PARITY_PER_CLASS=25`, default, 150 files, same held-out
+partition, same `runInstrumentProductionParityCheck`):
+
+| | Phase 35 (closing evidence) | now (Phase 52 re-run) |
+|---|---|---|
+| agreement isolated vs production | 88.7% | **52.7%** |
+| isolated accuracy vs ground truth | 48.7% | 48.7% (IDENTICAL) |
+| production accuracy vs ground truth | 50.0% | **38.7%** |
+
+Isolated side is byte-for-byte unchanged (48.7% both times) -- confirming the isolated reference
+pipeline itself hasn't drifted. Agreement and production accuracy both collapsed. This is
+unambiguous: a real regression happened between Phase 35's closure and now, not a different
+metric or a different sample producing an incomparable number.
+
+### Root cause (code-level, confirmed not inferred)
+
+`InstrumentEngine.predict()`'s own `primaryLabel` field is deliberately raw-score-ordered
+(`InstrumentEngine.swift` ~150-158, doc comment: "deliberately unaffected by calibration") -- this
+is genuinely intact, exactly as Phase 38-39 designed and verified. `ReliabilityAudit`'s isolated
+helpers (`predictInstrument`/`predictInstrumentGPU`) read this field directly -- unaffected.
+
+But `DNAReportBuilder.swift`'s `instruments:` block (~890-911) does NOT read `predict()`'s own
+`primaryLabel` at all. It has its own, entirely separate selection: it collects every chunk's
+`predictions[].confidence` into `allInstruments`, averages per label across all chunks, and picks
+`finalInstruments.first?.label` -- argmax over averaged confidence. Before Phase 38, that
+`confidence` field carried the RAW score, so this aggregate selection was consistent with
+`predict()`'s own raw-score ordering (which is why Phase 35's 88.7% held). Phase 38-39 wired
+`predictions[].confidence` to `InstrumentCalibration.calibrate(...)` (a real, correct, and
+separately-verified change to what the REPORTED number means) -- but never checked that
+`DNAReportBuilder` uses that same field as a SECOND, independent decision input, not just a
+reported value. Isotonic calibration is not comparable across classes (this session's own
+established finding -- different classes' calibration curves have different plateaus/saturation
+points) -- so averaging calibrated confidence across many chunks and taking an argmax ACROSS
+CLASSES is a statistically broken selection criterion, even though each individual calibrated
+number is itself correct for what it reports.
+
+### Why Phase 39's own careful verification missed this
+
+Phase 39 built a real identity-check (`RA_INSTRUMENT_CALIBRATION_WIRING_CHECK`), caught two real
+wiring bugs (mono-mixdown, buffer sizing) during that work, and verified `predict()`'s own
+`primaryLabel` stayed raw-score-ordered. All of that was real and correct. What it did not do:
+check every OTHER place `predictions[].confidence` is consumed downstream -- `DNAReportBuilder`'s
+aggregate instrument selection is a second, independent consumer of that same field, and changing
+what the field means (Phase 38's whole point) silently changed that second consumer's behavior
+too, without anyone verifying it. Same family as this session's Key-field and medianF0 findings:
+a value's role at one call site changed, and a different call site depending on the OLD role broke
+silently.
+
+### Status
+
+Item 2/3's "TAMAMEN KAPANDI" (Phase 39) is WRONG and retracted -- not deleted, corrected in place
+per this session's retraction convention, plus reopened as item 14 in Yapilacaklar with full root
+cause. Fix applied this same phase, record correction written first (per İş A -- no window where
+the record still says "closed" while the code has already moved).
+
+### The fix
+
+`DNAReportBuilder.swift`'s chunk loop now also records `instMetrics.primaryLabel` per chunk into a
+new `allInstrumentWinners: [String?]` array (raw-score-ordered, straight from `InstrumentEngine.
+predict()`'s own untouched selection). `assembleFinalDNA` computes a single shared
+`productionInstrumentWinner` (majority vote across `allInstrumentWinners`) and uses it for BOTH
+places that previously ran their own broken argmax-over-averaged-calibrated-confidence: the
+`instruments:` block's `primaryLabel`, and a second, independently-discovered instance at
+`topInstrumentLabel` (feeding `SemanticMetrics.primaryRole`) -- same bug, same root cause, found
+by grepping for every other consumer of `allInstruments`/`p.confidence` rather than stopping at
+the first fix. Neither `finalInstruments` (the reported per-label confidence list) nor
+`instrumentAccumulator`'s calibrated-averaging was touched -- confirmed via `git diff`, that
+computation is byte-identical to before the fix.
+
+### Two-directional closing evidence
+
+1. **Agreement restored:** identical 150-file, `RA_INSTRUMENT_PARITY_PER_CLASS=25` re-run --
+   agreement isolated vs production **52.7% -> 89.3%** (Phase 35's original was 88.7%, matched
+   within noise), production accuracy vs ground truth **38.7% -> 50.0%** (Phase 35's original was
+   exactly 50.0% -- identical). Regression closed.
+2. **Reported confidence still calibrated, not reverted to raw:** confirmed two ways -- (a) `git
+   diff` shows the `instrumentAccumulator`/`finalInstruments` computation is untouched by this
+   fix, only `primaryLabel`'s source changed; (b) live run (`AudioIntelligence().
+   analyzeRawAggregate` on `Tests/Resources/SQAM/trpt21_2.wav`, real trumpet audio) shows
+   `report.instruments.predictions` confidence values of 0.5909/0.4643 -- bounded, plateau-shaped
+   (consistent with isotonic calibration's step function, not a smooth raw-score sum), no value
+   exceeding 1.0.
+
+Full `swift test` run launched after the fix as a collateral-damage check (`DNAReportBuilder.swift`
+is widely shared across the whole report-building pipeline): **137/137 tests passed, 0 failures**
+(2550s, ~42.5 minutes). No collateral damage anywhere else in the suite.
+
+### Status
+
+Item 14 (the regression) is closed by this fix, verified two-directionally. Item 8's own value is
+now concretely proven, not just argued: its existing heavy-parity check caught a real two-session-
+old silent regression the moment it was run by hand -- formalizing this check under item 8 (kept
+runnable via `RA_INSTRUMENT_PARITY`, CI connection remains its own separate decision per this
+session's "verify before connecting to shared automation" principle) is the next natural step, not
+building new infrastructure from scratch. The generalizable lesson, recorded for item 13 (Instrument-
+Engine's next deep change, multi-prototype representation): when a field's MEANING changes, grep
+every consumer of that field, not just the one place the change was designed for -- Phase 39 was a
+careful phase by its own standards and still missed this, because `predictions[].confidence` had a
+second, undocumented role (decision input, not just reported value) that nobody thought to check.
+
+---
+
+## Phase 53: Item 8 InstrumentEngine formalization -- fixed pass/fail threshold, and a self-caught
+mistake in trying to add a confidence check (2026-09-03)
+
+### Threshold design: fixed floor, not a moving baseline
+
+`runInstrumentProductionParityCheck` never had an explicit pass/fail verdict, just printed
+numbers. Added one, choosing a FIXED 80% agreement floor over a baseline-deviation check
+(comparing each run against a stored "last known good" value). Reasoning: two independent
+known-good measurements already exist on record -- Phase 35's 88.7% and this same phase's own
+89.3% re-verification after the Phase 52 fix -- a ~1pp spread attributable to AVFoundation
+decode-noise (Phase 15/39's own quantified finding). 80% sits 8-9pp below both good measurements
+(~8x the observed noise spread -- won't false-positive-fail on noise) yet 27+pp above what the
+actual regression this check caught produced (52.7%). A baseline-deviation check was deliberately
+rejected: a stored baseline that silently updates itself can absorb a regression as the new normal
+if nobody notices the update -- not hypothetical, this session watched several "verified" claims
+turn out to be unverified assumptions. A fixed floor can't drift with the bug it exists to catch.
+
+### A self-caught mistake: the first attempt to add a calibrated-confidence check was wrong
+
+Tried adding a second check (per the user's request) comparing production's reported confidence
+against an isolated helper's, at Phase 39's 0.005 tolerance (its own expose-precision derivation).
+First attempt used `predictInstrumentFull` (built on `AudioLoader.load`) for the isolated side --
+measured max residual 0.14823, an apparent FAIL. Before reporting this as a new bug, checked
+whether the comparison itself was even valid: `predictInstrumentBreakdownProductionMix`'s own doc
+comment (written during Phase 39) already documents that `AudioLoader.load`'s mono-mixdown/frame-
+counting differs from production's real `loadNextChunkStereoManual` path, and that BEFORE Phase
+39's loader fix, THIS SAME KIND of comparison measured "82/138 mismatch, max 0.194" -- remarkably
+close to the 0.14823 just measured. This was the same already-diagnosed loader gap, re-triggered
+by using the wrong isolated helper for a confidence-level (not just label-level) comparison --
+label agreement is robust to this small loading difference (only needs the ranking to survive);
+an exact confidence NUMBER is not. Also found `InstrumentCalibration.calibrate` is not `public`,
+so `Examples/ReliabilityAudit` cannot call it directly at all -- confirming why Phase 39's own
+check (`runInstrumentCalibrationWiringIdentityCheck`) re-fits an independent offline calibration
+model in ReliabilityAudit itself and compares THAT against production, rather than calling the
+embedded function.
+
+Reverted the flawed inline addition (removed from `runInstrumentProductionParityCheck` entirely,
+with an explanatory comment for the next person tempted to add it the same way) rather than
+keep a check that reports false alarms. Confirmed the ALREADY-CORRECT calibrated-confidence check
+already exists (`RA_INSTRUMENT_CALIBRATION_WIRING_CHECK`) and re-ran it after the Phase 52 fix:
+max residual **0.00208336** -- identical to Phase 39's own documented final accepted number
+(0.00208, well under its 0.005 acceptance bar). Confidence-value fidelity is exactly where Phase
+39 left it; the Phase 52 fix (which only changed `primaryLabel` selection, never touched
+`instrumentAccumulator`/`finalInstruments`) did not disturb it, confirmed rather than assumed.
+(Note: this check's own internal `PASS`/`FAIL` print uses a much stricter 1e-6 bar than its actual
+0.005 acceptance criterion, so it always prints "FAIL" with the same 55/138 mismatches Phase 39
+already characterized and accepted -- read the printed `max|offline - production|` number against
+0.005, not the check's own pass/fail line.)
+
+### Status: item 8's InstrumentEngine layer formalized as two existing checks, not new infrastructure
+
+Item 8 (InstrumentEngine side) is the COMBINATION of two already-existing `ReliabilityAudit`
+diagnostics, not something built from scratch this session:
+- `RA_INSTRUMENT_PARITY` (`runInstrumentProductionParityCheck`) -- label-agreement, now with an
+  explicit 80%-floor pass/fail verdict (this phase's addition).
+- `RA_INSTRUMENT_CALIBRATION_WIRING_CHECK` (`runInstrumentCalibrationWiringIdentityCheck`) --
+  calibrated-confidence fidelity, already had its own tolerance and closing evidence (Phase 39),
+  re-verified clean after Phase 52's fix.
+
+Both are real-audio (OpenMIC held-out), both are env-var-gated. Bass-note/TraditionalTheoryEngine
+heavy-parity remains structurally blocked (no locally-available real audio carries bass-register
+content; chord ground-truth has no audio at all, copyright-restricted) -- recorded as
+blocked-on-data, not unbuilt, exactly like the chord gap.
+
+### CI connection: considered, correctly rejected as solving a non-problem
+
+Started scoping CI connection for the heavy layer (`RA_INSTRUMENT_PARITY`/`RA_INSTRUMENT_
+CALIBRATION_WIRING_CHECK`) as item 13's prerequisite. Found `Tests/Resources/OpenMIC` is a
+`.gitignore`d symlink to an external drive (3.7GB audio, 6.4GB total) -- a fresh GitHub Actions
+runner clones only the git repo, so this data would not exist there at all. Considered three
+options (commit a small curated real-audio subset into git; add a download+cache CI step;
+leave the heavy layer local-only) before recognizing the real question underneath: does item 13
+actually NEED CI automation to be safely protected?
+
+It does not. The premise (Phase 39's regression survived two sessions because nobody ran the
+check) doesn't apply to item 13's own work: item 13 means actively modifying InstrumentEngine
+across many steps, and running the already-formalized local check (env-var-gated, `RA_
+INSTRUMENT_PARITY`/`RA_INSTRUMENT_CALIBRATION_WIRING_CHECK`) at each meaningful step is a natural
+part of doing that work, not something requiring automation to not be forgotten. Committing a
+data subset into git for a temporary CI convenience was a bad trade on its own terms (git is the
+wrong place for binary test corpora, and a smaller subset reopens the variance/threshold-margin
+question item 8's 80% floor was carefully derived to avoid). A download+cache CI step is real,
+separately-scoped infrastructure work with its own cost/complexity, not a prerequisite for
+anything currently planned.
+
+**Decision: CI connection deferred, not pursued further this session.** It remains a legitimate
+future question -- "if InstrumentEngine goes untouched for a long stretch and someone else
+silently breaks it via an unrelated change, do we want automatic detection" -- but that question
+is independent of item 13 and deserves its own scoped investigation (synthetic proxy? on-demand
+cache? something else?) if and when it becomes a real need, not a default assumed here.
+
+---
+
 > *"Measured, not claimed: AudioIntelligence reports what it can prove."*

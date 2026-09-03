@@ -1089,6 +1089,19 @@ func runInstrumentProductionParityCheck(root: String, perClassLimit: Int) async 
             // discriminator for whether the production divergence is a GPU/CPU numerical
             // difference upstream of Phase 19's already-verified DCT-scale fix), and real
             // production. See `predictInstrumentGPU`'s doc comment.
+            //
+            // Calibrated-confidence fidelity (not just label agreement) is a SEPARATE, already-
+            // built check -- `RA_INSTRUMENT_CALIBRATION_WIRING_CHECK` -- deliberately NOT
+            // duplicated here. An earlier attempt to add a confidence comparison inline in this
+            // function, using `AudioLoader.load` (like `cpuLabel` below), produced a misleading
+            // ~0.148 residual -- not a real bug, but this same function's `AudioLoader.load` vs.
+            // production's real `loadNextChunkStereoManual` loading-path difference that Phase 39
+            // already found and fixed FOR CONFIDENCE COMPARISONS SPECIFICALLY by building
+            // `predictInstrumentBreakdownProductionMix` (used only by the calibration-wiring
+            // check). Label agreement is robust to that small loading difference (it only needs
+            // the ranking to survive, not the exact number); confidence-value comparison is not
+            // -- reusing this function's `AudioLoader.load`-based `cpuLabel` for a confidence
+            // check would have been comparing apples to oranges. Keep the two checks separate.
             let cpuLabel = await predictInstrument(samples: buf.samples, sampleRate: 22050)
             let gpuLabel = await predictInstrumentGPU(samples: buf.samples, sampleRate: 22050)
             guard let analysis = try? await AudioIntelligence().analyzeRawAggregate(url: audioURL) else { continue }
@@ -1110,7 +1123,8 @@ func runInstrumentProductionParityCheck(root: String, perClassLimit: Int) async 
     print("\n=== Instrument: production (DNAReportBuilder) vs isolated engine (CPU and GPU variants), same files (held-out) ===")
     print("evaluated=\(evaluated) (single-coarse-class, held-out test partition)")
     guard evaluated > 0 else { print("no files evaluated"); return }
-    print(String(format: "  agreement isolated-CPU vs production: %d/%d (%.1f%%)  [original finding]", agreeCpuProd, evaluated, Double(agreeCpuProd) / Double(evaluated) * 100))
+    let agreementPct = Double(agreeCpuProd) / Double(evaluated) * 100
+    print(String(format: "  agreement isolated-CPU vs production: %d/%d (%.1f%%)  [original finding]", agreeCpuProd, evaluated, agreementPct))
     print(String(format: "  agreement isolated-CPU vs isolated-GPU: %d/%d (%.1f%%)  [same wiring, only compute backend differs]", agreeCpuGpu, evaluated, Double(agreeCpuGpu) / Double(evaluated) * 100))
     print(String(format: "  agreement isolated-GPU vs production: %d/%d (%.1f%%)  [if this is high, GPU/CPU explains the gap]", agreeGpuProd, evaluated, Double(agreeGpuProd) / Double(evaluated) * 100))
     print(String(format: "  isolated-CPU accuracy vs ground truth: %d/%d (%.1f%%)", cpuCorrect, evaluated, Double(cpuCorrect) / Double(evaluated) * 100))
@@ -1120,6 +1134,25 @@ func runInstrumentProductionParityCheck(root: String, perClassLimit: Int) async 
         print("\n--- disagreements (isolated vs production predicted different labels) ---")
         disagreements.forEach { print("  \($0)") }
     }
+
+    // DEVLOG Phase 52: pass/fail verdict, fixed threshold chosen BEFORE this addition existed
+    // to test any specific run's numbers -- based on the two known-good measurements already on
+    // record (Phase 35's 88.7%, this same phase's own 89.3% re-verification after the fix) and
+    // the ~1pp spread between them, itself attributable to AVFoundation decode-noise (Phase
+    // 15/39's own established, quantified finding). 80% is a wide floor below both good
+    // measurements (8-9pp margin, ~8x the observed noise spread) yet far above what the actual
+    // regression this check caught produced (52.7%, 27+pp below the floor) -- deliberately NOT a
+    // moving baseline-deviation check: a stored "last known good" baseline can silently absorb a
+    // regression as the new normal if nobody notices it update (a real risk, not hypothetical --
+    // this session watched several "verified" claims turn out to be unverified assumptions).
+    // A fixed floor can't drift with the bug it exists to catch.
+    //
+    // Calibrated-confidence fidelity is verified by the separate `RA_INSTRUMENT_CALIBRATION_
+    // WIRING_CHECK` (its own pre-registered near-exact tolerance, ~1e-6, using the correct
+    // production-mix loader) -- not duplicated in this verdict, see this function's inline note.
+    let agreementThreshold = 80.0
+    let agreementPass = agreementPct >= agreementThreshold
+    print(String(format: "\n=== VERDICT === agreement: %@ (%.1f%% vs %.0f%% floor)", agreementPass ? "PASS" : "FAIL", agreementPct, agreementThreshold))
 }
 
 /// Step A of DEVLOG item 2 Stage 2 / Phase 37: does the isolated path's FULL multi-label
@@ -2243,6 +2276,14 @@ func runOpenMICTask(root: String) async -> TaskResult {
     // multi-label "acceptable set" leniency.
     let verbose = ProcessInfo.processInfo.environment["RA_OPENMIC_VERBOSE"] == "1"
     var classHit: [String: Int] = [:], classN: [String: Int] = [:]
+    // Confusion matrix (DEVLOG Phase 50, madde 4 diagnosis, not a hypothesis): for each true
+    // unambiguous-single-coarse-class clip, which predicted label did it actually get? Answers
+    // "where does Brass's signal go" -- a single dominant wrong class points at a specific
+    // profile-pair to investigate; a scattered spread across all 6 points at input/ground-truth
+    // instead of a fixable pairwise confusion; a large "no confident match" share would show up
+    // as its own bucket if `predictInstrument` ever returned one (it always returns one of the 6
+    // labels today, so that bucket is not expected to appear, but is tracked in case).
+    var classConfusion: [String: [String: Int]] = [:]
 
     var hit = 0, n = 0, loadFailures = 0
     for key in keys {
@@ -2265,6 +2306,7 @@ func runOpenMICTask(root: String) async -> TaskResult {
             if single.count == 1, let coarse = single.first {
                 classN[coarse, default: 0] += 1
                 if label == coarse { classHit[coarse, default: 0] += 1 }
+                classConfusion[coarse, default: [:]][label, default: 0] += 1
             }
         }
     }
@@ -2273,6 +2315,15 @@ func runOpenMICTask(root: String) async -> TaskResult {
         for cls in classN.keys.sorted() {
             let c = classHit[cls] ?? 0, total = classN[cls] ?? 0
             print("  [\(cls)] recall=\(c)/\(total) (\(total > 0 ? Int(Double(c)/Double(total)*100) : 0)%)")
+        }
+        print("  --- OpenMIC confusion matrix (true class -> predicted label breakdown) ---")
+        for cls in classConfusion.keys.sorted() {
+            let total = classN[cls] ?? 0
+            let byLabel = classConfusion[cls]!
+            let breakdown = byLabel.sorted { $0.value > $1.value }
+                .map { "\($0.key)=\($0.value) (\(total > 0 ? Int(Double($0.value)/Double(total)*100) : 0)%)" }
+                .joined(separator: ", ")
+            print("  [\(cls)] n=\(total): \(breakdown)")
         }
     }
     guard n > 0 else {

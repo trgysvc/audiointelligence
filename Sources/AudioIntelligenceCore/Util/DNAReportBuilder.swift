@@ -84,6 +84,11 @@ public actor DNAReportBuilder {
         var allHPSS = [HPSSResult?](repeating: nil, count: maxExpectedFragments)
         var allInstruments = [InstrumentPrediction](repeating: InstrumentPrediction(label: "Empty", confidence: 0, technicalBasis: "Pre-allocated"), count: 500)
         var instrumentPtr = 0
+        // Phase 52 fix: which label WON each chunk, per `InstrumentEngine.predict()`'s own
+        // raw-score-ordered `primaryLabel` (`instMetrics.primaryLabel` below) -- kept separate
+        // from `allInstruments`' calibrated confidence, which is a reporting aggregate only now,
+        // not a decision input. See this array's use in the `instruments:` block below.
+        var allInstrumentWinners = [String?](repeating: nil, count: maxExpectedFragments)
         
         var allScience = [ScienceMetrics?](repeating: nil, count: maxExpectedFragments)
         var allTonnetz = [[Float]?](repeating: nil, count: maxExpectedFragments)
@@ -341,6 +346,7 @@ public actor DNAReportBuilder {
                     allInstruments[instrumentPtr] = p
                     instrumentPtr += 1
                 }
+                allInstrumentWinners[idx] = instMetrics.primaryLabel
                 
                 let scienceRaw = AudioScienceEngine(sampleRate: chunk.sampleRate).analyze(samples: chunk.samples)
                 allScience[idx] = ScienceMetrics(dynamicRangeLRA: scienceRaw.dynamicRangeLRA, thdPlusN: scienceRaw.thdPlusN, smpteIMD: scienceRaw.smpteIMD, snr: scienceRaw.snr, noiseFloorWeight468: scienceRaw.noiseFloorWeight468, status: "Verified")
@@ -592,8 +598,8 @@ public actor DNAReportBuilder {
             allCodecs: allCodecs.compactMap{$0},
             allClipping: allClipping.compactMap{$0},
             allEntropy: allEntropy.compactMap{$0},
-            allInstruments: Array(allInstruments.prefix(instrumentPtr)), 
-            allScience: allScience.compactMap{$0}, allTonnetz: allTonnetz.compactMap{$0}, 
+            allInstruments: Array(allInstruments.prefix(instrumentPtr)), allInstrumentWinners: allInstrumentWinners,
+            allScience: allScience.compactMap{$0}, allTonnetz: allTonnetz.compactMap{$0},
             allNMF: allNMF.compactMap{$0}, allPiptrack: allPiptrack.compactMap{$0}, 
             allViterbi: [smoothedPitchPath], allYIN: allYIN.compactMap{$0},
             cyclicTempoMap: cyclicTempoMapReal,
@@ -636,8 +642,8 @@ public actor DNAReportBuilder {
                                   allCodecs: [Float],
                                   allClipping: [Int],
                                   allEntropy: [Float],
-                                  allInstruments: [InstrumentPrediction], 
-                                  allScience: [ScienceMetrics], allTonnetz: [[Float]], allNMF: [Float], 
+                                  allInstruments: [InstrumentPrediction], allInstrumentWinners: [String?],
+                                  allScience: [ScienceMetrics], allTonnetz: [[Float]], allNMF: [Float],
                                   allPiptrack: [Float], allViterbi: [[Int]], allYIN: [PitchResult],
                                   cyclicTempoMap: [Float],
                                   allMFCC: [[Float]], structureResult: StructureResult?,
@@ -656,7 +662,23 @@ public actor DNAReportBuilder {
                                   historicalEng: HistoricalEngine,
                                   detectedKey: String,
                                   detectedKeyConfidence: Float) -> MusicDNAAnalysis {
-        
+
+        // Phase 52 fix: which instrument label WON overall -- majority vote across chunks' own
+        // `InstrumentEngine.predict()` `primaryLabel` (raw-score-ordered, unaffected by
+        // calibration -- see its own doc comment). Deliberately NOT an argmax over calibrated
+        // confidence averaged across chunks/classes: isotonic calibration isn't comparable
+        // across classes (different classes' curves have different plateaus/saturation points,
+        // this session's own established finding), so that argmax was a statistically broken
+        // selection criterion, even though each individual calibrated number is itself correct
+        // for what it reports. Shared by both consumers below (`instruments.primaryLabel` and
+        // `semantic.primaryRole`) so the fix applies consistently everywhere production picks a
+        // single winning instrument label, not just the first place this bug was found.
+        let productionInstrumentWinner: String? = {
+            var votes: [String: Int] = [:]
+            for case let winner? in allInstrumentWinners { votes[winner, default: 0] += 1 }
+            return votes.max(by: { $0.value < $1.value })?.key
+        }()
+
         let powers = allLoudness.map { powf(10.0, ($0.integratedLUFS + 0.691) / 10.0) }
         let finalLufs = 10.0 * log10f(powers.reduce(0, +) / Float(max(1, powers.count))) - 0.691
         let finalPeak = allLoudness.map { $0.truePeakDb }.max() ?? -100
@@ -796,11 +818,10 @@ public actor DNAReportBuilder {
         }()
 
         // Semantic descriptors from real signal statistics.
-        let topInstrumentLabel: String = {
-            var acc = [String: (Float, Int)]()
-            for p in allInstruments { let e = acc[p.label] ?? (0, 0); acc[p.label] = (e.0 + p.confidence, e.1 + 1) }
-            return acc.map { ($0.key, $0.value.0 / Float(max(1, $0.value.1))) }.sorted { $0.1 > $1.1 }.first?.0 ?? "Unknown"
-        }()
+        // Phase 52 fix: was an argmax over calibrated confidence averaged across chunks/classes
+        // (same broken pattern `instruments.primaryLabel` had, independently) -- now shares
+        // `productionInstrumentWinner`'s majority-vote-of-raw-score-winners instead.
+        let topInstrumentLabel: String = productionInstrumentWinner ?? "Unknown"
         let textureType: String = finalFlatness > 0.35 ? "Noisy / Dense" : (finalFlatness < 0.10 ? "Tonal / Sparse" : "Balanced")
         let presenceScore = Swift.max(0, Swift.min(1, (finalLufs + 60.0) / 60.0))
         let semanticReal = SemanticMetrics(
@@ -896,7 +917,7 @@ public actor DNAReportBuilder {
                 let finalInstruments = instrumentAccumulator
                     .map { InstrumentPrediction(label: $0.key, confidence: $0.value.0 / Float($0.value.1), technicalBasis: "Probabilistic Aggregation") }
                     .sorted { $0.confidence > $1.confidence }
-                
+
                 // No prefix/cap here: `finalInstruments` can never exceed 6 entries (one per
                 // coarse label -- `instrumentAccumulator` is keyed by `p.label`, and
                 // `InstrumentEngine.profiles` has exactly 6 coarse classes). An earlier
@@ -907,7 +928,15 @@ public actor DNAReportBuilder {
                 // positive from every API consumer for any track with 6 co-occurring
                 // instruments. No design rationale for capping below the max population was
                 // found anywhere in the code or git history.
-                return InstrumentMetrics(predictions: finalInstruments, primaryLabel: finalInstruments.first?.label ?? "Unknown")
+                //
+                // `primaryLabel` (DEVLOG Phase 52 fix): deliberately NOT `finalInstruments.first?
+                // .label` -- that's an argmax over CALIBRATED confidence averaged across chunks,
+                // a statistically broken cross-class selection criterion (see
+                // `productionInstrumentWinner`'s doc comment above for the full explanation).
+                // Uses the shared majority-vote-of-raw-score-winners instead. The CALIBRATED
+                // `finalInstruments` above is unaffected -- still what's reported for each
+                // label's confidence, only which label wins `primaryLabel` changed back.
+                return InstrumentMetrics(predictions: finalInstruments, primaryLabel: productionInstrumentWinner ?? finalInstruments.first?.label ?? "Unknown")
             }(),
             science: {
                 let validLRA = allScience.map { $0.dynamicRangeLRA }.filter { !$0.isNaN }
