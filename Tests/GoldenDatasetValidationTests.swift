@@ -2,7 +2,6 @@ import XCTest
 import Foundation
 import Darwin
 @testable import AudioIntelligenceCore
-@testable import AudioIntelligence
 
 /// Multi-source accuracy validation against the GiantSteps Key+Tempo dataset
 /// (industry/academic reference, MIREX-standard human-corrected annotations).
@@ -317,109 +316,5 @@ final class GoldenDatasetValidationTests: XCTestCase {
         print("📊 Baseline: \(total) tracks | KeyExact=\(keyExact) fifth=\(keyFifth) rel=\(keyRelative) par=\(keyParallel) | Tempo(\(tempoTotal)) Acc1=\(tempoA1) Acc2=\(tempoA2)")
 
         XCTAssertGreaterThan(total, 0, "No golden files found — was the dataset downloaded?")
-    }
-
-    /// Open item 9 (Yapilacaklar madde 9 / DEVLOG Phase 41's direct follow-up): item 8's Key
-    /// finding left two open questions -- how accurate is `ReductionEngine.fundamentalNote` (what
-    /// `report.estimations.key.value` actually is) against real ground truth, and should
-    /// `ModulationEngine.detectKey` (computed but never exposed) be wired there instead? Measures
-    /// both, side by side, on the same files, to answer both at once.
-    ///
-    /// **Metric is deliberately NOT standard exact-match/MIREX-weighted key accuracy.**
-    /// `ReductionEngine.fundamentalNote` never determines major/minor (`ChromaResult.
-    /// noteNames[fundamentalBin]` is a bare tonic) -- scoring it against mode-qualified ground
-    /// truth with a mode-sensitive metric would fail on mode by construction, and conflate "wrong
-    /// tonic" with "no mode to be wrong about" into one misleading number. Both algorithms are
-    /// scored on TONIC (pitch-class) agreement only, mode ignored on both sides -- exact tonic
-    /// match, or a perfect-fifth-related tonic (the one MIREX partial-credit category that is
-    /// itself mode-independent), else no credit. `detectKey`'s own accuracy under FULL
-    /// (mode-inclusive) MIREX scoring is already on record from Phase 17/36 (48.8%/61.4%,
-    /// N=599) -- not reproduced here; this measures a different question (tonic-only, both
-    /// algorithms, same footing).
-    ///
-    /// **Reads `ReductionEngine`'s side from production's REAL output** (`AudioIntelligence().
-    /// analyze(url:).estimations.key`), not an isolated `ReductionEngine` call -- item 8's own
-    /// finding was that an isolated call can silently diverge from what production actually wires
-    /// (that is exactly how the Key `method`-label bug was found). `detectKey` has no exposed path
-    /// to read from at all (item 8 confirmed it never reaches `Estimations.key`), so it is
-    /// necessarily computed via an isolated helper -- built to match `DNAReportBuilder`'s own
-    /// internal computation as closely as possible (same whole-track STFT(8192)/`ChromaEngine`
-    /// chroma, native rate) since that is the best available approximation of "what production
-    /// would expose if this were wired instead."
-    ///
-    /// Sample size and rate follow Phase 36's already-settled Key precedent directly (native
-    /// 44100Hz, not this project's most-repeated mistake of an isolated 22050Hz assumption) --
-    /// capped to `GS_KEY_TONIC_LIMIT` (default 43) because `analyze(url:)` runs production's full
-    /// pipeline per file (~50s/file measured directly, not assumed -- all 599 files would be
-    /// hours), unlike the cheap isolated-engine-only calls the rest of this file uses.
-    func testReductionEngineVsDetectKey_tonicOnlyAccuracy_realProductionPath() async throws {
-        setvbuf(stdout, nil, _IONBF, 0) // Phase 39's lesson: long real-I/O runs lose buffered
-                                         // output if interrupted -- unbuffered from the start.
-        let manifest = try loadManifest()
-        let limit = Int(ProcessInfo.processInfo.environment["GS_KEY_TONIC_LIMIT"] ?? "43") ?? 43
-        let entries = limit <= 0 ? manifest.files : Array(manifest.files.prefix(limit))
-        let sr = 44100.0
-
-        // Tonic-only relation: mode-independent by construction, so no "relative"/"parallel"
-        // categories (those are mode-relationship concepts -- meaningless once mode is dropped).
-        func tonicRelation(ref: Int, det: Int) -> String {
-            if ref == det { return "exact" }
-            let diff = ((det - ref) % 12 + 12) % 12
-            if diff == 7 || diff == 5 { return "fifth" }
-            return "none"
-        }
-
-        var reductionExact = 0, reductionFifth = 0
-        var detectKeyExact = 0, detectKeyFifth = 0
-        var total = 0
-        print("\n  id        truth-tonic  reduction  detectKey   red  dk")
-        for e in entries {
-            guard let refTonic = parseKey(e.key)?.pc else { continue }
-            let url = URL(fileURLWithPath: "\(goldenRoot)/\(e.file)")
-            guard FileManager.default.fileExists(atPath: url.path) else { continue }
-
-            // Production's REAL output -- the actual `ReductionEngine.fundamentalNote` a caller
-            // receives, not a hand-rolled isolated replica of it.
-            guard let report = try? await AudioIntelligence().analyze(url: url) else { continue }
-            let reductionTonicName = report.estimations.key.value
-            guard let reductionTonic = parseKey("\(reductionTonicName) Major")?.pc else { continue }
-
-            // `detectKey` has no exposed path -- isolated helper matching `DNAReportBuilder`'s own
-            // internal whole-track chroma computation (STFT nFFT=8192, hop 512, native rate).
-            guard let buf = try? await AudioLoader.load(url: url, targetSampleRate: sr) else { continue }
-            let stft = await STFTEngine(nFFT: 8192, hopLength: 512, sampleRate: sr).analyze(buf.samples)
-            let chroma = ChromaEngine(nFFT: 8192, sampleRate: sr).chromagram(stft: stft)
-            let meanChroma = (0..<12).map { c in chroma[c].isEmpty ? 0 : chroma[c].reduce(0, +) / Float(chroma[c].count) }
-            let detectKeyName = ModulationEngine().detectKey(meanChroma)
-            let detectKeyTonic = parseKey(detectKeyName)?.pc
-
-            total += 1
-            let redRel = tonicRelation(ref: refTonic, det: reductionTonic)
-            if redRel == "exact" { reductionExact += 1 } else if redRel == "fifth" { reductionFifth += 1 }
-            let dkRel = detectKeyTonic.map { tonicRelation(ref: refTonic, det: $0) } ?? "none"
-            if dkRel == "exact" { detectKeyExact += 1 } else if dkRel == "fifth" { detectKeyFifth += 1 }
-
-            func pad(_ s: String, _ w: Int) -> String { s.count >= w ? s : s + String(repeating: " ", count: w - s.count) }
-            print("  \(pad(e.id, 9)) \(pad(e.key, 12)) \(pad(reductionTonicName, 10)) \(pad(detectKeyName, 11)) \(redRel == "exact" ? "✓" : "✗")    \(dkRel == "exact" ? "✓" : "✗")")
-        }
-
-        guard total > 0 else { XCTFail("No golden files with valid key ground truth were measured — was the dataset downloaded?"); return }
-        let n = Double(total)
-        let reductionExactPct = Double(reductionExact) / n * 100
-        let reductionWeighted = (Double(reductionExact) + 0.5 * Double(reductionFifth)) / n * 100
-        let detectKeyExactPct = Double(detectKeyExact) / n * 100
-        let detectKeyWeighted = (Double(detectKeyExact) + 0.5 * Double(detectKeyFifth)) / n * 100
-
-        print("\n=== TONIC-ONLY KEY ACCURACY, PRODUCTION'S EXPOSED ALGORITHM vs. THE HIDDEN ONE (N=\(total)) ===")
-        print(String(format: "ReductionEngine (EXPOSED, report.estimations.key.value): exact=%.1f%% fifth-weighted=%.1f%% (%d exact, %d fifth)",
-                      reductionExactPct, reductionWeighted, reductionExact, reductionFifth))
-        print(String(format: "ModulationEngine.detectKey (COMPUTED, NEVER EXPOSED):    exact=%.1f%% fifth-weighted=%.1f%% (%d exact, %d fifth)",
-                      detectKeyExactPct, detectKeyWeighted, detectKeyExact, detectKeyFifth))
-        print("Both scored tonic-only (mode ignored on both sides) -- NOT comparable to Phase 17/36's full mode-inclusive 48.8%/61.4% detectKey numbers.")
-
-        // Loose sanity floor, not a regression contract -- this is the first measurement of
-        // either algorithm's tonic-only accuracy; the point is a real number for both, and
-        // which is higher, not locking in today's exact figure.
-        XCTAssertGreaterThan(total, 0)
     }
 }

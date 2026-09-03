@@ -3954,4 +3954,180 @@ input.
 
 ---
 
+## Phase 46 (2026-09-03): repo-wide audit — three reporting debts closed, and a full-suite run catches two real problems
+
+Requested: a comprehensive repo check, not scoped to any single open item. Found and closed several
+things, split by kind rather than in discovery order (a "canlı yanlış-veri hemen düzeltilir" pass,
+per item 8's own established principle, before any new investigative work).
+
+### Stale/incorrect live claims, found and corrected
+
+- **README's chord row still said 57-58/108** — Phase 45 moved this to 87/108 weeks... no, hours
+  earlier in the same session; the row was never updated. Corrected with the mismatch breakdown
+  (9 augmented-symmetry + 12 m6/m7b5 equal-set, both already understood).
+- **`audioIntelligenceLibraryVersion` constant said `"8.2.2"`** — initially misread as "one release
+  behind" (assuming CHANGELOG's `[8.3.0]` heading was real); corrected by the user: 8.2.2 was the
+  actual last-published release, `[8.3.0]` was itself an unreleased draft heading. Next release is
+  8.2.3, not 8.4.0 — both the constant and the CHANGELOG heading were fixed to that.
+- **CHANGELOG.md was missing three consumer-visible changes** (Key rewiring, pitch statistics,
+  chord fix) that were sitting only in DEVLOG/Yapilacaklar, plus contained a duplicate/premature
+  `[8.3.0]` section for content that, per the correction above, was never actually released either.
+  Consolidated everything unreleased-since-8.2.2 under one `[8.2.3]` heading, with the Key format
+  change and pitch-statistics value shift both marked explicitly BREAKING (not softened to
+  "improvement") -- per the same reasoning as the entire Phase 41-45 arc: a consumer needs to know
+  a value's meaning changed, not just that the number moved.
+- **`HistoricalEngine` — a live, uncalibrated, subjective-inference engine matching exactly the
+  reasoning `AudioReport.swift`'s mood/genre/danceability exclusion was written to rule out**
+  (period/movement guesses from LUFS threshold + instrument-label substring + tempo, confidence
+  values never fit against any ground truth), silently NOT documented as excluded even though it
+  already doesn't reach the public `AudioReport` (`AudioReportMapping.swift`'s `MusicologyReport`
+  omits it). Not a live bug (nothing public is wrong), but an undocumented gap with the same shape
+  as the Key `method` label's failure mode: something sits in a state that's currently safe only
+  because nobody has connected it yet. Documented explicitly in three places (the engine's own doc
+  comment, the mapping site, and Yapilacaklar's "kapsam dışı" section) so a future change can't
+  wire it in without deliberately overriding a stated decision.
+
+### Full `swift test` run (135 tests, 78 minutes — long, not stalled) surfaces two real findings
+
+**1. `InstrumentEngineTests.testGradedScoring_variesWithDistanceFromProfileCenter` failed for a
+real, structural reason.** This Phase-15-era test asserts that a centroid near a profile's center
+produces higher confidence than one near its edge. Since Phase 38-39 wired isotonic calibration
+into `predict()`'s public `confidence`, that field is a step function of the raw score, not the
+raw score itself -- and both the "near center" (1634Hz) and "near edge" (2185Hz, 1 SD out) test
+inputs' raw scores landed inside the same top isotonic block, both calibrating to exactly 1.0.
+Not a regression in `InstrumentEngine` or the calibration -- correct, already-documented isotonic
+behavior encountering a test written before calibration existed. Measured (not guessed) how far the
+edge needs to move: raw scores for centroids in [3185, 5685]Hz all calibrate to the same 0.629 (a
+wide plateau, not a boundary edge) -- moved the test's edge input to 4000Hz, comfortably inside that
+plateau and therefore robust to the small run-to-run isotonic drift Phase 39 already documented as
+expected. Verified green.
+
+**2. `GoldenDatasetValidationTests.testReductionEngineVsDetectKey_tonicOnlyAccuracy_realProductionPath`
+(Phase 42's decision-support measurement) failed -- first suspected to be the external GiantSteps
+drive having disconnected (it had: `Examples/Golden/audio` is a symlink to `/Volumes/Samsung/...`,
+which had vanished from `diskutil list` entirely, plausibly over the ~10 hours this session's
+background processes ran). Reconnecting the drive did NOT fix it, which is the more interesting
+part: the real cause was a bug in the test itself, introduced by this session's own Phase 43 work
+without being caught until now. `report.estimations.key.value` used to be a bare tonic when Phase
+42 wrote `parseKey("\(reductionTonicName) Major")` (appending the mode word to satisfy `parseKey`'s
+2-word format); Phase 43 rewired that field to already BE mode-qualified, so the same line now
+built `"G Major Major"` -- three words, `parseKey`'s own `parts.count == 2` guard rejected every
+single file, `total` stayed 0. This is a live instance of the exact consumer-breakage this phase's
+own new CHANGELOG entry warns about, found inside this codebase's own test suite.
+
+Before retiring the test (its comparison question -- should `key.value` move to `detectKey` -- was
+already answered and implemented in Phase 43), two conditions were checked rather than assumed
+(explicitly requested): (a) does `testGiantStepsKeyTempoAccuracy` -- the test that would inherit
+ongoing accuracy-tracking duty -- still pass after the same Phase 43 change? Re-ran it directly: yes,
+43/43 BPM-annotated tracks, Key exact 51.16% / MIREX-weighted 56.98%, consistent with the historical
+N=599 figures (48.8%/61.4%) -- not broken by the same bug, because it computes `ModulationEngine.
+detectKey` in isolation and parses its own output directly (no append, no double-mode-word risk).
+(b) does that isolated computation still equal production's real `key.value`, or is this Phase 41's
+mismatched-algorithm trap again? No -- that specific equivalence was independently verified twice in
+Phase 43 (a synthetic production-vs-isolated identity test, and a 5-real-file spot-check against
+Phase 42's own logged values), so relying on it here is standing on confirmed ground, not an
+assumption. Both conditions cleared, the redundant test (and its now-unused `AudioIntelligence`
+import) was deleted.
+
+### Two follow-up verifications, caught on review before calling this closed
+
+**Does the fixed graded-scoring test still protect something real, or did it just turn green?**
+Checked rather than assumed: isotonic calibration is a step function BY DESIGN, so "any two
+distinct distances score differently" (the test's original, pre-calibration claim) is no longer
+universally true -- within one isotonic block, flat is correct, not a bug. What the fix actually
+preserves is narrower and still real: calibration hasn't collapsed to a single constant regardless
+of input -- a near-center and a sufficiently-far point still land in different isotonic blocks and
+differ. That's a genuine invariant (it would catch a real regression, e.g. a future re-fit
+degenerating to one block spanning the whole range) rather than a claim calibration structurally
+contradicts. Renamed the test itself to say so directly --
+`testCalibratedConfidence_differsAcrossDistinctIsotonicPlateaus` -- rather than leaving a
+"graded/continuous" framing in the doc comment that a plateau-based mechanism can't actually
+promise everywhere.
+
+**Does `testGiantStepsKeyTempoAccuracy` fully inherit the retired test's tonic-only visibility?**
+Checked `keyRelation`'s own definition directly: `"parallel"` is exactly `ref.pc == det.pc &&
+ref.minor != det.minor` -- same tonic, different mode. So tonic-only accuracy
+(`(keyExact + keyParallel) / total`) IS mathematically recoverable from that test's own printed
+baseline line (`KeyExact=... par=...`). Precisely: not fully covered as a labeled, standalone
+metric -- recoverable from already-printed raw counts, not currently reported as its own
+percentage. Retiring the Phase 42 test loses a labeled tonic-only number, not the underlying
+visibility; accepted as fine because that number's whole reason to exist was the now-resolved
+ReductionEngine-vs-detectKey comparison, not standalone ongoing tracking.
+
+### Status
+
+Three reporting debts closed (README, CHANGELOG+version, HistoricalEngine documentation); one real
+test regression fixed and re-verified to still protect a genuine invariant (isotonic saturation,
+not a product bug -- renamed to `testCalibratedConfidence_differsAcrossDistinctIsotonicPlateaus`);
+one dead/buggy decision-support test retired after its replacement's health AND coverage were
+verified, not assumed. No open item's substance changed -- items 4/5 (Brass), 6 (melody), 7
+(streaming), 8 (heavy layer + CI), 12 (`detectBassNote` register bug) remain exactly as scoped
+before this audit.
+
+---
+
+## Phase 47 (2026-09-03): item 12 (`detectBassNote` register bug) attempted, found to be two separate questions, split before either was answered
+
+Direct follow-up to item 12 (found closing madde 1/Phase 45): `detectBassNote` scans a hardcoded
+CQT window (bins 0..<24, ~32.7-130.8Hz) regardless of the audio's real register.
+
+### First attempt: widen the window, found to be a red herring
+
+Implemented a register-relative version (full-range scan for the lowest bin clearing a
+per-frame-relative noise floor, `frameMax * 0.2`). Two-directional result on
+`ChordEndToEndSyntheticTests`/`ChordScoringAmbiguityTests`: 87→88/108 (one net gain, one
+augmented-symmetry case incidentally resolved too), idealized baseline unchanged -- looked like
+progress. But the composition changed, not just the count: D m6 and G# m7b5 got fixed, while B m6
+and B m7b5 -- not previously mismatched -- broke. Net neutral on the m6/m7b5 count (12→12), just
+different members. Investigated before trusting the aggregate: dumped B m6's actual mid-clip CQT
+frame. Every one of 84 bins measured `~1e-9` to `~5e-9` -- no real peak anywhere, the "loudest" bin
+5.4e-9 (barely above the expected root's own 1.0e-9). Production's inconsistent bass values across
+frames for this clip (D, C#, C, A# -- none the true root) matched: the algorithm was picking
+whichever noise-floor bin happened to be marginally larger at each frame, not a real signal.
+Reverted the change rather than keep something that traded one set of failures for another with no
+verified real improvement.
+
+### The actual finding: this isn't a noise-robustness problem, it's a no-signal problem
+
+Before choosing among candidate fixes (chroma-constrained search, multi-frame averaging, an
+absolute energy floor -- all three assume "find the true signal amid noise"), checked whether
+signal exists there AT ALL, mathematically, from `SyntheticAudio.chord()`'s own definition rather
+than by running anything: pure `sinf()` summation, zero harmonics, zero sub-harmonic content. For
+B m6 (`rootMidi: 71`, i.e. B4 ≈ 493.9Hz, the lowest note played), there is EXACTLY ZERO signal
+energy below 493.9Hz in the raw waveform -- not approximately, not "hard to detect," genuinely
+absent by construction. The `~1e-9` CQT values in that register are pure transform-artifact
+leakage, not attenuated signal. No algorithm -- chroma-constrained, multi-frame, or otherwise --
+can recover a bass note from a register that contains no signal; that was the wrong class of fix
+for this failure entirely, independent of how well-designed it might otherwise have been.
+
+### Item 12 splits into two questions this session's synthetic tests cannot jointly answer
+
+1. **Item 12a (production):** does `detectBassNote`'s fixed absolute window genuinely miss real
+   bass content in real music voiced outside it? A real, open question -- but one only real audio
+   (SQAM, or any file with genuine low-register content) can measure. Still worth investigating;
+   still affects real `analyzeVertical` inversion labeling.
+2. **Item 12b (madde 1's remaining 12 mismatches):** these were deferred at Phase 45's closure on
+   the premise that a working bass-note signal would resolve them. That premise is now known to be
+   FALSE for the specific test that measures them -- `ChordEndToEndSyntheticTests`' high-rooted
+   synthetic chords never contain bass-register signal, so no version of `detectBassNote`, however
+   correct, can resolve these 12 mismatches through this test. This is a correction to Phase 45's
+   own closing note, made explicit rather than left standing: the remaining m6/m7b5 count is not
+   "blocked on item 12," it is unmeasurable by this specific synthetic test as currently designed
+   (a future option, not pursued now: give the synthetic chords a genuine low-octave duplicate of
+   the root, so the test clips actually contain bass content to resolve against).
+
+### Status
+
+Item 12 not implemented this phase -- correctly re-scoped instead of pushed through with an
+uncertain fix. Reverted to the pre-attempt `detectBassNote` (still has the real register
+limitation, still open). Yapilacaklar's item 1 (TAMAMLANANLAR) and item 12 entries corrected to
+stop claiming the remaining 12 mismatches will resolve once item 12 is fixed -- they won't, via
+this test. Item 12a (real production impact) is now the well-formed open question; it needs real
+audio, which overlaps with item 8's still-unbuilt heavy `RA_*` layer -- a reason to treat it as its
+own turn rather than a quick follow-on. Moving to item 4/5 (Brass/Trumpet) next, per direct
+decision: item 12a's measurement dependency makes it a bigger, less immediately actionable
+investment than Brass's already-measurable target.
+
+---
+
 > *"Measured, not claimed: AudioIntelligence reports what it can prove."*
