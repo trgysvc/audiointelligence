@@ -67,10 +67,12 @@ See the [Report Specification](REPORT_SPECIFICATION.md) for the full schema.
 >   `estimations.*.confidence`. A key/tempo/instrument estimate can be wrong.
 > - **Don't request features you won't use.** If the user didn't ask for THD+N, don't include
 >   `.forensic`/`.mastering` just to read a number you'll ignore.
-> - **Don't assume capabilities we don't have.** The instrument layer is a placeholder today;
->   `estimations.instruments` is best-effort and may be `nil`.
+> - **Don't assume capabilities we don't have.** The instrument layer is data-derived and
+>   calibrated, not a placeholder — but accuracy is class-dependent (strong for Drums/Bass/Piano,
+>   weak for Brass/Trumpet, see README Validation Status) and `estimations.instruments` is `nil`
+>   when nothing crosses the detection threshold. Genre/mood are not implemented and not planned.
 > - **Safety First**: Use a "copy-on-process" pattern (clone the source to a temp directory)
 >   so analysis never risks mutating the user's original asset.
 
 ---
-*Generated for: Professional AI Integrations — AudioIntelligence 8.2.1*
+*Generated for: Professional AI Integrations — AudioIntelligence 8.2.3*

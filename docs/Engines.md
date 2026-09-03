@@ -64,9 +64,9 @@ suite spans two layers of trust (see the README Validation Status):
 ## 7. Advanced Timbral & Semantic Analysis
 | Engine | Purpose | Technical Basis |
 | :--- | :--- | :--- |
-| **InstrumentEngine**| Labeling (estimation) | **Placeholder** today — emits best-effort instrument labels tagged as estimates. A measurement-driven instrument/genre layer (own features + transparent classifiers, no Core ML) is the next milestone. *Not* neural/ANE. |
+| **InstrumentEngine**| Labeling (estimation) | Data-derived, per-class-calibrated instrument labels tagged as estimates (`InstrumentCalibration`, fit on OpenMIC-2018's real train partition) — not placeholders. Held-out recall is class-dependent (strong: Drums/Bass/Piano; weak: Brass/Trumpet — root cause measured, see DEVLOG; fix needs a learned classifier, tracked separately). Genre/mood/danceability are a deliberate permanent non-goal, not a roadmap item (no classical-DSP definition exists for them). *Not* neural/ANE. |
 | **WaveletEngine** | Multi-Res Analysis | Multi-level discrete wavelet transforms (DWT). |
 | **SpectralZoneEngine**| Energy Budgeting | Detailed sub-band energy distribution. |
 
 ---
-*Engines live under `Sources/AudioIntelligenceCore/Feature/`. Last reviewed: 2026-06-16 — AudioIntelligence 8.2.1.*
+*Engines live under `Sources/AudioIntelligenceCore/Feature/`. Last reviewed: 2026-09-04 — AudioIntelligence 8.2.3.*

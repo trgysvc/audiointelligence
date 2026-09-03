@@ -15,7 +15,7 @@ Update your `Package.swift` to include the Infinity Engine:
 let package = Package(
     name: "MyProAudioApp",
     dependencies: [
-        .package(url: "https://github.com/trgysvc/audiointelligence.git", from: "8.2.1")
+        .package(url: "https://github.com/trgysvc/audiointelligence.git", from: "8.2.3")
     ],
     targets: [
         .target(
@@ -119,8 +119,9 @@ AudioIntelligence optimizes for the modern M-series SoC:
 > The **analysis pipeline** (`analyze()`) is pure Swift on Accelerate/AVFoundation/Metal — no
 > Core ML, no ANE inference, no network. (There is a separate `NeuralSeparationEngine` interface
 > that *can* host a Core ML model for stem separation, but no model ships and it is not part of
-> `analyze()`. The instrument layer is not yet built; today's instrument predictions are
-> placeholder estimates.)
+> `analyze()`. The instrument layer IS built and data-derived — `InstrumentEngine`, fit and
+> calibrated on real OpenMIC-2018 audio, no Core ML/ANE — but held-out accuracy is class-dependent;
+> see README Validation Status.)
 
 ---
 *For technical specs on specific analysis engines, see [Engines.md](Engines.md).*

@@ -4643,4 +4643,221 @@ cache? something else?) if and when it becomes a real need, not a default assume
 
 ---
 
+## Phase 54: Item 4/5's "multimodality is the root cause" closure RETRACTED -- no control group was
+taken (2026-09-04)
+
+### What happened
+
+Started scoping item 13 (multi-prototype architecture) by extending Phase 51's Brass-only k-means
+multimodality check to all 6 coarse classes, same methodology, same pre-committed thresholds
+(varianceExplained > 0.25 AND centerSeparationRatio > 1.0 => multimodal), TRAIN partition only.
+
+Result: **all 6 classes measure multimodal**, not just Brass -- Piano varianceExplained=0.5246/
+ratio=2.1011, Bass=0.5397/2.1658, Brass=0.4502/1.8178, Vocals=0.4397/1.7732,
+Drums=0.5057/2.0375, Strings=0.3960/1.6202. The two BEST-performing classes (Drums 79% recall,
+Bass 59%) are MORE multimodal than Brass (5% recall) by both metrics.
+
+### Why this retracts Phase 51's closure, not just widens item 13's scope
+
+Multimodality cannot be Brass's distinguishing failure cause if the best-performing classes are
+equally or more multimodal. Phase 51 measured Brass alone, cleared its own pre-committed
+threshold, and concluded "this is the (distinguishing) root cause" -- without ever checking
+whether other classes also clear that same threshold. A property being present is not evidence
+it's the DIFFERENTIATING property unless a control group shows it's absent (or much weaker)
+elsewhere. This is a real methodological gap in Phase 51's own design, not a new fact overturning
+an old one -- the same trap this whole investigation has repeatedly warned about (unmeasured
+inference accepted as fact), this time it slipped through IN a measurement, because the
+measurement itself lacked a control group.
+
+### Correction
+
+Item 4/5's TAMAMLANANLAR closure ("kök neden BULUNDU: çok-kipli dağılım") is retracted in place
+(not deleted -- corrected with a dated note, per this session's standing convention) in
+Yapilacaklar. Item 4 reopened as its own numbered item; item 5's own specific finding (sax/
+trombone/trumpet axis measured too close to explain multimodality, DEVLOG Phase 48) is UNAFFECTED
+and stays closed -- only the higher-level "multimodality explains Brass's failure" claim built on
+top of Phase 51 is what's wrong. Item 13 ("multi-prototype architecture") is reframed: its
+premise (multimodality is the fixable root cause) is unproven, so it cannot proceed as scoped --
+it now depends on item 4's reopened investigation's outcome rather than being a parallel
+architecture project.
+
+### Methodology lesson (recorded for reuse)
+
+**A single-class measurement, without a control group, cannot prove a property is that class's
+DISTINGUISHING cause -- only that the property is present.** Before treating "class X has property
+P" as an explanation for X's distinctive behavior, measure whether OTHER classes (that do NOT show
+X's distinctive behavior) also have P. If they do, P is not the differentiator, however real and
+correctly-measured P itself is. Applies to any future "class X is different because of Y" claim in
+this codebase, not just this one.
+
+### Next step (item 4's continuation, not item 13)
+
+The right next question isn't "is Brass multimodal" (answered, yes, but not diagnostic) -- it's
+"do Brass's own k=2 modes sit closer to EACH OTHER than to competing classes' territory, or has at
+least one mode drifted into a rival class's region." Concretely: for each class's k=2 cluster
+centers, compare the within-class distance (center1 to center2) against each cluster's distance to
+the NEAREST other class's current mean (`mfccPattern`). If a Brass cluster is closer to some other
+class's mean than to its own sibling cluster, that mode has effectively drifted into contested
+territory -- multi-prototype would not fix that (each new prototype would still sit in the same
+overlapping region, item 13's premise fails). If both Brass clusters are comfortably closer to each
+other than to any competitor, the multimodality is more "internal" and multi-prototype becomes a
+more plausible fix. This must be measured WITH the same 6-class control group from the start, not
+Brass alone -- not repeating Phase 51's gap a second time.
+
+---
+
+## Phase 55: mode-drift check run -- THIRD universal-axis result in a row (2026-09-04)
+
+Ran Phase 54's proposed follow-up (throwaway `PrototypeTrainer` diagnostic, `git checkout --`
+after use): for each class's k=2 cluster centers, compare within-class distance (center1 to
+center2) against each cluster's distance to the nearest OTHER class's current single-prototype
+mean. Result: **every mode of every class, with zero exceptions, is closer to some rival class's
+mean than to its own sibling mode** (ratios 0.132-0.690, all well under 1.0). Brass shows nothing
+distinctive here either (ratios 0.183-0.277, mid-pack, not an outlier).
+
+This is the THIRD consecutive geometric MFCC-space measurement (Phase 51's Brass-only
+multimodality, Phase 54's control-grouped multimodality, this mode-drift check) to come back
+universal/non-differentiating. Read as a pattern rather than three isolated failures: MFCC-space
+geometry itself does not distinguish Brass from classes that work fine. Continuing to probe the
+same axis (a 4th, 5th geometric variant) was judged the wrong move -- three consecutive "not here"
+results from the same kind of question is itself an answer (Brass's problem is not in MFCC
+geometry), and the next measurement should look at a genuinely different axis instead of refining
+this one further.
+
+## Phase 56: rescue-feature hypothesis -- FIRST differentiating finding after 8 measurements
+(2026-09-04)
+
+### Hypothesis and pre-committed rule
+
+Reasoning: if MFCC-space ambiguity is universal (Phase 51/54/55, confirmed), maybe classes that
+still classify well do so because a DIFFERENT part of `scoreComponents`'s formula -- one of the 4
+scalar features (centroid, flatness, lowBand, percussive) -- gives them a strong enough own-vs-rest
+signal to overrule MFCC ambiguity (Bass has lowBand d=1.50, Drums has percussive d=1.80, both
+established at Phase 16 for exactly this reason). Tested the hypothesis's actual claim -- "does
+every class have AT LEAST ONE strong rescue feature, and is Brass the exception" -- not a single
+feature's d in isolation. Pre-committed rule, written before running: CONFIRMED only if Brass's own
+best-feature Cohen's d is strictly lower than every one of the other 5 classes' own best-feature d
+(a clean, total ordering, not a partial/ambiguous one).
+
+### Method
+
+Throwaway diagnostic (`PrototypeTrainer`, `git checkout --` after use) -- reused the SAME
+accumulators the trainer already builds (no extra audio pass needed, mean+SD per class per
+scalar feature already computed). For each class, each of the 4 scalar features' Cohen's d vs.
+each of the other 5 classes, averaged (same methodology as Phase 49's MFCC-dimension check) --
+then each class's own MAX across its 4 features is its "best rescue-feature strength."
+
+(External-drive note: `Tests/Resources/OpenMIC` disconnected mid-session -- `/Volumes/Samsung` was
+unmounted -- causing one run to fail with a clean "could not read" error, not a silent wrong
+result; user reconnected the drive, re-run succeeded.)
+
+### Result
+
+| Class | best feature | d |
+|---|---|---|
+| Drums/Percussion | percussive | 1.746 |
+| Bass (Acoustic/Electric) | lowBand | 1.673 |
+| Piano/Keyboard | percussive | 1.463 |
+| Vocals/Chorus | flatness | 1.148 |
+| Strings/Synth | flatness | 0.914 |
+| **Brass/Trumpet** | **flatness** | **0.878** |
+
+Brass's own best (0.878) is strictly below all 5 others, including its nearest competitor
+(Strings, 0.914) -- **HYPOTHESIS CONFIRMED**, cleanly, per the pre-committed rule. The ranking is
+also broadly consistent with real held-out recall (Drums 79% > Bass 59% > Piano 52% > ... > Brass
+5%), Strings/Vocals swapped slightly (Strings 41% recall despite a lower best-d than Vocals' 22%,
+likely reflecting Strings' much larger training population, n=2928, acting as a partial
+"attractor" independent of feature strength -- not investigated further here).
+
+### Status
+
+First differentiating finding for item 4 after 8 total measurements (4 refuted mechanism
+hypotheses + 3 universal geometric MFCC checks + this one). Item 4's real, measured story: Brass
+is the one coarse class with no strong rescue feature among the 4 scalar features that protect
+every other class from the (universal) MFCC-space ambiguity -- not a formula bug, not a
+Brass-specific geometric pathology, but a genuine gap in what discriminates Brass from everything
+else. Paused here for direct input on how to proceed -- candidate next steps include searching for
+a new scalar feature specifically discriminating Brass (mirroring how lowBand/percussive were
+found at Phase 16), or re-weighting the existing formula to compensate. No code changed this
+phase; diagnostic file reverted.
+
+---
+
+## Phase 57: item 4's fix direction decided -- neither patch, defer to a learned-classifier
+architecture (2026-09-04)
+
+Weighed the two candidate patches against what the root cause itself implies. Both rejected:
+
+1. **New scalar feature search**: the root cause IS "Brass has no strong distinguishing physical
+   signature" -- it isn't percussive, isn't low-band-dominant, and doesn't concentrate in one
+   spectral region (saxophone+trombone+trumpet combined sit in a mid-register, harmonic zone that
+   genuinely overlaps Strings/Vocals/Piano). Searching for a new feature without a concrete
+   physical candidate grounded in that reality would be blind search -- a 9th dig into the same
+   well after 8 measurements already came back refuted-or-universal-or-modest (Brass's own best
+   existing scalar, flatness, is only d=0.878 -- "moderate," not weak-but-fixable).
+2. **Per-class reweighting**: already tried in a closely related form (Phase 49's per-dimension
+   MFCC weighting) and refuted -- no gain for Brass, real regression for Vocals, because
+   reweighting a global formula to help one class risks any other class whose own signal lives on
+   the dimensions being deemphasized. Amplifying a moderate signal (d=0.878) doesn't make it a
+   strong one either.
+
+**Decision**: item 4 closes with its root cause understood and NOT patched. The actual fix is a
+data-derived/learned classifier (the architecture direction from early in this session --
+hand-written equal-weight formula -> data-derived prototypes -> learned classifier) that can
+combine several moderate signals (Brass's flatness plus its own MFCC dimensions plus the other
+scalars) with fitted, not hand-assigned, weights -- something no single hand-picked feature or
+manually reweighted formula can do. This is not a Brass-specific patch; it is InstrumentEngine's
+whole architecture question, deserving its own scoped investigation (model choice, train/held-out
+discipline, production wiring, protection via item 8's now-formalized parity check) rather than
+being squeezed into item 4's closure. Item 13 reframed accordingly (not "multi-prototype,"
+"learned classifier") and left not-started, its own future item.
+
+---
+
+## Phase 58: pre-release documentation audit for 8.2.3 (2026-09-04)
+
+Before the user's first real GitHub release since 8.2.2 (everything since -- items 1 through 57 --
+is unreleased, confirmed via `git tag`/`git describe`), audited README.md, CHANGELOG.md, and every
+`docs/*.md` file line-by-line against the actual current code state. Real errors found and fixed,
+not just staleness:
+
+1. **CHANGELOG's instrument-confidence entry was factually wrong, in both directions.** It claimed
+   "`primaryLabel` still determined by the raw, uncalibrated score, untouched by this release" --
+   false when written (production's real `primaryLabel` was, at that point, silently using the
+   Phase 39 calibrated-argmax bug this same release also fixes) and, after Phase 52's fix, still
+   incomplete: `predictions`' sort order (calibrated) and `primaryLabel` (now a raw-score majority
+   vote across chunks, Phase 52) are two independent mechanisms that can name different labels on
+   the same clip -- not documented anywhere before this pass. Corrected.
+2. **`docs/Calibration.md` directly contradicted README.md**: claimed CQT "still has no downstream
+   consumer," while README (correctly) already documents `TraditionalTheoryEngine.detectBassNote`
+   consuming it. Corrected to match reality.
+3. **The same stale "InstrumentEngine is a placeholder, genre/instrument layer is upcoming" claim
+   was duplicated in FOUR files** (README.md, `docs/Engines.md`, `docs/AI_INTEGRATION_GUIDE.md`,
+   `docs/Integration.md`) -- directly contradicted by this session's own measured recall numbers
+   in the same README's Validation Status table, and by the standing, explicit, permanent decision
+   to keep genre/mood/danceability out of scope (worklist). All four corrected to the same accurate
+   framing: data-derived and calibrated, class-dependent accuracy, root cause for the weak class
+   measured (not a mystery), genre/mood a deliberate non-goal not a roadmap item.
+4. **Instrument row's held-out recall numbers re-verified live, not assumed unaffected by Phase
+   52's fix** -- checked whether `runOpenMICTask`'s per-class recall (feeding this README row)
+   uses the isolated `predictInstrument()` path or real production; confirmed isolated, so Phase 52
+   (a production-only fix) could not have changed these numbers -- re-ran anyway rather than
+   trusting the inference, got byte-identical results (Drums 79%, Bass 59%, Piano 52%, Strings 41%,
+   Vocals 22%, Brass 5%). Added an explicit note that this measures the isolated pipeline, with the
+   now-measured 89.3% isolated-vs-production agreement rate alongside it, rather than letting the
+   distinction stay implicit.
+5. **6 stale version footers** (`8.2.1`/`8.2.2`, one file still said `8.1.5`-era `8.2.1` from
+   2026-06-16) corrected to `8.2.3`, dated 2026-09-04, across README.md (title + install snippet)
+   and 5 `docs/*.md` files' "last reviewed" footers -- only after actually reading each file's
+   content for staleness, not blindly bumping the stamp.
+
+**Deliberately NOT touched**: README's "⚡ Sub-millisecond Latency" claim (worklist item 7) --
+the library has no true streaming API (batch-only architecture), a known, previously-flagged,
+deliberately-deferred inaccuracy per the user's own standing decision ("fix after all bugs +
+accuracy work is done"). Left as-is per that decision, not missed -- flagged to the user again
+since a real release is imminent and this claim will ship as-is unless the standing decision is
+revisited.
+
+---
+
 > *"Measured, not claimed: AudioIntelligence reports what it can prove."*

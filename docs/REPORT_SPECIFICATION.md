@@ -29,9 +29,8 @@ AudioReport
 └── features          LowLevelFeatures?  (heavy series; optional in serialization)
 ```
 
-`schemaVersion` is a semantic version of the schema itself. New fields (e.g. the upcoming
-instrument/genre layer) are added *additively* and bump the minor version, so existing
-consumers keep working.
+`schemaVersion` is a semantic version of the schema itself. New fields are added *additively*
+and bump the minor version, so existing consumers keep working.
 
 ---
 
@@ -145,4 +144,4 @@ like. The library never touches the filesystem.
 3. **Prefer JSON for cross-language pipelines**, binary plist for Apple-to-Apple.
 
 ---
-*Schema 1.0.0 — AudioIntelligence 8.2.1*
+*Schema 1.0.0 — AudioIntelligence 8.2.3*

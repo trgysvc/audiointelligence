@@ -47,10 +47,7 @@ being corrected.)_
   OpenMIC-2018's official train partition, validated on held-out — cross-class ECE spread
   0.075→0.048, DEVLOG Phase 38/39). Wiring into production was itself verified by a same-input
   identity check against `InstrumentEngine.predict()`'s real output, not assumed from the fit's
-  own numbers — see DEVLOG Phase 39 for the two loading-path bugs that check caught. **This is not
-  a bug fix and not silent**: a consumer that reads
-  `instruments` by RANK (which label scores highest on this clip) sees no change — ordering and
-  `primaryLabel` are still determined by the raw, uncalibrated score, untouched by this release.
+  own numbers — see DEVLOG Phase 39 for the two loading-path bugs that check caught.
   A consumer that reads it by a FIXED CONFIDENCE THRESHOLD (e.g. "show labels with confidence
   ≥0.6") will see a different population of predictions at that threshold than before, because the
   raw score was not comparable across the 6 instrument classes (a raw 0.31 meant ~36% true
@@ -58,6 +55,15 @@ being corrected.)_
   labels are included at all is also untouched — the 0.3 inclusion cutoff is still evaluated
   against the raw score, deliberately not recalibrated (raising it would destroy information a
   confidence-reading consumer could otherwise recover; see DEVLOG Phase 37).
+  **`primaryLabel` and the `predictions` array's own sort order are two separate mechanisms, not
+  one** (DEVLOG Phase 52 — an internal regression this same wiring introduced and this same
+  release also fixes, so it never reached a prior published version): `predictions` is sorted by
+  the calibrated confidence above; `primaryLabel` (and `SemanticMetrics.primaryRole`) is a
+  majority vote, across the file's analysis chunks, of each chunk's own RAW-score winner
+  (`InstrumentEngine.predict()`'s own `primaryLabel`, deliberately never calibrated — see its doc
+  comment). Because per-class calibration curves aren't cross-class-comparable, these two can
+  name a different label on the same clip; a consumer that assumed `predictions.first?.label ==
+  primaryLabel` should not.
 
 ### Fixed
 - **4-note jazz-extension chord identification (dom7/m7/m7b5/m6) was frequently wrong on real

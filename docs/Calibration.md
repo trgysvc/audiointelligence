@@ -36,10 +36,12 @@ MIREX-annotated) — there we report measured accuracy, not perfection (see READ
 
 - **CQT engine**: its correctness bugs (aliasing filter, energy rescale, octave alignment, note
   order) were fixed and independently cross-checked against a reference implementation (see
-  DEVLOG Phase 10) — it is validated as a standalone engine, but still has **no** downstream
-  consumer in this pipeline; key and chroma rely on a high-resolution STFT chromagram instead.
+  DEVLOG Phase 10) — it is validated as a standalone engine. Key and chroma still rely on a
+  high-resolution STFT chromagram, not CQT — but CQT does now have a real downstream consumer:
+  `TraditionalTheoryEngine.detectBassNote` (chord inversion labeling, and chord root/quality
+  tie-breaking on chroma-identical chords), wired to production's real per-chunk CQT output.
 - **Neural stem separation**: the `NeuralSeparationEngine` is an interface only — no Core ML model
   ships, and it is not part of `analyze()`.
 
 ---
-*Last reviewed: 2026-08-29 — AudioIntelligence 8.2.2. See [Integration.md](Integration.md).*
+*Last reviewed: 2026-09-04 — AudioIntelligence 8.2.3. See [Integration.md](Integration.md).*

@@ -1,4 +1,4 @@
-# 🌌 AudioIntelligence: Infinity Engine (v8.2.2)
+# 🌌 AudioIntelligence: Infinity Engine (v8.2.3)
 
 [![Swift 6.3](https://img.shields.io/badge/Swift-6.3-orange.svg)](https://swift.org)
 [![macOS 15](https://img.shields.io/badge/macOS-15-blue.svg)](https://apple.com)
@@ -14,7 +14,7 @@ AudioIntelligence is a Music Information Retrieval (MIR) and DSP framework for *
 
 While legacy libraries like Librosa are excellent for research, AudioIntelligence is engineered for **Industrial-Grade Production**:
 
-- **⚡ Sub-millisecond Latency**: Accelerate (AMX-backed) and Metal kernels for real-time professional workflows.
+- **⚡ Hardware-Accelerated DSP**: Accelerate (AMX-backed) and Metal kernels make batch file analysis fast. *(A true streaming/real-time API — analyzing a live, unbounded input with incrementally-updating results, e.g. live BPM/key sync or continuous broadcast loudness monitoring — is a planned goal, not yet implemented; `analyze()` today is file-in/report-out batch, see worklist.)*
 - **🎨 Native SwiftUI UI**: Includes `AudioIntelligenceUI` for hardware-accelerated, real-time spectrograms, waveforms, and meters.
 - **🛡️ Swift 6 Actor Isolation**: Compile-time thread safety — the analysis engine is an `actor`, checked for data races at build time.
 - **💿 Professional Format Support**: Native Apple codec support (AAC, MP3, ALAC, FLAC, WAV, AIFF) via `AVAudioFile`/`AudioToolbox`, with `AVAudioConverter` handling sample-rate/format conversion.
@@ -30,7 +30,7 @@ While legacy libraries like Librosa are excellent for research, AudioIntelligenc
 Add the package to your `Package.swift`:
 ```swift
 dependencies: [
-    .package(url: "https://github.com/trgysvc/audiointelligence.git", from: "8.2.2")
+    .package(url: "https://github.com/trgysvc/audiointelligence.git", from: "8.2.3")
 ],
 targets: [
     .target(name: "YourApp", dependencies: [
@@ -142,7 +142,7 @@ We report **measured** accuracy, not claimed. Each row below is backed by a test
 | Synthetic ground truth (tempo/timebase/phase/structure coverage) | ✅ 8/8 | deterministic fixtures |
 | Tempo — real music (EDM, 43 tracks) | ✅ Acc1 69.8% / Acc2 81.4% (measurement correction, not a real improvement — the prior 53%/70% under-measured this same production algorithm at the wrong sample rate; see DEVLOG Phase 36) | GiantSteps (MIREX) |
 | Key — real music (599 tracks) | ✅ 48.8% exact / 61.4% MIREX-weighted (N=599, native sample rate, DEVLOG Phase 36) — `report.estimations.key.value` is `ModulationEngine.detectKey`, wired and verified end-to-end (DEVLOG Phase 43) | GiantSteps (MIREX) |
-| Instrument — real music | ✅ OpenMIC-2018 held-out test partition recall: Drums 79%, Bass 59%, Piano 52%, Strings/Synth 41%, Vocals 22%, Brass/Trumpet 5% (precision not yet re-measured post-fix); IRMAS (4 classes it can measure): 28.5% blended | IRMAS + OpenMIC-2018 |
+| Instrument — real music | ✅ OpenMIC-2018 held-out test partition recall (isolated `InstrumentEngine.predict()` pipeline, single call per clip): Drums 79%, Bass 59%, Piano 52%, Strings/Synth 41%, Vocals 22%, Brass/Trumpet 5% (root cause for the weak end measured, see DEVLOG — no fix applied yet, needs a learned classifier); IRMAS (4 classes it can measure): 28.5% blended. Real production (`report.estimations.instruments.primaryLabel`, chunked pipeline) agrees with this isolated measurement 89.3% of the time on the same 150-file held-out sample — see `RA_INSTRUMENT_PARITY` below, not identical by construction. | IRMAS + OpenMIC-2018 |
 | Pitch/f0 — real music | ✅ Raw Pitch Accuracy (<50 cents), see `Examples/ReliabilityAudit` scorecard for the current run's % | MDB-stem-synth |
 | Structure — real music (15 tracks) | ✅ boundary F-measure @3.0s tolerance: 41.1% (@0.5s: 21.3%) | SALAMI |
 | Chord identification — synthesized audio, real signal chain | ✅ 87/108 canonical (root, quality) chords correct end-to-end (STFT→Chroma→CQT→TraditionalTheoryEngine) — up from 58/108 (DEVLOG Phase 45: explained-energy penalty fixed a real scoring bug where a smaller chord shape could outscore a larger one it's a subset of; remaining 21 mismatches are 9 known augmented-symmetry ties plus 12 m6/m7b5 pairs sharing identical pitch-class sets, unresolvable without a working bass-note signal — see worklist); real-corpus measurement still blocked (no legally-obtainable paired chord/audio material) | self-synthesized, 100%-exact ground truth |
@@ -217,6 +217,14 @@ Status), but this specific scorecard tool hasn't been updated to run that measur
 swift run -c release ReliabilityAudit
 ```
 
+Two additional, env-var-gated diagnostics in the same tool guard `InstrumentEngine` specifically
+against production-vs-isolated-pipeline drift (not run by default — real audio, several minutes):
+`RA_INSTRUMENT_PARITY=1` (label-agreement between real production and the isolated pipeline, real
+OpenMIC held-out audio, fixed 80% floor) and `RA_INSTRUMENT_CALIBRATION_WIRING_CHECK=1` (reported-
+confidence fidelity, ~0.005 tolerance). Both real, not aspirational — the first caught and helped
+fix a genuine two-session-old silent regression in production's instrument-label selection; see
+DEVLOG.
+
 ---
 
 ## 🏗 Architecture & Modules
@@ -246,7 +254,7 @@ From time-domain forensic analysis to frequency-domain source separation, AudioI
 - **Forensic DNA**: Bit-depth integrity and forgery audit.
 
 ### Music Information Retrieval (MIR)
-- **Mel / Chroma**: High-resolution timbral and tonal transforms (key uses a high-res STFT chromagram; the CQT engine, correctness-fixed and independently cross-checked, feeds `TraditionalTheoryEngine`'s real bass-note detection — used for chord inversion labeling and, as of this session, chord root/quality tie-breaking on chroma-identical chords).
+- **Mel / Chroma**: High-resolution timbral and tonal transforms (key uses a high-res STFT chromagram; the CQT engine, correctness-fixed and independently cross-checked, feeds `TraditionalTheoryEngine`'s real bass-note detection — used for chord inversion labeling and for chord root/quality tie-breaking on chroma-identical chords).
 - **Viterbi Decoder**: Gaussian-emission HMM sequence modeling — smooths the raw per-frame pitch estimate into a stable note path (73-state MIDI space + a silence state).
 - **Onsets & Rhythm**: Multi-band rhythmic mapping, autocorrelation-based cyclic tempograms, and cross-rhythm/polyrhythm detection (3:2, 4:3, 5:4 and their inversions).
 - **Harmony & Tonnetz**: 6D Harmonic relationship mapping on the tonnetz grid.
@@ -258,7 +266,7 @@ From time-domain forensic analysis to frequency-domain source separation, AudioI
 - **HPSS**: Median-filter based Harmonic-Percussive source separation.
 - **Pitch Audits**: YIN, Piptrack (parabolic), and Viterbi sequence tracking.
 - **AudioScience**: AES17 dynamic range, SMPTE IMD, and ITU-R 468-4 / IEC 61672-1 (A-weighting) noise weighting.
-- **Instrument DNA**: Placeholder per-instrument predictions today (clearly tagged as estimates). A measurement-driven instrument/genre layer is the next milestone — see DEVLOG.
+- **Instrument DNA**: Data-derived, per-class-calibrated predictions (`Estimated<String>`, `InstrumentEngine`, fit on OpenMIC-2018's real train partition, confidence calibrated per class) — not placeholders. Held-out recall varies widely by class (see Validation Status): strong for Drums/Bass/Piano, weak for Brass/Trumpet (root cause measured — no strong distinguishing scalar feature rescues it from the shared, universal MFCC-space ambiguity every class has; fixing it needs a learned/data-derived classifier, not a hand-tuned formula tweak — see DEVLOG). Genre/mood/danceability are a deliberate, permanent non-goal (no classical-DSP definition exists for them; see the worklist's scope-out note) — not a roadmap item.
 
 ---
 
